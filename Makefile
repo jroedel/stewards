@@ -113,9 +113,30 @@ release: ## Build the static linux/amd64 binary the server runs
 
 # ---------------------------------------------------------------- the server
 #
-# Not yet written. The deploy*, prod-* and secrets targets arrive with the
-# pipeline, modelled on /opt/projects/mass-intentions, and they are for a person
-# at a terminal: .claude/settings.json denies them to agents. See CLAUDE.md §6.
+# Everything below reads secrets.env, which is not in the repository. It lives
+# in Bitwarden; see secrets.env.example for what goes in it and where each group
+# is sent.
+#
+# These are for a person at a terminal. .claude/settings.json denies make
+# deploy* and make prod-* to agents, which is why every target that touches
+# GitHub's secrets or the server is named deploy-something. See CLAUDE.md §6.
+
+.PHONY: deploy-status
+deploy-status: ## Ready to deploy? secrets.env, GitHub, the server, DNS, TLS, the pipeline
+	@scripts/secrets status
+
+.PHONY: deploy-keygen
+deploy-keygen: ## Mint this project's deploy ssh key, and print how to install it
+	@scripts/secrets ssh-keygen
+
+.PHONY: deploy-known-hosts
+deploy-known-hosts: ## Pin the server's host key (paste the line into secrets.env)
+	@scripts/secrets known-hosts
+
+.PHONY: deploy-send-secrets
+deploy-send-secrets: ## Deploy key and addresses to GitHub; config.toml to the server
+	@scripts/secrets push
+	@scripts/secrets install
 
 # ---------------------------------------------------------------- local dev
 
