@@ -196,6 +196,30 @@ func TestCheckSchemaNamesWhatIsMissing(t *testing.T) {
 	}
 }
 
+// Verified against the driver rather than assumed: the code is read from a
+// real constraint failure, so a driver upgrade that changed it fails here and
+// not as a 500 on a steward's form.
+func TestIsUniqueViolationRecognisesTheDriversError(t *testing.T) {
+	db := openTemp(t)
+
+	if _, err := db.ExecContext(t.Context(), `CREATE TABLE t (slug TEXT NOT NULL UNIQUE) STRICT`); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO t VALUES ('rain-garden')`); err != nil {
+		t.Fatalf("first insert: %v", err)
+	}
+
+	_, err := db.ExecContext(t.Context(), `INSERT INTO t VALUES ('rain-garden')`)
+	if !sqldb.IsUniqueViolation(err) {
+		t.Errorf("a duplicate was not recognised: %v", err)
+	}
+
+	if sqldb.IsUniqueViolation(errors.New("UNIQUE constraint failed")) {
+		t.Error("a plain error carrying the words was taken for the driver's")
+	}
+}
+
 func openTemp(t *testing.T) *sql.DB {
 	t.Helper()
 
