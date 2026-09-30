@@ -295,3 +295,78 @@ func TestAnAddressHoldsOneAccount(t *testing.T) {
 		t.Errorf("a second account: %v, want ErrEmailTaken", err)
 	}
 }
+
+func signedIn(t *testing.T, b *userbus.Business, addr string) (userbus.User, string) {
+	t.Helper()
+
+	u, err := b.Create(t.Context(), email(t, addr), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req, _ := b.RequestSignIn(t.Context(), u.Email)
+	_, cookie, err := b.SignIn(t.Context(), req.Secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return u, cookie
+}
+
+// Turning a steward off signs them out everywhere at once, and turning them
+// back on lets them ask for a new link -- but not use the old session.
+func TestADisabledStewardIsSignedOutAndCannotSignIn(t *testing.T) {
+	b, _ := setup(t)
+	me, _ := signedIn(t, b, "steward@example.org")
+	them, cookie := signedIn(t, b, "other@example.org")
+
+	if _, err := b.SetEnabled(t.Context(), me.ID, them.ID, false); err != nil {
+		t.Fatalf("SetEnabled: %v", err)
+	}
+
+	if _, err := b.Authenticate(t.Context(), cookie); !errors.Is(err, userbus.ErrDenied) {
+		t.Errorf("a disabled steward's session: %v, want ErrDenied", err)
+	}
+
+	if req, _ := b.RequestSignIn(t.Context(), them.Email); req.Sendable() {
+		t.Error("a disabled steward was sent a link")
+	}
+
+	if _, err := b.SetEnabled(t.Context(), me.ID, them.ID, true); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := b.Authenticate(t.Context(), cookie); !errors.Is(err, userbus.ErrDenied) {
+		t.Error("turning a steward back on revived the session that was ended")
+	}
+
+	if req, _ := b.RequestSignIn(t.Context(), them.Email); !req.Sendable() {
+		t.Error("a steward turned back on cannot ask for a link")
+	}
+}
+
+func TestNobodyCanLockTheGardenOut(t *testing.T) {
+	b, _ := setup(t)
+	me, cookie := signedIn(t, b, "steward@example.org")
+
+	_, err := b.SetEnabled(t.Context(), me.ID, me.ID, false)
+	if invalid, ok := errors.AsType[userbus.Invalid](err); !ok || !strings.Contains(invalid.Problem, "your own account") {
+		t.Errorf("turning off yourself: %v", err)
+	}
+
+	// The last one, turned off by somebody who is themselves already off --
+	// the only way the rule above does not already cover it.
+	other, _ := signedIn(t, b, "other@example.org")
+	if _, err := b.SetEnabled(t.Context(), me.ID, other.ID, false); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = b.SetEnabled(t.Context(), other.ID, me.ID, false)
+	if invalid, ok := errors.AsType[userbus.Invalid](err); !ok || !strings.Contains(invalid.Problem, "last steward") {
+		t.Errorf("turning off the last steward: %v", err)
+	}
+
+	if _, err := b.Authenticate(t.Context(), cookie); err != nil {
+		t.Errorf("the refused change still signed me out: %v", err)
+	}
+}

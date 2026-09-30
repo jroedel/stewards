@@ -241,3 +241,52 @@ func TestPruningKeepsWhatCanStillBeUsed(t *testing.T) {
 		t.Errorf("deleting a session twice: %v, want ErrNotFound", err)
 	}
 }
+
+func TestAnUpdateKeepsTheAddressAndEndingSessionsIsPerAccount(t *testing.T) {
+	db, s := open(t)
+	u := steward(t, s, "steward@example.org")
+	other := steward(t, s, "other@example.org")
+
+	for _, owner := range []userbus.User{u, u, other} {
+		if err := s.CreateSession(t.Context(), userbus.Session{
+			ID: types.NewID(), UserID: owner.ID, Hash: []byte("h"), CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	changed := u
+	changed.Name, changed.Enabled, changed.UpdatedAt = "Renamed", false, now.Add(time.Minute)
+	if err := s.UpdateUser(t.Context(), changed); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ := s.UserByID(t.Context(), u.ID)
+	if got.Name != "Renamed" || got.Enabled || got.Email != u.Email || !got.UpdatedAt.Equal(changed.UpdatedAt) {
+		t.Errorf("after update: %+v", got)
+	}
+
+	if err := s.DeleteUserSessions(t.Context(), u.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions := func(id types.ID) (n int) {
+		t.Helper()
+		if err := db.QueryRowContext(t.Context(), `SELECT count(*) FROM sessions WHERE user_id = ?`, id.String()).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	if n := sessions(u.ID); n != 0 {
+		t.Errorf("%d sessions left for the steward whose sessions were ended", n)
+	}
+
+	if n := sessions(other.ID); n != 1 {
+		t.Errorf("another steward has %d sessions, want their 1 untouched", n)
+	}
+
+	if err := s.UpdateUser(t.Context(), userbus.User{ID: types.NewID()}); !errors.Is(err, userbus.ErrNotFound) {
+		t.Errorf("updating nobody: %v, want ErrNotFound", err)
+	}
+}

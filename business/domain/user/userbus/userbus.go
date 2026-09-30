@@ -94,6 +94,17 @@ var (
 	ErrEmailTaken = errors.New("a steward already has that address")
 )
 
+// Invalid is a change a steward asked for that cannot be made as given. Field
+// names the input to fix; Problem says what is wrong, in a sentence the page
+// can show beside it. The same shape as placebus.Invalid, so an app handles
+// both the same way.
+type Invalid struct {
+	Field   string
+	Problem string
+}
+
+func (e Invalid) Error() string { return fmt.Sprintf("%s: %s", e.Field, e.Problem) }
+
 // User is a steward's account.
 type User struct {
 	ID    types.ID
@@ -141,6 +152,7 @@ type Session struct {
 // write would let two requests holding one link both sign in.
 type Storer interface {
 	CreateUser(ctx context.Context, u User) error
+	UpdateUser(ctx context.Context, u User) error
 	UserByID(ctx context.Context, id types.ID) (User, error)
 	UserByEmail(ctx context.Context, email types.Email) (User, error)
 	Users(ctx context.Context) ([]User, error)
@@ -154,6 +166,7 @@ type Storer interface {
 	CreateSession(ctx context.Context, s Session) error
 	SessionByID(ctx context.Context, id types.ID) (Session, error)
 	DeleteSession(ctx context.Context, id types.ID) error
+	DeleteUserSessions(ctx context.Context, userID types.ID) error
 
 	ClaimBootstrap(ctx context.Context, at time.Time) (bool, error)
 	BootstrapSpent(ctx context.Context) (bool, error)
@@ -186,9 +199,9 @@ func (b *Business) Create(ctx context.Context, email types.Email, name string) (
 
 	switch {
 	case email.Zero():
-		return User{}, errors.New("a steward needs an email address; the sign-in link goes there")
+		return User{}, Invalid{Field: "email", Problem: "give their email address; the sign-in link goes there"}
 	case utf8.RuneCountInString(name) > maxName:
-		return User{}, fmt.Errorf("keep the name under %d characters", maxName)
+		return User{}, Invalid{Field: "name", Problem: fmt.Sprintf("keep the name under %d characters", maxName)}
 	}
 
 	now := b.now()
@@ -210,6 +223,77 @@ func (b *Business) Create(ctx context.Context, email types.Email, name string) (
 
 		return User{}, fmt.Errorf("saving the steward: %w", err)
 	}
+
+	return u, nil
+}
+
+// SetEnabled lets a steward sign in again, or stops them.
+//
+// Disabling rather than deleting, because an account is a record that
+// somebody could edit the garden: when there is a history of who changed a
+// place, it will point at accounts, and a deleted one would leave it pointing
+// at nothing.
+//
+// Two refusals, both about never locking the garden out of its own app. A
+// steward cannot disable themselves -- the realistic way that happens is a
+// tap on the wrong row -- and the last enabled steward cannot be disabled by
+// anybody, which with the first rule means it cannot happen at all. With the
+// bootstrap already spent, the only way back from either would be the
+// database on the server.
+//
+// Disabling also ends every session the account has. Authenticate would
+// refuse them anyway on their next request; deleting them means a phone left
+// signed in is signed out in fact and not only in effect.
+func (b *Business) SetEnabled(ctx context.Context, actor, id types.ID, enabled bool) (User, error) {
+	u, err := b.store.UserByID(ctx, id)
+	if err != nil {
+		return User{}, err
+	}
+
+	if u.Enabled == enabled {
+		return u, nil
+	}
+
+	if !enabled {
+		if actor == id {
+			return User{}, Invalid{Field: "steward", Problem: "you cannot turn off your own account. Ask another steward to do it"}
+		}
+
+		all, err := b.store.Users(ctx)
+		if err != nil {
+			return User{}, fmt.Errorf("reading the stewards: %w", err)
+		}
+
+		others := 0
+		for _, o := range all {
+			if o.Enabled && o.ID != id {
+				others++
+			}
+		}
+
+		if others == 0 {
+			return User{}, Invalid{Field: "steward", Problem: "that is the last steward who can sign in. Add another first"}
+		}
+	}
+
+	u.Enabled = enabled
+	u.UpdatedAt = b.now()
+
+	if err := b.store.UpdateUser(ctx, u); err != nil {
+		return User{}, fmt.Errorf("saving the steward: %w", err)
+	}
+
+	if !enabled {
+		if err := b.store.DeleteUserSessions(ctx, id); err != nil {
+			// The account is off, and Authenticate checks that on every
+			// request, so a leftover session is refused regardless. Logged
+			// rather than returned: the change the steward asked for did
+			// happen.
+			b.log.Error("a disabled steward's sessions could not be removed", "user_id", id.String(), "error", err)
+		}
+	}
+
+	b.log.Info("steward access changed", "user_id", id.String(), "by", actor.String(), "enabled", enabled)
 
 	return u, nil
 }

@@ -13,6 +13,8 @@ import (
 
 	"github.com/jroedel/stewards/app/domain/authapp"
 	"github.com/jroedel/stewards/app/domain/homeapp"
+	"github.com/jroedel/stewards/app/domain/placeapp"
+	"github.com/jroedel/stewards/app/domain/stewardapp"
 	"github.com/jroedel/stewards/app/sdk/health"
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
@@ -57,7 +59,7 @@ func New(cfg Config) (http.Handler, error) {
 
 	// One renderer holding every app's pages: the stylesheet has one hashed
 	// path, and net/http panics on a pattern registered twice.
-	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates)
+	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, stewardapp.Templates)
 	if err != nil {
 		return nil, err
 	}
@@ -81,6 +83,20 @@ func New(cfg Config) (http.Handler, error) {
 			BaseURL:   cfg.BaseURL,
 			Bootstrap: cfg.Bootstrap,
 		})
+
+		// Everything a steward edits, behind one guard. With sign-in off
+		// these are not mounted either: a page that can only ever redirect
+		// to a 404 is worse than the 404.
+		guard := mid.Require(authapp.SignInPath)
+
+		placeapp.Routes(mux, cfg.Log, render, cfg.Places, guard)
+		stewardapp.Routes(mux, stewardapp.Config{
+			Log:     cfg.Log,
+			Render:  render,
+			Users:   cfg.Users,
+			Mail:    cfg.Mail,
+			BaseURL: cfg.BaseURL,
+		}, guard)
 	} else {
 		cfg.Log.Warn("sign-in is off: [server] base_url is not set")
 	}

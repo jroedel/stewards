@@ -53,9 +53,12 @@ const (
 	firstPath  = "/sign-in/first"
 	signOut    = "/sign-out"
 
-	// home is where signing in lands a steward who was not going anywhere
-	// in particular.
-	home = "/"
+	// landing is where signing in lands a steward who was not going
+	// anywhere in particular: the stewards' own front page, since editing
+	// is what a steward signs in to do. Signing out goes home instead,
+	// to the page a volunteer sees.
+	landing = "/steward"
+	home    = "/"
 )
 
 // Users is the slice of userbus this app uses.
@@ -348,7 +351,7 @@ func (a app) signOut(w http.ResponseWriter, r *http.Request) {
 
 func orHome(next string) string {
 	if next == "" {
-		return home
+		return landing
 	}
 
 	return next

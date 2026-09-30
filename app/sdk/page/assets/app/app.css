@@ -133,6 +133,10 @@ h2 {
 
 .rows { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
 
+/* A list straight after a sentence, rather than after a heading, needs the
+   room a heading would have given it. */
+.lead + .rows, .done + .rows, .problem + .rows { margin-top: 20px; }
+
 .row {
   display: flex;
   align-items: center;
@@ -262,6 +266,9 @@ h2 {
 }
 
 .foot form { display: inline; }
+.foot-who { margin: 0; overflow-wrap: anywhere; }
+.foot-links { display: flex; flex-wrap: wrap; align-items: center; gap: 0 20px; }
+.foot-links .linkish { padding: 0; }
 
 .linkish {
   min-height: 48px;
@@ -275,3 +282,81 @@ h2 {
 }
 
 .foot a { display: inline-block; padding: 12px 0; }
+
+/* ---------------------------------------------------------------- steward screens */
+
+.eyebrow a { color: inherit; text-decoration: none; display: inline-block; padding: 12px 0; margin: -12px 0; }
+.eyebrow a::before { content: "‹ "; }
+
+/* What just happened, after a save. The protect colours: it went well. */
+.done {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-left: 4px solid var(--tos-protect);
+  border-radius: 8px;
+  background: var(--tos-protect-tint);
+  font-weight: 500;
+}
+
+.form fieldset { margin: 8px 0 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px; }
+.form legend { padding: 0; margin-bottom: 4px; font: 700 18px var(--font-display); color: var(--sf-blue); }
+.form fieldset label { margin-top: 0; font-weight: 500; }
+
+.form select,
+.form textarea,
+.form input[type="number"] {
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--muted);
+  border-radius: 10px;
+  background: var(--sf-white);
+  color: var(--sf-ink);
+  font: 400 17px/1.4 var(--font-body);
+}
+
+.form textarea { resize: vertical; }
+.form input[type="number"] { max-width: 8em; }
+
+.optional { font-weight: 400; font-size: 15px; color: var(--muted); }
+
+/* A problem beside its input: the word and the colour, and a heavier border
+   would need script to place, so the sentence carries it. */
+.field-problem { margin: 0; color: var(--tos-pull); font-weight: 700; font-size: 15px; }
+
+.check { display: flex; align-items: center; gap: 12px; min-height: 48px; font-weight: 500; }
+.check input { width: 24px; height: 24px; margin: 0; }
+
+.danger { margin-top: 28px; }
+.danger h2 { margin-top: 0; font-size: 20px; }
+
+.button-block { display: flex; align-items: center; justify-content: center; margin-top: 20px; text-decoration: none; }
+
+/* Secondary actions: outlined, so the yellow stays the one main action. */
+.button-quiet { background: var(--sf-white); color: var(--sf-blue); border: 1.5px solid var(--sf-blue); }
+.button-small { min-height: 48px; margin: 0; padding: 8px 14px; font-size: 16px; }
+
+/* A place and the smaller places inside it, in one card. */
+.row-stack { flex-direction: column; align-items: stretch; gap: 0; padding: 0; }
+.row-main, .band {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  min-height: 56px; padding: 10px 14px;
+  color: var(--sf-ink); text-decoration: none;
+}
+.row-main .row-note { flex-basis: 100%; order: 3; margin-top: -4px; }
+.row-go { margin-left: auto; color: var(--sf-blue); font-weight: 700; font-size: 15px; }
+
+.bands { margin: 0; padding: 0; list-style: none; }
+.band { min-height: 48px; padding-left: 30px; border-top: 1px solid var(--rule); font-weight: 500; }
+.band::before { content: "└"; color: var(--muted); margin-left: -16px; }
+.band-add { border-top: 1px solid var(--rule); color: var(--sf-blue); font-size: 15px; font-weight: 700; }
+.band-add::before { content: none; }
+
+.row-main-static { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.row-off .row-name, .row-off .row-note { color: var(--muted); }
+
+.tag {
+  display: inline-block; margin-left: 6px; padding: 2px 8px;
+  border-radius: 999px; background: var(--sf-neutral);
+  font: 700 13px var(--font-body); color: var(--sf-blue); vertical-align: 2px;
+}
+.tag-off { color: var(--tos-pull); background: var(--tos-pull-tint); }

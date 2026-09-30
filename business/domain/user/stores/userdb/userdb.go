@@ -119,6 +119,25 @@ func (s *Store) CreateUser(ctx context.Context, u userbus.User) error {
 	return nil
 }
 
+// UpdateUser saves the fields a steward can change about an account: its
+// name and whether it may sign in. The address is fixed; it is the credential.
+func (s *Store) UpdateUser(ctx context.Context, u userbus.User) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE users SET name = ?, enabled = ?, updated_at = ? WHERE id = ?`,
+		u.Name, boolOf(u.Enabled), ms(u.UpdatedAt), u.ID.String())
+	if err != nil {
+		return fmt.Errorf("updating the steward: %w", err)
+	}
+
+	switch ok, err := affected(res); {
+	case err != nil:
+		return err
+	case !ok:
+		return userbus.ErrNotFound
+	}
+
+	return nil
+}
+
 // UserByID finds an account by identifier.
 func (s *Store) UserByID(ctx context.Context, id types.ID) (userbus.User, error) {
 	return scanUser(s.db.QueryRowContext(ctx, `SELECT `+userColumns+` FROM users WHERE id = ?`, id.String()))
@@ -319,6 +338,15 @@ func (s *Store) DeleteSession(ctx context.Context, id types.ID) error {
 		return err
 	case !ok:
 		return userbus.ErrNotFound
+	}
+
+	return nil
+}
+
+// DeleteUserSessions ends every session an account has.
+func (s *Store) DeleteUserSessions(ctx context.Context, userID types.ID) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID.String()); err != nil {
+		return fmt.Errorf("deleting the steward's sessions: %w", err)
 	}
 
 	return nil
