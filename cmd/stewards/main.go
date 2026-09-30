@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/jroedel/stewards/app/sdk/muxer"
+	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
 	"github.com/jroedel/stewards/foundation/logger"
 	"github.com/jroedel/stewards/foundation/sqldb"
 	"github.com/jroedel/stewards/foundation/web"
@@ -104,7 +105,8 @@ func run() error {
 // prepare runs every store's Init, in foreign-key order.
 //
 // A list rather than a loop over anything clever, because the order is the
-// order the references point in: when species-at-a-place arrives it will
+// order the references point in. Places come first of the domains: every
+// layer points at a place, and when species-at-a-place arrives it will
 // reference both places and species, so it goes after both. A store added in
 // the wrong place fails at startup on a fresh database and nowhere else, which
 // is the cheapest moment for it to fail.
@@ -114,6 +116,7 @@ func prepare(ctx context.Context, db *sql.DB) error {
 		init func(context.Context, *sql.DB) error
 	}{
 		{"the infrastructure tables", sqldb.Init},
+		{"places", placedb.Init},
 	} {
 		if err := step.init(ctx, db); err != nil {
 			return fmt.Errorf("preparing %s: %w", step.what, err)
@@ -132,7 +135,9 @@ func prepare(ctx context.Context, db *sql.DB) error {
 func expectedSchema() sqldb.Expected {
 	expected := maps.Clone(sqldb.Infrastructure)
 
-	for _, store := range []sqldb.Expected{} {
+	for _, store := range []sqldb.Expected{
+		placedb.Expected,
+	} {
 		maps.Copy(expected, store)
 	}
 

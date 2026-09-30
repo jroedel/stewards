@@ -7,10 +7,9 @@
 // libc on the server to match against. An ordinary build links the builder's
 // glibc and dies on the host with GLIBC_2.xx not found.
 //
-// Taken from mass-intentions, less what only a store needs. The transaction
-// helpers and the constraint-violation readers come back with the first store
-// that makes a claim or needs several statements to be atomic, rather than
-// sitting here untested until then.
+// Taken from mass-intentions, less what nothing here needs yet. The
+// transaction helpers come back with the first store that needs several
+// statements to be atomic, rather than sitting here untested until then.
 package sqldb
 
 import (
@@ -24,8 +23,9 @@ import (
 	"slices"
 	"strings"
 
-	// Imported for its side effect of registering the driver.
-	_ "modernc.org/sqlite"
+	// Imported for its side effect of registering the driver, and by name for
+	// the error type IsUniqueViolation reads a result code out of.
+	"modernc.org/sqlite"
 )
 
 // Open returns the shared handle, with the pragmas this service needs set in
@@ -247,4 +247,21 @@ func safeIdentifier(s string) bool {
 	}
 
 	return true
+}
+
+// sqliteConstraintUnique is SQLITE_CONSTRAINT_UNIQUE, raised by a UNIQUE index
+// or column. Written out rather than imported from modernc.org/sqlite/lib,
+// which is the whole translated library and a heavy import for one integer.
+const sqliteConstraintUnique = 2067
+
+// IsUniqueViolation reports whether a write lost to a UNIQUE constraint.
+//
+// This is how a store makes "is this name free?" and "take it" one statement:
+// the insert is the check, so two stewards adding the same place at once
+// cannot both be told they were first. Read from the numeric code and never
+// from the message; the text is not API and has changed between releases.
+func IsUniqueViolation(err error) bool {
+	e, ok := errors.AsType[*sqlite.Error](err)
+
+	return ok && e.Code() == sqliteConstraintUnique
 }
