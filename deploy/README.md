@@ -20,19 +20,21 @@ because shared hosting does not allow `ProxyPass` in `.htaccess`.
 `scripts/htaccess-test.sh` pins the rules that matter and their order.
 
 It is written into the docroot from this template, with `__APP_PORT__`
-substituted, and never edited by hand on the server. Until `deploy.sh` exists
-to do that, a person installs it the same way:
+substituted, and never edited by hand on the server:
 
-```sh
-sed 's/__APP_PORT__/8451/' deploy/htaccess.template > .htaccess
-# then copy .htaccess into public_html/stewards.schoenstatt-fathers.us/public/
-```
+- **On every push to `main`**, by the `ship` job in
+  `.github/workflows/deploy.yml`.
+- **By hand**, with `make deploy-htaccess`.
 
-Until the binary is running on the server, the subdomain answers with a proxy
-error (502 or 503) rather than the app. That is expected.
+Either way `deploy/deploy.sh htaccess` then checks from outside that Apache
+is reading it: `http://` must redirect to `https://`, and `/healthz` must be
+the app (200) or the proxy with nothing behind it yet (502/503). An Apache
+403 or 404 there means the file was written to a directory the subdomain
+does not serve -- check the docroot in konsoleH against `APP_DOCROOT`.
 
 ## Still to come
 
-`deploy.sh`, the supervisor and the deploy workflow, adapted from
-mass-intentions. When they arrive they will read the docroot and port from the
-GitHub variables `APP_DOCROOT` and `APP_PORT`, which a person sets.
+Shipping the binary: the `deploy` command in `deploy.sh` (swap, supervisor,
+cron, backups, rollback), adapted from mass-intentions, as a second step of
+the `ship` job. Until it lands, `make deploy-status` says "not ready" and
+names it.
