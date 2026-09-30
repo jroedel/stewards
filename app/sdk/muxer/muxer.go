@@ -73,6 +73,7 @@ func New(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("GET /static/img/{file}", render.Files("img"))
 
 	homeapp.New(cfg.Log, render, cfg.Places).Routes(mux)
+	placeapp.CardRoutes(mux, cfg.Log, render, cfg.Places)
 
 	if cfg.BaseURL != "" {
 		authapp.Routes(mux, authapp.Config{

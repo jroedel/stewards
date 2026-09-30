@@ -360,3 +360,32 @@ h2 {
   font: 700 13px var(--font-body); color: var(--sf-blue); vertical-align: 2px;
 }
 .tag-off { color: var(--tos-pull); background: var(--tos-pull-tint); }
+
+/* ---------------------------------------------------------------- the place card */
+
+/* The header on every screen but the list: a way back, and the toggle
+   (design.md, "Shared components"). */
+.back {
+  display: flex; align-items: center; min-height: 48px; padding: 0 4px;
+  font: 700 17px var(--font-body); color: var(--sf-blue); text-decoration: none;
+}
+
+.part-of { margin: 20px 0 0; font: 500 15px var(--font-body); color: var(--muted); }
+.part-of a { display: inline-block; padding: 12px 0; margin: -12px 0; font-weight: 700; }
+.part-of + h1 { margin-top: 2px; }
+
+/* What a steward typed, with the line breaks they typed. */
+.prose { margin: 0; white-space: pre-line; }
+
+a.row:hover { border-color: var(--sf-blue); }
+.row > div { flex: 1; min-width: 0; }
+
+.card-gap { margin-top: 24px; }
+.empty .empty-advice { margin-top: 8px; font-weight: 700; color: var(--sf-ink); }
+
+/* A page whose title is its first line, with no eyebrow above it. */
+main > h1:first-child { margin-top: 20px; }
+
+.station { margin-top: 20px; }
+.station-name { display: block; font-size: 18px; }
+.station-go { display: block; font-weight: 500; font-size: 15px; color: var(--muted); }

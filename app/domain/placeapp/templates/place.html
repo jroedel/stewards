@@ -1,0 +1,35 @@
+{{define "title"}}{{.Data.Name.In .Lang}} · Garden stewards{{end}}
+{{define "masthead"}}<a class="back" href="/"><span>‹ {{say .Lang .Data.Copy.Back}}</span></a>{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+{{with .Parent}}<p class="part-of">{{say $l $.Data.Copy.PartOf}} <a href="/places/{{.Slug}}">{{say $l .Name}}</a></p>{{end}}
+<h1>{{say $l .Name}}</h1>
+{{if .Purpose.EN}}<p class="lead">{{say $l .Purpose}}</p>{{end}}
+
+{{if .StationURL}}
+<a class="onward station" href="{{.StationURL}}"><span><span class="station-name">{{say $l .Station}}</span><span class="station-go">{{say $l .Copy.StationIntro}} {{say $l .Copy.StationGo}}</span></span><span aria-hidden="true">›</span></a>
+{{end}}
+
+{{if .Conditions.EN}}
+<h2>{{say $l .Copy.Conditions}}</h2>
+<div class="card"><p class="prose">{{say $l .Conditions}}</p></div>
+{{end}}
+
+{{if .Bands}}
+<h2>{{say $l .Copy.Inside}}</h2>
+<ul class="rows">
+{{range .Bands}}<li><a class="row" href="/places/{{.Slug}}"><div><div class="row-name">{{say $l .Name}}</div>{{if .Purpose.EN}}<div class="row-note">{{say $l .Purpose}}</div>{{end}}</div><span class="row-go" aria-hidden="true">›</span></a></li>
+{{end}}</ul>
+{{end}}
+
+<div class="card empty card-gap">
+  <p>{{say $l .Copy.NotListed}}</p>
+  <p class="empty-advice">{{say $l .Copy.NotSure}}</p>
+</div>
+
+{{if .PhotoPoint.EN}}
+<h2>{{say $l .Copy.PhotoPoint}}</h2>
+<div class="card"><p class="help">{{say $l .Copy.PhotoPointHelp}}</p><p class="prose">{{say $l .PhotoPoint}}</p></div>
+{{end}}
+
+{{with .EditURL}}<a class="onward" href="{{.}}" lang="en"><span>{{say $l $.Data.Copy.Edit}}</span><span aria-hidden="true">›</span></a>{{end}}
+{{end}}{{end}}
