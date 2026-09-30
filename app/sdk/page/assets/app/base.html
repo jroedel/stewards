@@ -1,0 +1,23 @@
+{{define "base"}}<!doctype html>
+<html lang="{{.Lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{block "title" .}}Garden stewards{{end}}</title>
+<link rel="stylesheet" href="{{.Stylesheet}}">
+<link rel="icon" type="image/png" href="/static/img/isotype-512.png">
+</head>
+<body>
+<header class="masthead">
+{{block "masthead" .}}<a class="logo" href="/"><img src="/static/img/logo-horizontal.svg" alt="Schoenstatt Fathers" width="150" height="50"></a>{{end}}
+<nav class="langs" aria-label="Language">
+{{if eq .Lang "en"}}<span class="lang is-on" aria-current="true">EN</span><a class="lang" href="{{.OtherURL}}" hreflang="es" lang="es">ES</a>
+{{else}}<a class="lang" href="{{.OtherURL}}" hreflang="en" lang="en">EN</a><span class="lang is-on" aria-current="true">ES</span>{{end}}
+</nav>
+</header>
+<main>
+{{block "content" .}}{{end}}
+</main>
+</body>
+</html>
+{{end}}

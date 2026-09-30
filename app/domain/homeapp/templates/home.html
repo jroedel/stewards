@@ -1,0 +1,16 @@
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow">{{say $l .Copy.Eyebrow}}</p>
+<h1>{{say $l .Copy.Title}}</h1>
+<p class="lead">{{say $l .Copy.Lead}}</p>
+
+<h2>{{say $l .Copy.Places}}</h2>
+{{if .Places}}
+<ul class="rows">
+{{range .Places}}<li class="row"><div><div class="row-name">{{say $l .Name}}</div>{{if .Purpose.EN}}<div class="row-note">{{say $l .Purpose}}</div>{{end}}</div></li>
+{{end}}</ul>
+{{else}}
+<div class="card empty"><p>{{say $l .Copy.Empty}}</p></div>
+{{end}}
+
+<a class="onward" href="https://schoenstatt-fathers.us/trail/"><span>{{say $l .Copy.TrailAsk}} <span class="quiet">{{say $l .Copy.TrailGo}}</span></span><span aria-hidden="true">›</span></a>
+{{end}}{{end}}

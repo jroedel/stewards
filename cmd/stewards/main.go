@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/jroedel/stewards/app/sdk/muxer"
+	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
 	"github.com/jroedel/stewards/foundation/logger"
 	"github.com/jroedel/stewards/foundation/sqldb"
@@ -92,6 +93,7 @@ func run() error {
 		Log:      log,
 		DB:       db,
 		Expected: expected,
+		Places:   placebus.NewBusiness(placedb.NewStore(db), nil),
 	})
 	if err != nil {
 		return err

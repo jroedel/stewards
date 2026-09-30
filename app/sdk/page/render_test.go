@@ -1,0 +1,116 @@
+package page_test
+
+import (
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"testing/fstest"
+
+	"github.com/jroedel/stewards/app/sdk/mid"
+	"github.com/jroedel/stewards/app/sdk/page"
+	"github.com/jroedel/stewards/business/types"
+)
+
+func renderer(t *testing.T) *page.Renderer {
+	t.Helper()
+
+	fsys := fstest.MapFS{
+		"templates/hello.html":  {Data: []byte(`{{define "content"}}<p>{{say .Lang .Data}}</p>{{end}}`)},
+		"templates/broken.html": {Data: []byte(`{{define "content"}}{{.Data.NoSuchField}}{{end}}`)},
+	}
+
+	rn, err := page.NewRenderer(slog.New(slog.DiscardHandler), fsys)
+	if err != nil {
+		t.Fatalf("NewRenderer: %v", err)
+	}
+
+	return rn
+}
+
+// render runs a request through Lang, as the muxer does, so the page is in
+// the language the request asked for.
+func render(t *testing.T, rn *page.Renderer, name string, data any, accept string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	h := mid.Lang()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rn.Render(w, r, http.StatusOK, name, data)
+	}))
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Accept-Language", accept)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+
+	return rec
+}
+
+func TestAPageIsInTheLanguageAskedFor(t *testing.T) {
+	rn := renderer(t)
+	text := types.Text{EN: "Rain garden", ES: "Jardín de lluvia"}
+
+	rec := render(t, rn, "hello", text, "es")
+	body := rec.Body.String()
+
+	for _, want := range []string{`<html lang="es">`, "Jardín de lluvia", `hreflang="en"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the Spanish page has no %s", want)
+		}
+	}
+
+	if got := rec.Header().Get("Content-Language"); got != "es" {
+		t.Errorf("Content-Language = %q", got)
+	}
+
+	// A shared cache must not give a Spanish page to an English request.
+	if vary := rec.Header().Get("Vary"); !strings.Contains(vary, "Cookie") || !strings.Contains(vary, "Accept-Language") {
+		t.Errorf("Vary = %q", vary)
+	}
+}
+
+// English shown in a Spanish page is marked, so a screen reader switches
+// voice. Spanish in a Spanish page, and English in an English one, are not.
+func TestEnglishStandingInForSpanishIsMarked(t *testing.T) {
+	englishOnly := types.Text{EN: "Fire pit"}
+	both := types.Text{EN: "Rain garden", ES: "Jardín de lluvia"}
+
+	if got := page.Say(types.Spanish, englishOnly); got != `<span lang="en">Fire pit</span>` {
+		t.Errorf("Spanish page, English-only text: %s", got)
+	}
+
+	if got := page.Say(types.Spanish, both); got != "Jardín de lluvia" {
+		t.Errorf("Spanish page, Spanish text: %s", got)
+	}
+
+	if got := page.Say(types.English, englishOnly); got != "Fire pit" {
+		t.Errorf("English page: %s", got)
+	}
+
+	// Copy is escaped: a place name is typed by a person.
+	if got := page.Say(types.English, types.Text{EN: "<b>Beds</b> & walls"}); got != "&lt;b&gt;Beds&lt;/b&gt; &amp; walls" {
+		t.Errorf("not escaped: %s", got)
+	}
+}
+
+// A template that fails halfway is an error page, never half a page under 200.
+func TestAPageThatFailsIsNotHalfSent(t *testing.T) {
+	rec := render(t, renderer(t), "broken", types.Text{EN: "x"}, "en")
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status %d, want 500", rec.Code)
+	}
+
+	if strings.Contains(rec.Body.String(), "<html") {
+		t.Error("part of the page was sent")
+	}
+}
+
+func TestTwoAppsCannotDefineTheSamePage(t *testing.T) {
+	one := fstest.MapFS{"templates/index.html": {Data: []byte(`{{define "content"}}{{end}}`)}}
+	two := fstest.MapFS{"templates/index.html": {Data: []byte(`{{define "content"}}{{end}}`)}}
+
+	if _, err := page.NewRenderer(slog.New(slog.DiscardHandler), one, two); err == nil {
+		t.Error("two index pages were accepted")
+	}
+}
