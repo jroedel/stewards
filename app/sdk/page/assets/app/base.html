@@ -18,6 +18,10 @@
 <main>
 {{block "content" .}}{{end}}
 </main>
+<footer class="foot" lang="en">
+{{if .Steward}}Signed in as {{.Steward}} · <form method="post" action="/sign-out"><button class="linkish" type="submit">Sign out</button></form>
+{{else}}{{/* A page that is itself about signing in replaces this; see authapp. It must replace it with something: html/template ignores a definition with an empty body. */}}{{block "signin-link" .}}<a href="/sign-in">Garden stewards: sign in</a>{{end}}
+{{end}}</footer>
 </body>
 </html>
 {{end}}

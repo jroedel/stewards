@@ -6,15 +6,20 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"log/slog"
 	"maps"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/jroedel/stewards/app/sdk/muxer"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
+	"github.com/jroedel/stewards/business/domain/user/stores/userdb"
+	"github.com/jroedel/stewards/business/domain/user/userbus"
 	"github.com/jroedel/stewards/foundation/logger"
+	"github.com/jroedel/stewards/foundation/mail"
 	"github.com/jroedel/stewards/foundation/sqldb"
 	"github.com/jroedel/stewards/foundation/web"
 )
@@ -89,11 +94,36 @@ func run() error {
 		return fmt.Errorf("the database does not match this binary: %w", err)
 	}
 
+	// A nil Sender rather than one that discards, when no relay is set, so
+	// that a missing relay is logged where the link went missing instead of
+	// looking like a delivery. Declared as the interface and assigned only
+	// on success: a nil *SMTP inside a Sender is not a nil Sender.
+	var sender mail.Sender
+	if cfg.Mail.Host != "" {
+		smtp, err := mail.NewSMTP(mail.Config{
+			Host: cfg.Mail.Host, Port: cfg.Mail.Port,
+			User: cfg.Mail.User, Password: cfg.Mail.Password,
+			From: cfg.Mail.From, FromName: cfg.Mail.FromName,
+		})
+		if err != nil {
+			return fmt.Errorf("%s [mail]: %w", *configPath, err)
+		}
+
+		sender = smtp
+	}
+
+	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
+	go prune(ctx, log, users)
+
 	handler, err := muxer.New(muxer.Config{
-		Log:      log,
-		DB:       db,
-		Expected: expected,
-		Places:   placebus.NewBusiness(placedb.NewStore(db), nil),
+		Log:       log,
+		DB:        db,
+		Expected:  expected,
+		Places:    placebus.NewBusiness(placedb.NewStore(db), nil),
+		Users:     users,
+		BaseURL:   cfg.Server.BaseURL,
+		Mail:      sender,
+		Bootstrap: cfg.Auth.BootstrapSecret,
 	})
 	if err != nil {
 		return err
@@ -119,6 +149,7 @@ func prepare(ctx context.Context, db *sql.DB) error {
 	}{
 		{"the infrastructure tables", sqldb.Init},
 		{"places", placedb.Init},
+		{"stewards", userdb.Init},
 	} {
 		if err := step.init(ctx, db); err != nil {
 			return fmt.Errorf("preparing %s: %w", step.what, err)
@@ -139,9 +170,31 @@ func expectedSchema() sqldb.Expected {
 
 	for _, store := range []sqldb.Expected{
 		placedb.Expected,
+		userdb.Expected,
 	} {
 		maps.Copy(expected, store)
 	}
 
 	return expected
+}
+
+// prune clears expired sign-in links and sessions, at startup and then every
+// six hours. Housekeeping: nothing depends on it for correctness, since every
+// check reads the expiry, so a failure is logged and the next round tries
+// again.
+func prune(ctx context.Context, log *slog.Logger, users *userbus.Business) {
+	tick := time.NewTicker(6 * time.Hour)
+	defer tick.Stop()
+
+	for {
+		if err := users.Prune(ctx); err != nil && ctx.Err() == nil {
+			log.Warn("expired sign-ins could not be pruned", "error", err)
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
 }

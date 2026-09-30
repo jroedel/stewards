@@ -1,0 +1,22 @@
+{{define "title"}}Sign in · Garden stewards{{end}}
+{{define "signin-link"}}<a href="/">Back to the places list</a>{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow">Garden stewards</p>
+{{if .Token}}
+<h1>One more tap</h1>
+<p class="lead">Press the button to finish signing in.</p>
+
+<form class="card form" method="post" action="/sign-in/link">
+  <input type="hidden" name="token" value="{{.Token}}">
+  <input type="hidden" name="next" value="{{.Next}}">
+  <button class="button" type="submit">Sign in</button>
+  <p class="help">Why a button? Mail apps open the links in a message to check them before you do. If opening the link signed you in, your link would be used up before you tapped it.</p>
+</form>
+{{else}}
+<h1>Sign in</h1>
+<p class="problem" role="alert">{{say $l .Problem}}</p>
+<a class="onward" href="/sign-in"><span>Ask for a new link</span><span aria-hidden="true">›</span></a>
+{{end}}
+</div>
+{{end}}{{end}}

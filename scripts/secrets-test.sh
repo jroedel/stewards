@@ -101,6 +101,29 @@ check "production listens on the loopback, on APP_PORT" \
 	grep -q '^addr = "127.0.0.1:8451"$' "$TMP/prod.toml"
 check "local uses DEV_ADDR and loses its quotes" \
 	grep -q '^addr = "127.0.0.1:18451"$' "$TMP/local.toml"
+check "production's public address is https on APP_HOST" \
+	grep -qx 'base_url = "https://stewards.example.invalid"' "$TMP/prod.toml"
+check "with no runtime values, there is no [auth] and no [mail]" \
+	bash -c '! grep -qE "^\[(auth|mail)\]" "$0"' "$TMP/prod.toml"
+
+# Everything sign-in needs, with a password holding the two characters that
+# end a TOML string early.
+{
+	cat "$SECRETS_ENV"
+	printf 'BOOTSTRAP_SIGNIN_SECRET=abcdefghijklmnopqrstuvwxyz0123456789ABCD\n'
+	printf 'SMTP_HOST=smtp.example.invalid\n'
+	printf 'SMTP_USER=stewards@example.invalid\n'
+	printf "SMTP_PASSWORD='pa\"ss\\\\word'\n"
+	printf 'MAIL_FROM=stewards@example.invalid\n'
+} > "$TMP/runtime.env"
+SECRETS_ENV="$TMP/runtime.env" "$SECRETS" render production > "$TMP/runtime.toml"
+
+check "the bootstrap secret reaches [auth]" \
+	grep -qx 'bootstrap_secret = "abcdefghijklmnopqrstuvwxyz0123456789ABCD"' "$TMP/runtime.toml"
+check "a quote and a backslash in the password are escaped" \
+	grep -qxF 'password = "pa\"ss\\word"' "$TMP/runtime.toml"
+check "the port is a bare number, and defaults to 587" \
+	grep -qx 'port = 587' "$TMP/runtime.toml"
 
 echo
 echo "the rendered config is one the binary accepts"
@@ -109,6 +132,11 @@ if go -C "$REPO_DIR" build -o "$TMP/stewards" ./cmd/stewards 2>/dev/null; then
 
 	check "production config passes the binary's own -check" accepts "$TMP/prod.toml"
 	check "and so does local" accepts "$TMP/local.toml"
+	check "and so does one with sign-in configured" accepts "$TMP/runtime.toml"
+	check "whose -check says mail is set up" \
+		bash -c '"$0" -config "$1" -check | grep -q "outgoing mail  smtp.example.invalid:587"' "$TMP/stewards" "$TMP/runtime.toml"
+	check "and never prints the password" \
+		bash -c '! "$0" -config "$1" -check | grep -q "pa.ss"' "$TMP/stewards" "$TMP/runtime.toml"
 else
 	echo "  skip the binary would not build here"
 fi

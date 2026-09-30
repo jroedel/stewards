@@ -11,11 +11,14 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/jroedel/stewards/app/domain/authapp"
 	"github.com/jroedel/stewards/app/domain/homeapp"
 	"github.com/jroedel/stewards/app/sdk/health"
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
+	"github.com/jroedel/stewards/business/domain/user/userbus"
+	"github.com/jroedel/stewards/foundation/mail"
 	"github.com/jroedel/stewards/foundation/sqldb"
 	"github.com/jroedel/stewards/foundation/web"
 )
@@ -26,17 +29,35 @@ type Config struct {
 	DB       *sql.DB
 	Expected sqldb.Expected
 	Places   *placebus.Business
+	Users    *userbus.Business
+
+	// BaseURL is the public origin. Empty means sign-in is off: its routes
+	// are not mounted, and with no other write in the app, the origin check
+	// then has nothing to let through.
+	BaseURL string
+
+	// Mail may be nil: no relay configured. Bootstrap may be empty: no
+	// one-time secret.
+	Mail      mail.Sender
+	Bootstrap string
 }
+
+// maxBody is the most any write here may send. A sign-in form is a few
+// hundred bytes; this is room for the place edit form's longest notes in both
+// languages, and nothing like room for a photo, which will need its own route
+// outside this limit rather than a second MaxBody inside it (see
+// web.MaxBody).
+const maxBody = 64 << 10
 
 // New builds the handler.
 func New(cfg Config) (http.Handler, error) {
-	if cfg.Log == nil || cfg.DB == nil || cfg.Places == nil {
-		return nil, errors.New("the muxer needs a logger, a database and the place rules")
+	if cfg.Log == nil || cfg.DB == nil || cfg.Places == nil || cfg.Users == nil {
+		return nil, errors.New("the muxer needs a logger, a database, and the place and steward rules")
 	}
 
 	// One renderer holding every app's pages: the stylesheet has one hashed
 	// path, and net/http panics on a pattern registered twice.
-	render, err := page.NewRenderer(cfg.Log, homeapp.Templates)
+	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates)
 	if err != nil {
 		return nil, err
 	}
@@ -51,16 +72,41 @@ func New(cfg Config) (http.Handler, error) {
 
 	homeapp.New(cfg.Log, render, cfg.Places).Routes(mux)
 
+	if cfg.BaseURL != "" {
+		authapp.Routes(mux, authapp.Config{
+			Log:       cfg.Log,
+			Render:    render,
+			Users:     cfg.Users,
+			Mail:      cfg.Mail,
+			BaseURL:   cfg.BaseURL,
+			Bootstrap: cfg.Bootstrap,
+		})
+	} else {
+		cfg.Log.Warn("sign-in is off: [server] base_url is not set")
+	}
+
 	// The order is outermost first. RequestID before Logging so the request
 	// line carries the id; Logging outside Panics so a recovered panic still
 	// gets its request line with the 500 on it; headers inside both, so they
-	// are set on the recovery's answer too; the language innermost, since
-	// only the pages need it.
+	// are set on the recovery's answer too.
+	//
+	// Then the three checks on a write, cheapest first, and all before
+	// anything reads a body or a session: where it came from, how big it
+	// is, and that it is a form. Every write in this app is a browser
+	// posting a form we rendered, so they apply to every route rather than
+	// to a list somebody has to remember to add to.
+	//
+	// Who is signed in comes after them, so a refused write costs no
+	// database read; the language innermost, since only the pages need it.
 	return web.Wrap(mux,
 		web.RequestID(),
 		web.Logging(cfg.Log),
 		web.Panics(cfg.Log),
 		web.SecureHeaders(page.Policy()),
+		web.SameOriginOnly(cfg.BaseURL),
+		web.MaxBody(maxBody),
+		web.FormEncodedOnly(),
+		mid.Authenticate(cfg.Log, cfg.Users),
 		mid.Lang(),
 	), nil
 }

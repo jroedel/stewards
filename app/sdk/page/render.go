@@ -75,6 +75,12 @@ type Shell struct {
 	OtherLang types.Lang
 	OtherURL  string
 
+	// Steward is the address of the steward signed in, or "" for everybody
+	// else -- which on most pages is everybody. The footer shows it with a
+	// way to sign out, because a phone passed between stewards is a phone
+	// signed in as whoever had it last.
+	Steward string
+
 	Data any
 }
 
@@ -196,6 +202,11 @@ func (rn *Renderer) Render(w http.ResponseWriter, r *http.Request, status int, n
 		other = types.English
 	}
 
+	var steward string
+	if u, ok := mid.StewardFrom(r.Context()); ok {
+		steward = u.Email.String()
+	}
+
 	var buf bytes.Buffer
 
 	if err := set.ExecuteTemplate(&buf, "base", Shell{
@@ -203,6 +214,7 @@ func (rn *Renderer) Render(w http.ResponseWriter, r *http.Request, status int, n
 		Lang:       lang,
 		OtherLang:  other,
 		OtherURL:   mid.SwitchURL(r, other),
+		Steward:    steward,
 		Data:       data,
 	}); err != nil {
 		rn.log.Error("a page could not be rendered",

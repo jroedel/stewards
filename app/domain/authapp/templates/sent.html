@@ -1,0 +1,14 @@
+{{define "title"}}Check your email · Garden stewards{{end}}
+{{define "signin-link"}}<a href="/">Back to the places list</a>{{end}}
+{{define "content"}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow">Garden stewards</p>
+<h1>Check your email</h1>
+<p class="lead">If <strong>{{.Email}}</strong> belongs to a steward, a sign-in link is on its way. It works once, for fifteen minutes.</p>
+
+<div class="card">
+  <p>Nothing after a few minutes? Look in the spam folder, then <a href="/sign-in">try again</a>, checking the address for a typo.</p>
+  <p class="help">This page reads the same whether or not the address has an account, so that nobody can use it to find out who the stewards are.</p>
+</div>
+</div>
+{{end}}{{end}}

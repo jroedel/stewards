@@ -133,6 +133,10 @@ deploy-keygen: ## Mint this project's deploy ssh key, and print how to install i
 deploy-known-hosts: ## Pin the server's host key (paste the line into secrets.env)
 	@scripts/secrets known-hosts
 
+.PHONY: bootstrap-secret
+bootstrap-secret: ## Print a fresh BOOTSTRAP_SIGNIN_SECRET to paste into secrets.env
+	@scripts/secrets bootstrap-secret
+
 .PHONY: deploy-htaccess
 deploy-htaccess: ## Install the Apache front end now, and check it from outside (CI does this on every push)
 	@deploy/deploy.sh htaccess
