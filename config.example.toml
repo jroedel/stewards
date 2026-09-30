@@ -1,0 +1,22 @@
+# Copy this to config.toml and edit it. config.toml is gitignored because it
+# will hold secrets once stewards sign in; this file is tracked because it is
+# the documentation. A key this binary does not know stops it at startup.
+
+[server]
+# The loopback address Apache proxies to. Never a public interface: TLS and the
+# public hostname are the front end's job.
+addr = "127.0.0.1:8451"
+
+# How long in-flight requests get to finish on SIGTERM.
+shutdown_grace = "15s"
+
+[db]
+# Beside the binary, above any web-servable directory.
+path = "stewards.db"
+
+[log]
+# debug, info, warn or error.
+level = "info"
+
+# Empty means stderr, which is what the supervisor redirects into a log file.
+file = ""
