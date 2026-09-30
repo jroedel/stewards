@@ -1,0 +1,53 @@
+# Imported from /opt/projects/mass-intentions, minus what only mattered there.
+
+# Compiled binaries, named after the module in the repository root.
+/stewards
+/stewards-linux-amd64
+*.exe
+*.test
+*.out
+*.prof
+coverage.*
+
+# Storage. A developer's local database is whatever they typed into a test
+# form, and that should not reach a public repository.
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Configuration that carries a secret. The example files are tracked and are
+# the documentation; the real ones never are.
+config.toml
+*.env
+*.env.bak
+.env*
+!config.example.toml
+!secrets.env.example
+
+# Data, not code. Garden photos show the house and, before long, volunteers;
+# nursery lists are the nursery's own catalogue. Both stay on the machine that
+# holds them, and nothing in the build may depend on them being present.
+/photos/
+*.csv
+
+# Keys of any kind.
+*.key
+*.pem
+id_rsa
+id_ecdsa
+id_ed25519
+*_ed25519
+
+# Local tooling and editor state
+/tools/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Claude Code working state. CLAUDE.md, settings.json and the skills are tracked
+# on purpose -- they are how the project is built. The rest is not.
+.claude/worktrees/
+.claude/settings.local.json

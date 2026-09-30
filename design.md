@@ -1,0 +1,188 @@
+# Garden Steward App — Design Document
+
+*Drafted 2026-09-30. It describes how the app looks, reads and behaves. What it does is in `phase-1-plan.md`.*
+
+**Home:** `stewards.schoenstatt-fathers.us`
+**Brand authority:** *Brand Identity Manual — Schoenstatt Fathers* (11 Aug 2025).
+**Machine-usable brand kit:** `/opt/projects/personal-tasks/brand/`. It contains `tokens.json`, `tokens.css`, the logo SVG and PNG files, and the Ubuntu and Inter fonts. Pull from there; don't re-derive from the PDF.
+
+This is a Schoenstatt Fathers project, so it uses the Fathers' identity: the same logo, palette and type as the letterhead, the prayer boards and the public trail page. What's new here is the **field** setting: bright sun, dirty hands, no signal under the canopy, and a volunteer who has never been here. Where the brand manual is silent, this document decides. Where the manual speaks, it wins.
+
+---
+
+## 1. Where this sits
+
+| | Public trail page | This app |
+|---|---|---|
+| URL | `schoenstatt-fathers.us/trail/` | `stewards.schoenstatt-fathers.us` |
+| For | Pilgrims | Volunteers and stewards |
+| Content | Stations, prayers, the map | Places, plants, work days, photos |
+| Tone | Devotional | Practical, warm, plain |
+
+**Rules carried over from the public page (`personal-tasks/trail-of-the-saints/web/README.md`):**
+- **The QR anchors are a contract.** The anchors `#reinisch`, `#pozzobon`, `#francis`, `#therese` and `#joseph` on `/trail/` are burned into plywood. This app links *to* them. It never replaces them or moves them.
+- **The boards are the authority for prayers.** If this app ever shows a station prayer, it's quoted from `signs.typ`, never retyped.
+- **The map is north up.** It's a schematic, not a survey, and it uses the same trail geometry as `web/map.html`. The fire-pit entrance and anything that draws visitors toward the house belong only in this app. The public map leaves them out on purpose.
+
+**Why `stewards.`:** the name says who the app is for, not which ground it covers. It doesn't compete with `/trail/` for pilgrims, and it doesn't shrink the scope to flower beds. The home screen still carries a small link, *"Walking the trail to pray? → Stations and prayers,"* for anyone who lands there by mistake.
+
+**What "the Garden" means here:** everything outdoors that the Fathers look after in Austin. That's the planted beds, the woods and the trail, the slopes and the drainage, fire safety and irrigation, and the wildlife that lives there. It's the wide sense of the word (Eden, Gethsemane), not just flower beds. Grading and ecology aren't extra modules; they're layers over the same places (see `phase-1-plan.md`).
+
+---
+
+## 2. Brand elements
+
+### Logo
+
+| Use | Version (manual p. 8–9) | Where |
+|---|---|---|
+| App header, on white | Horizontal, full color | Top of the Map (home) screen |
+| On the blue bar or the blue splash | "White + color" variant | Splash, sign-in, blue headers |
+| App icon, favicon, home-screen icon | Isotype alone | PWA manifest, browser tab |
+| Watermark | Isotype as oversized line art (p. 17, 21), about 6% opacity | Empty states only ("No photos yet") |
+
+**Rules (manual pp. 12–14):**
+- **Clear space** on every side equal to the width of the "S" in *Schoenstatt*.
+- **Minimum size:** 25 mm for the horizontal lockup and 10 mm for the isotype. On screen, treat that as **at least 96 px wide** for the lockup and **at least 40 px** for the isotype.
+- **Never** recolor, rotate, stretch, restructure, re-typeset, or add shadow.
+- **Never** put the full-color logo on a photograph. On photos use the white (negative) or black (positive) version, which suits the garden photos.
+- **Sion US:** the manual is the international one. Adapt the contact details, never the mark.
+
+The trail and its stations are the Fathers' own devotional space, so the logo appears plainly. It isn't co-branded with the Movement of Austin. If a joint work day ever needs both, the manual's "monochrome non-institutional version for collaborations" (p. 13) is the tool for it.
+
+### Color
+
+The brand palette comes from `tokens.json`. It uses the colors **painted** in the manual's artwork, not the hex values typed on p. 4. The brand kit's README explains why.
+
+| Token | Hex | Name | Role in this app |
+|---|---|---|---|
+| `--sf-blue` | `#293896` | Shrine | **Primary.** Header bar, headings, links, the trail line and station markers (as on the public map), "Today" banners |
+| `--sf-blue-dk` | `#1E2A73` | (derived) | Pressed states, text on yellow |
+| `--sf-yellow` | `#FFCB00` | Holy City | **Accent.** Eyebrow labels on blue, the one main action per screen ("What is this?", "Send"). Never text on white |
+| `--sf-green` | `#38B54A` | Mount Sion | **Graphics only.** Place outlines, the Rosary Trail dash, bloom dots, map woods. **Never text or white-on-green** |
+| `--sf-neutral` | `#F2F2F2` | Complementary | Page ground |
+| `--sf-ink` | `#231F20` | Text black | Body text |
+| `--sf-white` | `#FFFFFF` | | Cards and surfaces |
+
+**Contrast, measured.** In full sun this matters more than usual.
+
+| Pair | Ratio | Verdict |
+|---|---|---|
+| White on Shrine blue | ~10:1 | Excellent, use freely |
+| Ink on white | ~16:1 | Body text |
+| Shrine blue on white | ~10:1 | Headings, links |
+| Blue-dark on yellow | ~8.4:1 | Main-action buttons |
+| Yellow on Shrine blue | ~6.6:1 | Eyebrow labels on blue only |
+| White on Mount Sion green | ~2.7:1 | **Fails.** Never do this |
+| Yellow on white | ~1.5:1 | **Fails.** Never do this |
+
+**Colors for garden meaning.** These aren't in the manual. They're derived for this app, and they're used only as fills and tints with dark text.
+
+| Token | Hex | Meaning |
+|---|---|---|
+| `--tos-protect` | `#1F6B2C` on tint `#E3F3E5` | Protect, keep, native. A darkened Mount Sion |
+| `--tos-pull` | `#A8481A` on tint `#F8E4D7` | Pull or remove |
+| `--tos-water` | `#0E5E7E` on tint `#DDEEF4` | Watering and wet zones |
+| `--tos-sun` | `#6B4E00` on tint `#FFF3C4` | Sun and shade. A darkened Holy City |
+
+**Never color alone.** Protect and Pull always carry **an icon and the word**: a shield with "Protect", a down arrow with "Pull". About 1 in 12 men can't tell this green from this orange, and a wrong guess kills a plant.
+
+**Flower colors are data, not UI.** The swatch dots on species cards show real bloom colors from `plants.json`. They never stand in for interface states. White-flowered plants get a thin outline so the dot shows.
+
+### Type
+
+| Role | Face | Weights | Sizes on a phone |
+|---|---|---|---|
+| Screen titles | **Ubuntu** Bold | 700 | 30–34 px |
+| Section headings | Ubuntu Bold | 700 | 22 px |
+| Eyebrow labels | Ubuntu Medium, uppercase, tracked +8% | 500 | 13 px |
+| Body and UI | **Inter** | 400, 500, 700 | **17 px body**, 15 px secondary, 13 px captions (never smaller) |
+| Buttons | Inter Bold | 700 | 16–17 px |
+
+- These follow the manual (p. 6–7): Ubuntu for "titles, subtitles, short texts", Inter for "continuous texts". Both are on Google Fonts, and the brand kit has true static weights.
+- The eyebrow style borrows the logo's "FATHERS" treatment: capitals with generous tracking, for "a sense of order and air" (p. 5).
+- **17 px body** is deliberately larger than a desktop site. It's read at arm's length, in glare, sometimes with sunglasses.
+- Any text drawn inside an SVG map follows the public map's rule: at least 24 viewBox units, so it never renders below about 11 px.
+
+### Shape and icons
+
+- **Radius:** 12–14 px on cards, 8–10 px on buttons and thumbnails, pill shapes on chips. This echoes the rounded terminals of the isotype and of Ubuntu.
+- **Icons:** 2 px stroke, round caps and joins, on a 24 px grid. One family throughout. **No emoji.**
+- **No gradients, glows or drop shadows** (the manual forbids effects on the logo, and the UI should match). The one exception is a faint shadow under the floating place label on the map, so it lifts off the drawing.
+
+---
+
+## 3. Field-first principles
+
+1. **Sunlight first.** Light theme only in Phase 1, with a white card on a light-gray ground. Body text at 7:1 or better. Don't rely on thin rules or pale gray text.
+2. **Thumbs and gloves.** Every target is **at least 48 px**. The main action sits in the bottom third of the screen. Nothing depends on hover.
+3. **One job per screen.** The Map says *where*. A Place says *what's here and what to do*. A Species card says *what this is*. "What is this?" says *I'm not sure*.
+4. **The place comes from the map, not GPS.** Under oak and cedar canopy, GPS drifts 5–15 m. The volunteer taps the place. The GPS is recorded quietly for later, and it's never shown as fact.
+5. **Offline in the woods.** Places, species and today's job are readable with no signal. Photos queue and send when the phone reconnects, with a visible "Waiting to send (2)".
+6. **English and Spanish,** switchable on every screen from the header. Spanish is written or checked by a native speaker, never left as a raw machine translation.
+7. **Say "not sure".** Every identification carries its status: *checked* (with the sources it was checked against, such as the nursery tag or the Wildflower Center), *not yet checked*, or *unknown*. The default advice is: **"Not sure? Leave it and send a photo."**
+8. **Devotion is present, but quiet.** Station spaces show the saint's name and petition ("St. Francis, for peace") and link to the prayer on `/trail/`. The app is for tending the space, not for praying in it, so it doesn't reproduce the devotional content.
+9. **No personal names in the interface, and no claims of expertise.** The app speaks as *"we"* or *"the garden stewards"*. An ID is trusted because of its **sources**, not because of who made it. Nobody on the team is presented as the botanist. Individual names appear only where a person chose to add theirs: the photographer's credit on a photo, or a volunteer's first name on their own report.
+
+---
+
+## 4. Voice
+
+- **Plain words.** "Pull", "Protect", "Plant here". Not "remove invasive specimen".
+- **Second person, present tense, short.** "Tall against the wall, low along the stones."
+- **Warm, not cute.** Volunteers are giving their Saturday. Thank them, and don't use exclamation marks.
+- **Show whose words are whose,** as the public page does. Nursery descriptions, Wildflower Center facts and our own notes are labeled by source.
+- **Numbers the way gardeners say them:** "2–3 ft", "Aug–Nov", "4–5 hours of morning sun".
+
+---
+
+## 5. Imagery
+
+- **Our photos first.** Photo points (same spot, same direction, each season) are the backbone of the place cards. A photo is always dated and credited to its place and its photographer.
+- **Species photos need two kinds:** a **close-up** (flower or leaf) and the **mature plant in context**. Weeding cards also need a **seedling** photo.
+- **Borrowed photos** come from Wikimedia Commons or iNaturalist under an open license, **checked against the species** before use, and credited on the card. The skinny bed guide's rule stays: two "frostweed" photos turned out to be wingstem.
+- **The logo on photos** is always the white or black version (§2).
+- **No stock photography** of generic gardens or people.
+
+---
+
+## 6. Screens and components
+
+The phase 1 mockups are at <https://claude.ai/artifact/EZV9C92thqqWH5drvW2AQr>.
+
+| Screen | Its job | Key components |
+|---|---|---|
+| **Map (home)** | Where are you working? | Logo header · the "Today" work-day banner (blue, yellow eyebrow) · schematic map with tappable places · list of places (the map's accessible twin) · bottom nav |
+| **Place** | What's here, what do I do? | Photo point with date · condition chips (sun, water, purpose) · today's job, English and Spanish · zone layout · "Planned here" rows · bloom calendar · Protect and Pull panels |
+| **Species** | What is it, and will it look right here? | Planting and Weeding tabs on one record · close-up and in-context photos · color, bloom strip, mature size against a person, light · weeding: seedling photo, look-alikes, action for this place |
+| **What is this?** | I'm not sure | Photo · place picker (from the map) · "I don't know / It's one of ours / Something to fix" · note · Send (yellow) · "Your photos" with ID status and the stewards' reply |
+
+**Keep from the first mockups** (reviewed 2026-09-30): the **month-by-month bloom color map** on the place card, and the species card's **list of the places it grows** ("Where it grows here"). A species links to every place it's in, and each place links back.
+
+**Shared components**
+
+- **Header:** logo on the Map screen; on other screens a back link and the EN/ES toggle.
+- **Bottom nav:** Map · Plants · **What is this?** The last one is the yellow action, always in reach.
+- **Chip:** a tinted pill with an icon and a short fact ("Part shade · 4–5 h morning sun").
+- **Place row:** photo-point thumbnail, name, one-line location, and a status tag ("Today", "Planted Sep 22").
+- **Bloom strip:** twelve month cells with filled flower-color swatches, plus markers for key dates (for example, Feb 6).
+- **Protect and Pull panels:** a pair, always side by side, always with icon and word.
+- **Empty state:** the isotype watermark with one sentence and one action.
+
+---
+
+## 7. Accessibility
+
+- WCAG 2.2 AA at minimum. **AAA (7:1) for body text,** because of the sun.
+- Real buttons, links and form labels. The map always has its list twin.
+- Every photo has alt text naming the place and what's shown. Species photos name the species and the plant part.
+- Respect "reduce motion". Nothing on the site needs animation anyway.
+- Language is marked (`lang="es"`) on Spanish content, so screen readers switch voice.
+
+---
+
+## 8. Open design decisions
+
+1. **Dark theme:** deferred. It isn't useful outdoors in daylight, but it might be for evening data entry.
+2. **Vertical logo lockup** on the splash screen: it isn't extracted into the brand kit yet (manual p. 8).
+3. **The typed-vs-painted hex values** on p. 4 are still worth raising with the manual's designer. This app follows the brand kit's choice.
