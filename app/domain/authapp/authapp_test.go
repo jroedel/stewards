@@ -232,8 +232,8 @@ func TestSigningInNeverSendsYouElsewhere(t *testing.T) {
 	link, _ := url.Parse(linkInMail.FindString(sent.Text))
 	w := s.post(t, "/sign-in/link", url.Values{"token": {link.Query().Get("t")}, "next": {"https://evil.example/"}})
 
-	if got := w.Header().Get("Location"); got != "/" {
-		t.Errorf("landed on %q, want /", got)
+	if got := w.Header().Get("Location"); got != "/steward" {
+		t.Errorf("landed on %q, want the stewards' page", got)
 	}
 }
 

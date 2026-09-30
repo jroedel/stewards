@@ -1,0 +1,28 @@
+{{define "title"}}Places · Garden stewards{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow">Garden stewards</p>
+<h1>Places</h1>
+<p class="lead">Every place volunteers can choose, with the smaller places inside it.</p>
+
+{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+
+{{if .Places}}
+<ul class="rows">
+{{range .Places}}<li class="row row-stack">
+  <a class="row-main" href="/steward/places/{{.ID}}/edit"><span class="row-name">{{say $l .Name}}</span><span class="row-note">/places/{{.Slug}}</span><span class="row-go" aria-hidden="true">Edit ›</span></a>
+  {{if .Bands}}<ul class="bands">
+  {{range .Bands}}<li><a class="band" href="/steward/places/{{.ID}}/edit"><span>{{say $l .Name}}</span><span class="row-go" aria-hidden="true">Edit ›</span></a></li>
+  {{end}}</ul>{{end}}
+  <a class="band band-add" href="/steward/places/new?parent={{.ID}}">+ Add a smaller place inside {{say $l .Name}}</a>
+</li>
+{{end}}</ul>
+{{else}}
+<div class="card empty"><p>No places yet. Start with the rain garden.</p></div>
+{{end}}
+
+<a class="button button-block" href="/steward/places/new">Add a place</a>
+
+<a class="onward" href="/steward/stewards"><span>Stewards <span class="quiet">who can sign in</span></span><span aria-hidden="true">›</span></a>
+</div>
+{{end}}{{end}}

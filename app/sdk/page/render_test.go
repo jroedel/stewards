@@ -114,3 +114,17 @@ func TestTwoAppsCannotDefineTheSamePage(t *testing.T) {
 		t.Error("two index pages were accepted")
 	}
 }
+
+func TestAProblemBecomesASentence(t *testing.T) {
+	for in, want := range map[string]string{
+		"give the place a name in English": "Give the place a name in English.",
+		"already one.":                     "Already one.",
+		"  ñandú first ":                   "Ñandú first.",
+		"":                                 "",
+		"is it?":                           "Is it?",
+	} {
+		if got := page.Sentence(in); got != want {
+			t.Errorf("Sentence(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

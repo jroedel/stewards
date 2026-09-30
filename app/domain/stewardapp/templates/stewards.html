@@ -1,0 +1,38 @@
+{{define "title"}}Stewards · Garden stewards{{end}}
+{{define "content"}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow"><a href="/steward">Places</a></p>
+<h1>Stewards</h1>
+<p class="lead">The people who can sign in and edit places. Volunteers don't need an account.</p>
+
+{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+{{with .Problem}}<p class="problem" role="alert">{{.}}</p>{{end}}
+
+<ul class="rows">
+{{range .Stewards}}<li class="row{{if not .Enabled}} row-off{{end}}">
+  <div class="row-main-static">
+    <div class="row-name">{{if .Name}}{{.Name}}{{else}}{{.Email}}{{end}}{{if .You}} <span class="tag">You</span>{{end}}{{if not .Enabled}} <span class="tag tag-off">Turned off</span>{{end}}</div>
+    {{if .Name}}<div class="row-note">{{.Email}}</div>{{end}}
+  </div>
+  {{if not .You}}<form method="post" action="/steward/stewards/{{.ID}}/access">
+    {{if .Enabled}}<input type="hidden" name="enabled" value="no"><button class="button button-quiet button-small" type="submit">Turn off</button>
+    {{else}}<input type="hidden" name="enabled" value="yes"><button class="button button-quiet button-small" type="submit">Turn on</button>{{end}}
+  </form>{{end}}
+</li>
+{{end}}</ul>
+
+<h2>Add a steward</h2>
+<form class="card form" method="post" action="/steward/stewards">
+  <label for="email">Their email address</label>
+  {{with index .Problems "email"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="email" name="email" type="email" value="{{.Email}}" required
+         autocomplete="off" inputmode="email" autocapitalize="off" spellcheck="false">
+  <label for="name">Their name <span class="optional">optional</span></label>
+  <p class="help" id="name-help">Only other stewards see it, here. Volunteers never do.</p>
+  {{with index .Problems "name"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="name" name="name" type="text" value="{{.Name}}" aria-describedby="name-help" maxlength="60" autocomplete="off">
+  <button class="button" type="submit">Add</button>
+  <p class="help">They sign in at {{.SignIn}} with this address, and we email them to say so.</p>
+</form>
+</div>
+{{end}}{{end}}

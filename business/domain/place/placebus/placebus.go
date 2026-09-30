@@ -220,6 +220,13 @@ func (b *Business) Delete(ctx context.Context, id types.ID) error {
 	return b.store.Delete(ctx, id)
 }
 
+// ByID is one place, by the identifier that never changes. The edit screens
+// use it rather than the slug so that their addresses do not share a
+// namespace with the places' own.
+func (b *Business) ByID(ctx context.Context, id types.ID) (Place, error) {
+	return b.store.ByID(ctx, id)
+}
+
 // BySlug is the place at an address.
 func (b *Business) BySlug(ctx context.Context, slug string) (Place, error) {
 	return b.store.BySlug(ctx, slug)
