@@ -137,6 +137,26 @@ deploy-known-hosts: ## Pin the server's host key (paste the line into secrets.en
 deploy-htaccess: ## Install the Apache front end now, and check it from outside (CI does this on every push)
 	@deploy/deploy.sh htaccess
 
+.PHONY: deploy
+deploy: ## Deploy from this machine. The ordinary path is a push to main
+	@deploy/deploy.sh deploy
+
+.PHONY: prod-status
+prod-status: ## Is the live app well? Process, public checks, what is live, backups, log
+	@deploy/deploy.sh status
+
+.PHONY: prod-logs
+prod-logs: ## The tail of the server's log (make prod-logs N=200)
+	@deploy/deploy.sh logs $(or $(N),80)
+
+.PHONY: prod-backup
+prod-backup: ## Back up the live database now (stops the app for a moment)
+	@deploy/deploy.sh backup
+
+.PHONY: prod-restart
+prod-restart: ## Restart the live app
+	@deploy/deploy.sh restart
+
 .PHONY: deploy-send-secrets
 deploy-send-secrets: ## Deploy key and addresses to GitHub; config.toml to the server
 	@scripts/secrets push
