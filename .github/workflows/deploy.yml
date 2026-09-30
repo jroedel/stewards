@@ -1,15 +1,13 @@
 # A push to main that passes the checks goes to the server.
 #
-# Today that is the Apache front end and nothing else: the .htaccess is
-# rewritten from deploy/htaccess.template on every push, and the job passes
-# only if the public address then behaves as that file says. Shipping the
-# binary joins this workflow as a second step of `ship` when deploy.sh grows a
-# `deploy` command.
+# `ship` runs deploy/deploy.sh deploy: build, upload, pre-flight the new binary
+# against the live config, reinstall the front end and the watchdog, stop, back
+# up, swap, start, health-check on the loopback, roll back on failure, then
+# check from outside. There is no separate install; the first run is one.
 #
 # Two jobs, and the second `needs` the first, so a red test is a deploy that
 # never starts. The checks repeat ci.yml's rather than trusting that the run
-# which produced this commit was the run that passed; they take under two
-# minutes.
+# which produced this commit was the run that passed.
 #
 # What this workflow deliberately does not have: any runtime credential. Those
 # reach the server's config.toml from a person's machine with
@@ -73,7 +71,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: the front end
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: deploy
         env:
           DEPLOY_SSH_KEY_B64: ${{ secrets.DEPLOY_SSH_KEY_B64 }}
           DEPLOY_KNOWN_HOSTS_B64: ${{ secrets.DEPLOY_KNOWN_HOSTS_B64 }}
@@ -86,5 +89,25 @@ jobs:
           # goes wrong.
           APP_HOST: ${{ vars.APP_HOST }}
           APP_PORT: ${{ vars.APP_PORT }}
+          APP_DIR: ${{ vars.APP_DIR }}
           APP_DOCROOT: ${{ vars.APP_DOCROOT }}
-        run: deploy/deploy.sh htaccess
+          KEEP_BACKUPS: ${{ vars.KEEP_BACKUPS }}
+
+          # A runner's checkout is a detached HEAD, and the trigger already is
+          # "a commit on main".
+          SKIP_GIT_CHECK: "1"
+        run: deploy/deploy.sh deploy
+
+      - name: status
+        if: always()
+        env:
+          DEPLOY_SSH_KEY_B64: ${{ secrets.DEPLOY_SSH_KEY_B64 }}
+          DEPLOY_KNOWN_HOSTS_B64: ${{ secrets.DEPLOY_KNOWN_HOSTS_B64 }}
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
+          APP_HOST: ${{ vars.APP_HOST }}
+          APP_PORT: ${{ vars.APP_PORT }}
+          APP_DIR: ${{ vars.APP_DIR }}
+          APP_DOCROOT: ${{ vars.APP_DOCROOT }}
+        run: deploy/deploy.sh status

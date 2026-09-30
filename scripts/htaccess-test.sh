@@ -70,14 +70,24 @@ echo "and the deploy writes it"
 # The half of the 2026-09-22 lesson this file cannot enforce on its own: that
 # every deploy reinstalls it, rather than only a one-time install, so the file
 # on the server cannot drift from the one in git.
-check "every push to main installs the front end" \
-	grep -q 'run: deploy/deploy.sh htaccess' "$REPO_DIR/.github/workflows/deploy.yml"
+check "every push to main deploys" \
+	grep -q 'run: deploy/deploy.sh deploy' "$REPO_DIR/.github/workflows/deploy.yml"
+
+# A line that is a call and nothing else. Matching the bare word would find the
+# comment in cmd_deploy explaining why the call is there, and pass on the
+# comment after the call was deleted -- which is how the same assertion in
+# mass-intentions was caught passing on nothing.
+check "and every deploy reinstalls the front end" \
+	bash -c "sed -n '/^cmd_deploy() {/,/^}/p' '$REPO_DIR/deploy/deploy.sh' | grep -qE '^[[:space:]]*install_htaccess[[:space:]]*$'"
 
 check "the deploy workflow runs only on main and by hand, never for a pull request" \
 	bash -c '! grep -qE "pull_request" "$0"' "$REPO_DIR/.github/workflows/deploy.yml"
 
-check "the install only passes once the public address behaves" \
-	bash -c "sed -n '/^cmd_htaccess() {/,/^}/p' '$REPO_DIR/deploy/deploy.sh' | grep -q verify_public"
+check "installing it by hand only passes once the public address behaves" \
+	bash -c "sed -n '/^cmd_htaccess() {/,/^}/p' '$REPO_DIR/deploy/deploy.sh' | grep -qE '^[[:space:]]*verify_front_end[[:space:]]*$'"
+
+check "a deploy asks for the front page, not only /healthz" \
+	bash -c "sed -n '/^health_public() {/,/^}/p' '$REPO_DIR/deploy/deploy.sh' | grep -q 'https://\$APP_HOST/\"'"
 
 # What deploy.sh installs is this template with the port in it, byte for byte.
 # Rendered from a throwaway credentials file, so nothing real is read.
