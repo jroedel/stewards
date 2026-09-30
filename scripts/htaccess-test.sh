@@ -64,10 +64,34 @@ check "the index rule comes before the catch-all that would swallow it" before "
 
 check "http is redirected to https before anything is proxied" before "$https" "$catchall"
 
-# The two checks mass-intentions makes on deploy.sh -- that every deploy
-# reinstalls this file, and that the public health check asks for the front
-# page and not only /healthz -- come back with deploy.sh. They are the half of
-# the 2026-09-22 lesson this file cannot enforce on its own.
+echo
+echo "and the deploy writes it"
+
+# The half of the 2026-09-22 lesson this file cannot enforce on its own: that
+# every deploy reinstalls it, rather than only a one-time install, so the file
+# on the server cannot drift from the one in git.
+check "every push to main installs the front end" \
+	grep -q 'run: deploy/deploy.sh htaccess' "$REPO_DIR/.github/workflows/deploy.yml"
+
+check "the deploy workflow runs only on main and by hand, never for a pull request" \
+	bash -c '! grep -qE "pull_request" "$0"' "$REPO_DIR/.github/workflows/deploy.yml"
+
+check "the install only passes once the public address behaves" \
+	bash -c "sed -n '/^cmd_htaccess() {/,/^}/p' '$REPO_DIR/deploy/deploy.sh' | grep -q verify_public"
+
+# What deploy.sh installs is this template with the port in it, byte for byte.
+# Rendered from a throwaway credentials file, so nothing real is read.
+fixture="$(mktemp)"
+trap 'rm -f "$fixture"' EXIT
+printf 'DEPLOY_SSH_HOST=example.invalid\nDEPLOY_SSH_USER=u\nAPP_HOST=h.invalid\nAPP_PORT=8451 \nAPP_DOCROOT=d\n' > "$fixture"
+
+check "deploy.sh installs exactly the rendered template" \
+	bash -c 'diff <(SECRETS_ENV="$0" "$1/deploy/deploy.sh" render-htaccess) <(printf "%s\n" "$2")' \
+	"$fixture" "$REPO_DIR" "$RENDERED"
+
+printf 'DEPLOY_SSH_HOST=example.invalid\nDEPLOY_SSH_USER=u\nAPP_HOST=h.invalid\nAPP_PORT=84;51\nAPP_DOCROOT=d\n' > "$fixture"
+check "a port that is not a number is refused rather than written into a rewrite rule" \
+	bash -c '! SECRETS_ENV="$0" "$1/deploy/deploy.sh" render-htaccess >/dev/null 2>&1' "$fixture" "$REPO_DIR"
 
 echo
 printf '%d passed, %d failed\n' "$pass" "$fail"

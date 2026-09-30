@@ -185,8 +185,8 @@ check "reports the server section" said "the server"
 check "names the unreachable server" said "could not reach someuser@example.invalid"
 check "gets past it to the public check" said "does not resolve. Add an A record"
 check "gets past that to the pipeline" said "the deploy pipeline"
-check "and says the pipeline is not written yet, when it is not" \
-	bash -c '[ -e "$0/deploy/deploy.sh" ] || grep -q "deploy/deploy.sh is not written yet" "$1"' "$REPO_DIR" "$TMP/out"
+check "and does not call it ready while deploy.sh cannot ship the binary" \
+	bash -c 'grep -q "^cmd_deploy()" "$0/deploy/deploy.sh" || grep -q "does not ship the binary yet" "$1"' "$REPO_DIR" "$TMP/out"
 check "ends with one verdict" said "not ready: "
 
 echo
