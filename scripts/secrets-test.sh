@@ -51,13 +51,25 @@ printf 'DEPLOY_KNOWN_HOSTS_B64=%s\n' "$(printf '[example.invalid]:2222 ssh-ed255
 # variables are the name=value lines of gh-vars. Anything that tries to *set* a
 # value is recorded, so a test can assert nothing was sent.
 mkdir -p "$TMP/bin"
+#
+# A variable set is stored trimmed, because that is what GitHub did with the
+# "14 " that first exposed the parser: it kept "14", and the read-back then
+# disagreed with what was sent.
 cat > "$TMP/bin/gh" <<FAKE
 #!/usr/bin/env bash
 case "\$1 \$2" in
 "auth status")   exit 0 ;;
 "secret list")   cat "$TMP/gh-secrets" 2>/dev/null; exit 0 ;;
 "variable list") cat "$TMP/gh-vars" 2>/dev/null; exit 0 ;;
-*)               echo "\$*" >> "$TMP/gh-writes"; exit 0 ;;
+"variable set")
+	echo "\$*" >> "$TMP/gh-writes"
+	value="\$(cat)"
+	value="\$(printf '%s' "\$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*\$//')"
+	touch "$TMP/gh-vars"
+	sed -i "/^\$3=/d" "$TMP/gh-vars"
+	printf '%s=%s\n' "\$3" "\$value" >> "$TMP/gh-vars"
+	exit 0 ;;
+*)               cat > /dev/null; echo "\$*" >> "$TMP/gh-writes"; exit 0 ;;
 esac
 FAKE
 chmod +x "$TMP/bin/gh"
@@ -180,6 +192,48 @@ check "ends with one verdict" said "not ready: "
 echo
 echo "nothing was sent"
 check "check and status never set a GitHub secret or variable" test ! -e "$TMP/gh-writes"
+
+echo
+echo "a mismatch shows both sides"
+sed -i 's/^KEEP_BACKUPS=14$/KEEP_BACKUPS=15/' "$TMP/gh-vars"
+run check || true
+check "check names what secrets.env says and what GitHub has" \
+	said "KEEP_BACKUPS differs: secrets.env says 14, GitHub has 15"
+sed -i 's/^KEEP_BACKUPS=15$/KEEP_BACKUPS=14/' "$TMP/gh-vars"
+
+echo
+echo "the file is read the way a person reads it"
+# Everything that makes a value look like 14 to a person and not to a parser:
+# a trailing space, a Windows line ending, an inline comment, and a quoted
+# value with a comment after it. Each must reach GitHub and the config as the
+# bare value, and push must then agree with what GitHub kept.
+{
+	sed '/^\(KEEP_BACKUPS\|APP_PORT\|APP_DIR\|DEV_ADDR\)=/d' "$SECRETS_ENV"
+	printf 'KEEP_BACKUPS=14 \n'
+	printf 'APP_PORT=8451\r\n'
+	printf 'APP_DIR=stewards   # beside public_html, never in it\n'
+	printf 'DEV_ADDR="127.0.0.1:18451"  # a quoted value, then a comment\n'
+} > "$TMP/messy.env"
+
+SECRETS_ENV="$TMP/messy.env" "$SECRETS" render production > "$TMP/messy-prod.toml"
+SECRETS_ENV="$TMP/messy.env" "$SECRETS" render local > "$TMP/messy-local.toml"
+
+check "a carriage return does not reach the config" \
+	grep -qx 'addr = "127.0.0.1:8451"' "$TMP/messy-prod.toml"
+check "a quoted value keeps exactly what is between its quotes" \
+	grep -qx 'addr = "127.0.0.1:18451"' "$TMP/messy-local.toml"
+
+# A value that must keep its spaces still can, by being quoted.
+{ cat "$TMP/messy.env"; printf 'DEV_DB="  spaced.db  "\n'; } > "$TMP/spaced.env"
+SECRETS_ENV="$TMP/spaced.env" "$SECRETS" render local > "$TMP/spaced.toml"
+check "a quoted value keeps its spaces" \
+	grep -qx 'path = "  spaced.db  "' "$TMP/spaced.toml"
+
+rm -f "$TMP/gh-vars"
+SECRETS_ENV="$TMP/messy.env" "$SECRETS" push > "$TMP/out" 2>&1 && pushed=yes || pushed=no
+check "push survives the round trip through a GitHub that trims" test "$pushed" = yes
+check "and GitHub holds the bare values" \
+	bash -c 'grep -qx "KEEP_BACKUPS=14" "$0" && grep -qx "APP_PORT=8451" "$0" && grep -qx "APP_DIR=stewards" "$0"' "$TMP/gh-vars"
 
 echo
 printf '%d passed, %d failed\n' "$pass" "$fail"
