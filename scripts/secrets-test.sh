@@ -60,7 +60,17 @@ cat > "$TMP/bin/gh" <<FAKE
 case "\$1 \$2" in
 "auth status")   exit 0 ;;
 "secret list")   cat "$TMP/gh-secrets" 2>/dev/null; exit 0 ;;
-"variable list") cat "$TMP/gh-vars" 2>/dev/null; exit 0 ;;
+"variable list")
+	# Lagging, while gh-stale counts down: the list shows the snapshot from
+	# before, as GitHub's does for a few seconds after a set.
+	n="\$(cat "$TMP/gh-stale" 2>/dev/null || echo 0)"
+	if [ "\$n" -gt 0 ]; then
+		echo "\$((n - 1))" > "$TMP/gh-stale"
+		cat "$TMP/gh-vars.before"
+	else
+		cat "$TMP/gh-vars" 2>/dev/null
+	fi
+	exit 0 ;;
 "variable set")
 	echo "\$*" >> "$TMP/gh-writes"
 	value="\$(cat)"
@@ -73,6 +83,11 @@ case "\$1 \$2" in
 esac
 FAKE
 chmod +x "$TMP/bin/gh"
+
+# sleep is on PATH too, so the read-back's waits cost nothing here; each call
+# is recorded so a test can see that it waited.
+printf '#!/bin/sh\necho "$1" >> "%s/slept"\n' "$TMP" > "$TMP/bin/sleep"
+chmod +x "$TMP/bin/sleep"
 export PATH="$TMP/bin:$PATH"
 
 run() { "$SECRETS" "$@" > "$TMP/out" 2>&1; }
@@ -234,6 +249,29 @@ SECRETS_ENV="$TMP/messy.env" "$SECRETS" push > "$TMP/out" 2>&1 && pushed=yes || 
 check "push survives the round trip through a GitHub that trims" test "$pushed" = yes
 check "and GitHub holds the bare values" \
 	bash -c 'grep -qx "KEEP_BACKUPS=14" "$0" && grep -qx "APP_PORT=8451" "$0" && grep -qx "APP_DIR=stewards" "$0"' "$TMP/gh-vars"
+
+echo
+echo "a GitHub that lags behind a set"
+# The bug behind "I have to run deploy-send-secrets twice": a changed value is
+# read back before GitHub's list reflects it. KEEP_BACKUPS was 13 on GitHub and
+# is 14 in the file; the list goes on saying 13 for two reads.
+sed 's/^KEEP_BACKUPS=.*/KEEP_BACKUPS=13/' "$TMP/gh-vars" > "$TMP/gh-vars.before"
+cp "$TMP/gh-vars.before" "$TMP/gh-vars"
+echo 2 > "$TMP/gh-stale"
+rm -f "$TMP/slept"
+
+SECRETS_ENV="$TMP/messy.env" "$SECRETS" push > "$TMP/out" 2>&1 && pushed=yes || pushed=no
+check "one push is enough when GitHub catches up within the wait" test "$pushed" = yes
+check "it said it was waiting, rather than failing" said "has not caught up"
+check "and it waited" test -s "$TMP/slept"
+
+# A value that never arrives is still a failure, and names both sides.
+cp "$TMP/gh-vars.before" "$TMP/gh-vars"
+echo 99 > "$TMP/gh-stale"
+SECRETS_ENV="$TMP/messy.env" "$SECRETS" push > "$TMP/out" 2>&1 && pushed=yes || pushed=no
+check "a value GitHub never shows is still a failure" test "$pushed" = no
+check "which names what was sent and what GitHub has" said "sent 14, GitHub has 13"
+rm -f "$TMP/gh-stale"
 
 echo
 printf '%d passed, %d failed\n' "$pass" "$fail"
