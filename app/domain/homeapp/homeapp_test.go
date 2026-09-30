@@ -11,6 +11,8 @@ import (
 	"github.com/jroedel/stewards/app/sdk/muxer"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
+	"github.com/jroedel/stewards/business/domain/user/stores/userdb"
+	"github.com/jroedel/stewards/business/domain/user/userbus"
 	"github.com/jroedel/stewards/business/types"
 	"github.com/jroedel/stewards/foundation/sqldb"
 )
@@ -29,6 +31,7 @@ func server(t *testing.T) (http.Handler, *placebus.Business) {
 	for _, init := range []func() error{
 		func() error { return sqldb.Init(t.Context(), db) },
 		func() error { return placedb.Init(t.Context(), db) },
+		func() error { return userdb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
 			t.Fatalf("Init: %v", err)
@@ -42,6 +45,7 @@ func server(t *testing.T) (http.Handler, *placebus.Business) {
 		DB:       db,
 		Expected: sqldb.Infrastructure,
 		Places:   places,
+		Users:    userbus.NewBusiness(slog.New(slog.DiscardHandler), userdb.NewStore(db), nil),
 	})
 	if err != nil {
 		t.Fatalf("muxer.New: %v", err)

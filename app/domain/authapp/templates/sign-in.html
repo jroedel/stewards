@@ -1,0 +1,22 @@
+{{define "title"}}Sign in · Garden stewards{{end}}
+{{define "signin-link"}}<a href="/">Back to the places list</a>{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow">Garden stewards</p>
+<h1>Sign in</h1>
+<p class="lead">For the stewards who edit places and plants. Volunteers don't need to sign in: everything you need is on the <a href="/">places list</a>.</p>
+
+{{if .Problem.EN}}<p class="problem" role="alert">{{say $l .Problem}}</p>{{end}}
+
+<form class="card form" method="post" action="/sign-in">
+  <input type="hidden" name="next" value="{{.Next}}">
+  <label for="email">Your email address</label>
+  <p class="help" id="email-help">We'll email you a link. There is no password.</p>
+  <input id="email" name="email" type="email" value="{{.Email}}" aria-describedby="email-help"
+         required autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false">
+  <button class="button" type="submit">Email me a link</button>
+</form>
+
+{{if .First}}<p class="aside">Setting this up for the first time? <a href="/sign-in/first">Use the one-time secret</a>.</p>{{end}}
+</div>
+{{end}}{{end}}

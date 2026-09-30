@@ -2,9 +2,9 @@
 // middleware every request passes through, the response-header policy, and the
 // server that runs it all.
 //
-// The origin check and body limit in front of writes are in mass-intentions'
-// copy of this file and not yet in this one. Nothing here accepts a write, and
-// they come back with the first form rather than sitting here untested.
+// The checks in front of a write -- where it came from, how big it is, and
+// that it is a form -- are in forms.go. They arrived with the sign-in form, the
+// first thing here that accepts one.
 //
 // Nothing here knows what a place or a species is. When two apps need the
 // same request middleware it belongs here; when they need the same page chrome

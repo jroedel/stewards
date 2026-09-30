@@ -1,6 +1,6 @@
 // Package mid holds the middleware that knows about this application but not
-// about any one domain: which language a request is in, and later, who is
-// signed in. Request plumbing with no domain words stays in foundation/web.
+// about any one domain: which language a request is in, and who is signed in.
+// Request plumbing with no domain words stays in foundation/web.
 package mid
 
 import (
@@ -18,7 +18,10 @@ const langCookie = "lang"
 
 type ctxKey int
 
-const langKey ctxKey = iota + 1
+const (
+	langKey ctxKey = iota + 1
+	stewardKey
+)
 
 // LangFrom is the language of the request, English outside one.
 func LangFrom(ctx context.Context) types.Lang {

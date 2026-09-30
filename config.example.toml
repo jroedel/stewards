@@ -1,11 +1,20 @@
 # Copy this to config.toml and edit it. config.toml is gitignored because it
-# will hold secrets once stewards sign in; this file is tracked because it is
-# the documentation. A key this binary does not know stops it at startup.
+# holds the mail relay's password and the bootstrap secret; this file is
+# tracked because it is the documentation. A key this binary does not know
+# stops it at startup.
+#
+# On the server this file is written by make deploy-send-secrets, from
+# secrets.env, and never edited by hand.
 
 [server]
 # The loopback address Apache proxies to. Never a public interface: TLS and the
 # public hostname are the front end's job.
 addr = "127.0.0.1:8451"
+
+# The public address, scheme and host only. Every form must be posted from a
+# page here, and the link in a sign-in email starts with it. Empty turns
+# sign-in off. http is accepted only for this machine.
+base_url = "http://127.0.0.1:8451"
 
 # How long in-flight requests get to finish on SIGTERM.
 shutdown_grace = "15s"
@@ -20,3 +29,20 @@ level = "info"
 
 # Empty means stderr, which is what the supervisor redirects into a log file.
 file = ""
+
+[auth]
+# A one-time secret for /sign-in/first, which lets the first steward in
+# without email. At least 32 characters (make bootstrap-secret). Empty means
+# the page is not served.
+bootstrap_secret = ""
+
+# [mail] is the relay sign-in links go out through. Leave the section out and
+# the app still runs, but nobody can be sent a link.
+#
+# [mail]
+# host = "smtp.example.org"
+# port = 587
+# user = ""
+# password = ""
+# from = "stewards@example.org"
+# from_name = "Garden stewards"
