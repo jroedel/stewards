@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/jroedel/stewards/app/sdk/muxer"
+	"github.com/jroedel/stewards/business/domain/place/placebus"
+	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
 	"github.com/jroedel/stewards/foundation/sqldb"
 )
 
@@ -39,6 +41,7 @@ func TestHealthzChecksTheSchema(t *testing.T) {
 				Log:      slog.New(slog.DiscardHandler),
 				DB:       db,
 				Expected: tc.want,
+				Places:   placebus.NewBusiness(placedb.NewStore(db), nil),
 			})
 			if err != nil {
 				t.Fatalf("New: %v", err)
