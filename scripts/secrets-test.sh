@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+#
+# Exercises scripts/secrets against a throwaway credentials file and a fake gh.
+#
+# Nothing here reaches GitHub or the server. gh is replaced on PATH by a script
+# that answers from files in a temporary directory, and every host is under
+# .invalid, which RFC 2606 guarantees never resolves -- so the ssh and HTTPS
+# sections fail at DNS, immediately, which is itself one of the things tested.
+set -euo pipefail
+
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SECRETS="$REPO_DIR/scripts/secrets"
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+pass=0
+fail=0
+
+check() {
+	local what="$1"; shift
+	if "$@"; then
+		printf '  ok   %s\n' "$what"; pass=$((pass + 1))
+	else
+		printf '  FAIL %s\n' "$what"; fail=$((fail + 1))
+	fi
+}
+
+# Never the real secrets.env: every run below points at the fixture.
+export SECRETS_ENV="$TMP/secrets.env"
+
+cat > "$SECRETS_ENV" <<'ENV'
+DEPLOY_SSH_HOST=example.invalid
+DEPLOY_SSH_USER=someuser
+DEPLOY_SSH_PORT=2222
+APP_HOST=stewards.example.invalid
+APP_PORT=8451
+APP_DIR=stewards
+APP_DOCROOT=public_html/stewards.example.invalid/public
+KEEP_BACKUPS=14
+DEV_ADDR="127.0.0.1:18451"
+ENV
+
+# A real throwaway key, so the decode-and-inspect path is exercised rather than
+# mocked. It never leaves this temporary directory.
+ssh-keygen -q -t ed25519 -f "$TMP/testkey" -C "test" -N ""
+printf 'DEPLOY_SSH_KEY_B64=%s\n' "$(base64 -w0 < "$TMP/testkey")" >> "$SECRETS_ENV"
+printf 'DEPLOY_KNOWN_HOSTS_B64=%s\n' "$(printf '[example.invalid]:2222 ssh-ed25519 AAAAC3Nz\n' | base64 -w0)" >> "$SECRETS_ENV"
+
+# The fake gh. Logged in; the secrets it lists are the lines of gh-secrets, the
+# variables are the name=value lines of gh-vars. Anything that tries to *set* a
+# value is recorded, so a test can assert nothing was sent.
+mkdir -p "$TMP/bin"
+cat > "$TMP/bin/gh" <<FAKE
+#!/usr/bin/env bash
+case "\$1 \$2" in
+"auth status")   exit 0 ;;
+"secret list")   cat "$TMP/gh-secrets" 2>/dev/null; exit 0 ;;
+"variable list") cat "$TMP/gh-vars" 2>/dev/null; exit 0 ;;
+*)               echo "\$*" >> "$TMP/gh-writes"; exit 0 ;;
+esac
+FAKE
+chmod +x "$TMP/bin/gh"
+export PATH="$TMP/bin:$PATH"
+
+run() { "$SECRETS" "$@" > "$TMP/out" 2>&1; }
+said() { grep -q -- "$1" "$TMP/out"; }
+
+echo "render"
+"$SECRETS" render production > "$TMP/prod.toml"
+"$SECRETS" render local      > "$TMP/local.toml"
+
+check "production listens on the loopback, on APP_PORT" \
+	grep -q '^addr = "127.0.0.1:8451"$' "$TMP/prod.toml"
+check "local uses DEV_ADDR and loses its quotes" \
+	grep -q '^addr = "127.0.0.1:18451"$' "$TMP/local.toml"
+
+echo
+echo "the rendered config is one the binary accepts"
+if go -C "$REPO_DIR" build -o "$TMP/stewards" ./cmd/stewards 2>/dev/null; then
+	accepts() { "$TMP/stewards" -config "$1" -check >/dev/null; }
+
+	check "production config passes the binary's own -check" accepts "$TMP/prod.toml"
+	check "and so does local" accepts "$TMP/local.toml"
+else
+	echo "  skip the binary would not build here"
+fi
+
+echo
+echo "secrets stay where they belong"
+# The policy is three lists in scripts/secrets. A key in two of them would be a
+# credential that push sends somewhere it must not go, so it is asserted rather
+# than reviewed.
+check "no key is in two destination groups at once" \
+	bash -c '
+	    eval "$(grep -E "^(DEPLOY_KEYS|VAR_KEYS|RUNTIME_KEYS)=" "'"$SECRETS"'")"
+	    printf "%s\n" "${DEPLOY_KEYS[@]}" "${VAR_KEYS[@]}" "${RUNTIME_KEYS[@]}" \
+	        | sort | uniq -d | grep -q . && exit 1
+	    exit 0'
+
+check "every key in the example file belongs to a group, or is local" \
+	bash -c '
+	    eval "$(grep -E "^(DEPLOY_KEYS|VAR_KEYS|RUNTIME_KEYS)=" "'"$SECRETS"'")"
+	    known=" ${DEPLOY_KEYS[*]} ${VAR_KEYS[*]} ${RUNTIME_KEYS[*]} "
+	    for k in $(sed -n "s/^\([A-Z][A-Z0-9_]*\)=.*/\1/p" "'"$REPO_DIR"'/secrets.env.example"); do
+	        case "$k" in DEV_*) continue ;; esac
+	        case "$known" in *" $k "*) ;; *) echo "$k goes nowhere" >&2; exit 1 ;; esac
+	    done'
+
+# gh sets a value from stdin only when --body is absent; `--body -` stores the
+# literal string "-". Nothing in the script may use that form.
+check "no gh secret or variable is set with --body" \
+	bash -c '! grep -E "gh (secret|variable) set[^|]*--body" "'"$SECRETS"'"'
+
+echo
+echo "the key lives in the file, not at a path"
+check "a base64 key round-trips byte-identical" \
+	bash -c '
+	    eval "$(grep "^DEPLOY_SSH_KEY_B64=" "$SECRETS_ENV")"
+	    printf "%s" "$DEPLOY_SSH_KEY_B64" | base64 -d | cmp -s - "'"$TMP"'/testkey"'
+
+echo
+echo "check, with everything on GitHub"
+printf '%s\n' DEPLOY_SSH_HOST DEPLOY_SSH_USER DEPLOY_SSH_PORT DEPLOY_SSH_KEY_B64 DEPLOY_KNOWN_HOSTS_B64 > "$TMP/gh-secrets"
+cat > "$TMP/gh-vars" <<'VARS'
+APP_HOST=stewards.example.invalid
+APP_PORT=8451
+APP_DIR=stewards
+APP_DOCROOT=public_html/stewards.example.invalid/public
+KEEP_BACKUPS=14
+VARS
+
+check "a complete file and a matching GitHub pass" run check
+check "the host key is recognised in its [host]:port form" said "pinned for \[example.invalid\]:2222"
+
+echo
+echo "check, catching what is wrong"
+sed -i 's/^APP_PORT=8451$/APP_PORT=9999/' "$TMP/gh-vars"
+check "a variable GitHub holds differently is a failure" bash -c '! "$0" check >/dev/null 2>&1' "$SECRETS"
+sed -i 's/^APP_PORT=9999$/APP_PORT=8451/' "$TMP/gh-vars"
+
+sed '/^DEPLOY_SSH_KEY_B64$/d' "$TMP/gh-secrets" > "$TMP/gh-secrets.partial"
+cp "$TMP/gh-secrets" "$TMP/gh-secrets.full"
+cp "$TMP/gh-secrets.partial" "$TMP/gh-secrets"
+check "a secret missing from GitHub is a failure" bash -c '! "$0" check >/dev/null 2>&1' "$SECRETS"
+cp "$TMP/gh-secrets.full" "$TMP/gh-secrets"
+
+sed "s/^DEPLOY_SSH_KEY_B64=.*/DEPLOY_SSH_KEY_B64=not!valid!base64/" "$SECRETS_ENV" > "$TMP/bad.env"
+check "a corrupt key is refused before a deploy uses it" \
+	bash -c '! SECRETS_ENV="$1" "$0" check >/dev/null 2>&1' "$SECRETS" "$TMP/bad.env"
+
+sed "s|^APP_DIR=.*|APP_DIR=public_html/stewards|" "$SECRETS_ENV" > "$TMP/exposed.env"
+SECRETS_ENV="$TMP/exposed.env" "$SECRETS" check > "$TMP/out" 2>&1 || true
+check "an APP_DIR inside public_html is refused" said "is inside public_html"
+
+check "a missing credentials file is an error, not a default" \
+	bash -c '! SECRETS_ENV=/nonexistent "$0" check >/dev/null 2>&1' "$SECRETS"
+
+# A credentials file is not a script. Sourcing one would run this.
+cp "$SECRETS_ENV" "$TMP/hostile.env"
+printf 'APP_HOST=$(touch %s/pwned)\n' "$TMP" >> "$TMP/hostile.env"
+SECRETS_ENV="$TMP/hostile.env" "$SECRETS" render production > /dev/null 2>&1 || true
+check "secrets.env is parsed, not executed" test ! -e "$TMP/pwned"
+
+echo
+echo "status"
+# The server and the public address are under .invalid, so status must say
+# not ready -- and it must say so after running every section, not at the first
+# one that fails. A readiness report that stops early is run six times.
+check "is not ready when the server cannot be reached" bash -c '! "$0" status >/dev/null 2>&1' "$SECRETS"
+run status || true
+check "reports the server section" said "the server"
+check "names the unreachable server" said "could not reach someuser@example.invalid"
+check "gets past it to the public check" said "does not resolve. Add an A record"
+check "gets past that to the pipeline" said "the deploy pipeline"
+check "and says the pipeline is not written yet, when it is not" \
+	bash -c '[ -e "$0/deploy/deploy.sh" ] || grep -q "deploy/deploy.sh is not written yet" "$1"' "$REPO_DIR" "$TMP/out"
+check "ends with one verdict" said "not ready: "
+
+echo
+echo "nothing was sent"
+check "check and status never set a GitHub secret or variable" test ! -e "$TMP/gh-writes"
+
+echo
+printf '%d passed, %d failed\n' "$pass" "$fail"
+test "$fail" -eq 0
