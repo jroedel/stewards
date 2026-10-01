@@ -143,3 +143,80 @@ func TestTheCardWorksWithSignInOff(t *testing.T) {
 		t.Errorf("with sign-in off the card route is not mounted: %d", w.Code)
 	}
 }
+
+// A steward adds to a list from the card: a "+ Add" under each list, whose
+// form fixes the list's action, offers only plants not yet listed, and comes
+// back to the card at that list. A volunteer sees none of it.
+func TestAStewardAddsToAListFromTheCard(t *testing.T) {
+	s := serve(t)
+	s.pilot()
+
+	garden := s.place("rain-garden").ID.String()
+	sedge := s.plant("cherokee-sedge", "Cherokee sedge", "#7a8b3c")
+	winecup := s.plant("winecup", "Winecup", "#8e1b4b")
+
+	if w := s.list(garden, sedge, "protect", true, "in the inflow"); w.Code != http.StatusSeeOther {
+		t.Fatalf("listing the sedge: %d", w.Code)
+	}
+
+	body := s.get("/places/rain-garden").Body.String()
+
+	for _, id := range []string{"add-planned", "add-protect", "add-pull", "add-careful"} {
+		if !strings.Contains(body, `popovertarget="`+id+`"`) || !strings.Contains(body, `id="`+id+`" class="add-popover" popover`) {
+			t.Errorf("the card has no %s", id)
+		}
+	}
+
+	// Each form says its own action, and the Planned one says planned.
+	pull := body[strings.Index(body, `id="add-pull"`):]
+	pull = pull[:strings.Index(pull, "</form>")]
+
+	for _, want := range []string{`name="action" value="pull"`, `name="return" value="card"`, ">Winecup</option>", `name="note_es"`} {
+		if !strings.Contains(pull, want) {
+			t.Errorf("the Pull form does not have %s", want)
+		}
+	}
+
+	if strings.Contains(pull, "Cherokee sedge") || strings.Contains(pull, `name="planned"`) {
+		t.Error("the Pull form offers a plant already listed here, or says planned")
+	}
+
+	planned := body[strings.Index(body, `id="add-planned"`):]
+	if planned = planned[:strings.Index(planned, "</form>")]; !strings.Contains(planned, `name="planned" value="yes"`) || !strings.Contains(planned, `name="action" value="protect"`) {
+		t.Error("the Planned form does not list as protect and planned")
+	}
+
+	// Adding from it comes back to the card, at the list.
+	w := s.post("/steward/places/"+garden+"/plants", url.Values{
+		"species": {winecup}, "action": {"pull"}, "note_en": {"seedlings along the path"},
+		"note_es": {"plántulas junto al camino"}, "return": {"card"},
+	})
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/places/rain-garden#pull-h" {
+		t.Fatalf("adding from the card: %d %q", w.Code, w.Header().Get("Location"))
+	}
+
+	body = s.get("/places/rain-garden").Body.String()
+	if !strings.Contains(body, "seedlings along the path") {
+		t.Error("the card does not list what was added")
+	}
+
+	// A volunteer sees the lists, and no way to change them.
+	if public := s.getAs("/places/rain-garden", "").Body.String(); strings.Contains(public, "add-popover") || strings.Contains(public, "+ Add") {
+		t.Error("a volunteer is shown the add forms")
+	}
+}
+
+// The return word is a word, not an address: anything but "card" goes back
+// to the Plants screen, as before.
+func TestAddingFromThePlantsScreenStaysThere(t *testing.T) {
+	s := serve(t)
+	s.pilot()
+
+	garden := s.place("rain-garden").ID.String()
+	sp := s.plant("winecup", "Winecup", "#8e1b4b")
+
+	w := s.post("/steward/places/"+garden+"/plants", url.Values{"species": {sp}, "action": {"protect"}, "return": {"https://example.com/"}})
+	if loc := w.Header().Get("Location"); w.Code != http.StatusSeeOther || loc != "/steward/places/"+garden+"/plants?done=saved" {
+		t.Errorf("a return that is not card: %d %q", w.Code, loc)
+	}
+}

@@ -536,3 +536,22 @@ input[type="file"] { display: block; width: 100%; min-height: 48px; padding: 10p
 .key-new h2 { margin: 0 0 4px; }
 .key { margin: 10px 0; padding: 12px; border-radius: 8px; background: var(--sf-neutral); font: 15px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; user-select: all; }
 code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+
+/* A list's "+ Add" on a place card, for a steward (placeapp's cardAdd): a
+   dashed button under the list, and its form in a popover the browser opens
+   and closes from the button, with no script. Centred over a dimmed page;
+   a browser without popover shows the form in place instead. */
+.card-add { margin-top: 12px; }
+.add-button {
+  font: inherit; font-size: 15px; font-weight: 700; color: var(--sf-blue);
+  background: var(--sf-white); border: 1px dashed currentColor; border-radius: 8px;
+  padding: 6px 14px; min-height: 40px; cursor: pointer;
+}
+.add-popover {
+  width: min(28rem, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
+  padding: 18px; border: 1px solid var(--rule); border-radius: 12px;
+  background: var(--sf-white); color: var(--sf-ink); box-shadow: 0 10px 40px rgba(35, 31, 32, .3);
+}
+.add-popover::backdrop { background: rgba(35, 31, 32, .45); }
+.add-popover h2 { margin-top: 0; }
+.add-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }

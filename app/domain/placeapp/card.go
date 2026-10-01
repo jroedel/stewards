@@ -137,6 +137,69 @@ type cardView struct {
 
 	// EditURL is set only for a signed-in steward.
 	EditURL string
+
+	// Adds is each list's "+ Add", set only for a signed-in steward.
+	Adds *cardAdds
+}
+
+// cardAdd is one list's "+ Add": a button under the list that opens a form
+// in a popover, posting to the Plants screen's own handler (setPlant) with
+// the list's action fixed and a word asking to come back to the card.
+//
+// A popover rather than a dialog because the browser opens and closes it
+// from the button's popovertarget alone, with no script, and the pages have
+// none (page.Policy). A browser too old for popover shows the form in place
+// under its list, which still works.
+type cardAdd struct {
+	ID      string // the popover's id
+	Title   string
+	Help    string
+	Action  listingbus.Action
+	Planned bool
+	PostURL string
+	Species []option // the plants not yet listed here, by name
+}
+
+type cardAdds struct {
+	Planned, Protect, Pull, Careful cardAdd
+
+	// None is true when every plant is already listed here, and there is
+	// nothing to offer.
+	None bool
+}
+
+// addsFor builds the four forms. A plant already listed here is left out:
+// saving a listing replaces it, and a plant moved from Protect to Pull by a
+// form that looked like adding would be the mistake the panels exist to
+// prevent. Moving one is done on the Plants screen, where its row says what
+// it is now.
+func addsFor(p placebus.Place, species map[types.ID]speciesbus.Species, listed []listingbus.Listing) *cardAdds {
+	here := map[types.ID]bool{}
+	for _, l := range listed {
+		here[l.SpeciesID] = true
+	}
+
+	var opts []option
+	for id, sp := range species {
+		if !here[id] {
+			opts = append(opts, option{Value: id.String(), Label: sp.Common.EN})
+		}
+	}
+
+	slices.SortFunc(opts, func(x, y option) int { return cmp.Compare(strings.ToLower(x.Label), strings.ToLower(y.Label)) })
+
+	post := "/steward/places/" + p.ID.String() + "/plants"
+	add := func(id, title, help string, act listingbus.Action, planned bool) cardAdd {
+		return cardAdd{ID: id, Title: title, Help: help, Action: act, Planned: planned, PostURL: post, Species: opts}
+	}
+
+	return &cardAdds{
+		Planned: add("add-planned", "Add to Planned here", "Part of the planting: it goes on the Planned list, the bloom calendar and Protect.", listingbus.Protect, true),
+		Protect: add("add-protect", "Add to Protect", "Found growing here, and to be left alone.", listingbus.Protect, false),
+		Pull:    add("add-pull", "Add to Pull", "Volunteers see it under Pull straight away, so list only what you are sure of.", listingbus.Pull, false),
+		Careful: add("add-careful", "Add to Careful", "It stays or goes as the note says, and volunteers handle it with gloves on.", listingbus.Careful, false),
+		None:    len(opts) == 0,
+	}
 }
 
 func (a app) card(w http.ResponseWriter, r *http.Request) {
@@ -260,6 +323,7 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 
 	if _, ok := mid.StewardFrom(ctx); ok {
 		v.EditURL = "/steward/places/" + p.ID.String() + "/edit"
+		v.Adds = addsFor(p, species, listed)
 	}
 
 	a.render.Render(w, r, http.StatusOK, "place", v)
