@@ -126,38 +126,77 @@ func Prepare(data []byte) (Prepared, error) {
 
 	p := Prepared{Format: format, Taken: meta.taken}
 
-	if p.Large, err = sized(src, LargeSide, meta.orientation); err != nil {
+	// The small picture is made from the large one rather than from the
+	// original: the large has already done the expensive part, and from
+	// 1600 to 800 is one exact halving.
+	large := shrink(src, LargeSide)
+
+	if p.Large, err = encoded(large, meta.orientation); err != nil {
 		return Prepared{}, err
 	}
 
-	if p.Small, err = sized(src, SmallSide, meta.orientation); err != nil {
+	if p.Small, err = encoded(shrink(large, SmallSide), meta.orientation); err != nil {
 		return Prepared{}, err
 	}
 
 	return p, nil
 }
 
-// sized scales src so its longer side is at most side, turns it upright, and
-// encodes it. Never larger than the original: a small borrowed photo is
-// re-encoded at its own size rather than blown up.
+// shrink scales src so its longer side is at most side, onto white. Never
+// larger than the original: a small borrowed photo is re-encoded at its own
+// size rather than blown up.
 //
-// Scaled before it is turned, because turning is a pixel-by-pixel copy and
-// the scaled image has a fraction of the pixels.
-func sized(src image.Image, side, orientation int) (Picture, error) {
+// It halves the photo exactly while it is at least twice the size wanted,
+// and only then makes the one last step, of less than half, bilinearly. An
+// exact halving with ApproxBiLinear samples halfway between each pair of
+// source pixels in both directions, so every output pixel is the plain
+// average of a 2×2 block: a box filter, which is what a large reduction
+// needs to keep a leaf's hairs from turning into noise. The last step is too
+// small for bilinear's weakness at large reductions -- skipping pixels --
+// to show.
+//
+// This replaced x/image/draw's CatmullRom, which is sharper by a margin
+// nobody can see at a card's size and costs memory in proportion to the
+// original. Its two-pass scaler keeps 32 bytes per (output width × source
+// height): 79 MB for the large picture of a 3-megapixel photo and 150 MB of
+// a 12-megapixel one, and it was being paid twice, once per size. Five
+// uploads in a row on the shared host (2026-10-01) and the process died
+// with nothing in its log -- no panic, no "out of memory" from the runtime
+// -- which is what the account's memory limit looks like from inside.
+// Halving holds nothing but the halved picture itself: the same five photos
+// peak at 40 MB rather than 319 MB.
+func shrink(src image.Image, side int) *image.RGBA {
 	b := src.Bounds()
 	w, h := b.Dx(), b.Dy()
+
+	for max(w, h) >= 2*side {
+		w, h = max(1, w/2), max(1, h/2)
+
+		half := image.NewRGBA(image.Rect(0, 0, w, h))
+		xdraw.ApproxBiLinear.Scale(half, half.Bounds(), src, src.Bounds(), xdraw.Src, nil)
+		src = half
+	}
 
 	if long := max(w, h); long > side {
 		w, h = max(1, w*side/long), max(1, h*side/long)
 	}
 
 	// Onto white, so a PNG's transparent parts are paper rather than the
-	// black a JPEG would otherwise make of them.
+	// black a JPEG would otherwise make of them. The halvings above copy
+	// with Src, which keeps the alpha for this step to composite.
 	dst := image.NewRGBA(image.Rect(0, 0, w, h))
 	xdraw.Draw(dst, dst.Bounds(), image.NewUniform(color.White), image.Point{}, xdraw.Src)
-	xdraw.CatmullRom.Scale(dst, dst.Bounds(), src, b, xdraw.Over, nil)
+	xdraw.ApproxBiLinear.Scale(dst, dst.Bounds(), src, src.Bounds(), xdraw.Over, nil)
 
-	out := orient(dst, orientation)
+	return dst
+}
+
+// encoded turns a scaled picture upright and encodes it.
+//
+// Turned after it is scaled, because turning is a pixel-by-pixel copy and
+// the scaled image has a fraction of the pixels.
+func encoded(img *image.RGBA, orientation int) (Picture, error) {
+	out := orient(img, orientation)
 
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, out, &jpeg.Options{Quality: quality}); err != nil {

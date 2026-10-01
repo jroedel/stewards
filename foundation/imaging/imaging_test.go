@@ -7,8 +7,10 @@ import (
 	"hash/crc32"
 	"image"
 	"image/color"
+	"image/draw"
 	"image/jpeg"
 	"image/png"
+	"runtime"
 	"testing"
 )
 
@@ -276,4 +278,80 @@ func TestBrokenEXIFIsIgnored(t *testing.T) {
 	if m := readEXIF(withEXIF(jpegOf(t, picture(400, 300)), 6, "0000:00:00 00:00:00"), "jpeg"); m.taken != (Taken{}) || m.orientation != 6 {
 		t.Errorf("an unset camera clock: %+v", m)
 	}
+}
+
+// A phone's photo must not cost memory in proportion to its size. The host
+// is shared and the account's memory is capped: CatmullRom's scaler, which
+// this replaced, allocated about 230 MB for a photo like this one, and five
+// uploads in a row took the process down. Halving needs the decoded photo
+// (18 MB here), the half (12 MB) and the pictures it keeps.
+func TestAPhonePhotoIsShrunkWithoutCostingItsSizeInMemory(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 4032, 3024))
+	fill(img, img.Bounds(), color.RGBA{0, 0, 255, 255})
+	fill(img, image.Rect(0, 0, 2016, 1512), color.RGBA{255, 0, 0, 255})
+	src := jpegOf(t, img)
+
+	runtime.GC()
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+
+	p, err := Prepare(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runtime.ReadMemStats(&after)
+
+	if p.Large.Width != 1600 || p.Large.Height != 1200 || p.Small.Width != 800 || p.Small.Height != 600 {
+		t.Errorf("large %d×%d, small %d×%d", p.Large.Width, p.Large.Height, p.Small.Width, p.Small.Height)
+	}
+
+	if used := (after.TotalAlloc - before.TotalAlloc) >> 20; used > 80 {
+		t.Errorf("preparing a 12-megapixel photo allocated %d MB; it should need well under 80", used)
+	}
+}
+
+// A pattern finer than the picture can show must come out as its average,
+// not as one of its colours. One-pixel stripes of black and white, shrunk to
+// less than a third, are grey everywhere if every pixel was counted. Bilinear
+// in one step reads two neighbours per output pixel and skips the rest, so
+// across the row it lands on black pairs, white pairs and mixed ones in turn.
+// 5000 rather than a power of two, because at exactly 4:1 bilinear happens to
+// sample a black and a white stripe each time and comes out grey by luck.
+func TestFineDetailIsAveragedNotSkipped(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 5000, 400))
+	fill(img, img.Bounds(), color.RGBA{255, 255, 255, 255})
+
+	for x := 0; x < 5000; x += 2 {
+		fill(img, image.Rect(x, 0, x+1, 400), color.RGBA{0, 0, 0, 255})
+	}
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := Prepare(buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, b := range map[string][]byte{"large": p.Large.JPEG, "small": p.Small.JPEG} {
+		out := decode(t, b)
+		y := out.Bounds().Dy() / 2
+
+		// The edges are left out: there the filter has only one side.
+		for x := 2; x < out.Bounds().Dx()-2; x++ {
+			if r, _, _, _ := out.At(x, y).RGBA(); r < 0x6000 || r > 0xA000 {
+				t.Errorf("the %s picture's stripes came out %#x at x=%d, not grey", name, r, x)
+
+				break
+			}
+		}
+	}
+}
+
+func fill(img *image.RGBA, r image.Rectangle, c color.RGBA) {
+	draw.Draw(img, r, image.NewUniform(c), image.Point{}, draw.Src)
 }
