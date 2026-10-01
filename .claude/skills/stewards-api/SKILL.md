@@ -106,11 +106,19 @@ for telling it from a look-alike out of bloom), `flower` (a close-up),
 separate on purpose; a photo showing both is the one that shows the leaf
 better.
 
-- **Borrowed** photos come from Wikimedia Commons or iNaturalist under an open
-  licence. Take the author, licence short name and the photo's page from the
-  Commons API (`prop=imageinfo&iiprop=url|extmetadata`: `Artist`,
-  `LicenseShortName`, `descriptionurl`), not from memory. Skip anything not
-  under an open licence (CC0, CC BY, CC BY-SA).
+- **Borrowed** photos come from iNaturalist or Wikimedia Commons. The
+  stewards have decided CC0, CC BY, CC BY-SA and **CC BY-NC** are all fine
+  (the site is a non-commercial ministry, which is the use BY-NC allows).
+  Never ND, and never all-rights-reserved. Take the author, licence and the
+  photo's page from the source's API, not from memory: on iNaturalist the
+  photo's `license_code` and the observer's name, with
+  `https://www.inaturalist.org/photos/<id>` as its page; on Commons
+  `prop=imageinfo&iiprop=url|extmetadata` (`Artist`, `LicenseShortName`,
+  `descriptionurl`).
+- **Cultivars** get their own plant record when they look different from the
+  species (a white autumn sage, a pink Turk's cap), with photos of that
+  cultivar. A cultivar that looks like the species shares its record, and is
+  named in the note.
 - **Our own** photos are `source=ours`, with `place` as a slug from
   `/api/v1/places` when the person says where it was taken.
 - **Never upload a photo in which a person can be recognised.** Volunteers are
