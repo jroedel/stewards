@@ -39,12 +39,13 @@ import (
 const base = "https://stewards.example.invalid"
 
 type site struct {
-	t       *testing.T
-	h       http.Handler
-	species *speciesbus.Business
-	places  *placebus.Business
-	cookie  *http.Cookie
-	key     string
+	t        *testing.T
+	h        http.Handler
+	species  *speciesbus.Business
+	places   *placebus.Business
+	listings *listingbus.Business
+	cookie   *http.Cookie
+	key      string
 }
 
 func serve(t *testing.T) *site {
@@ -77,16 +78,17 @@ func serve(t *testing.T) *site {
 	log := slog.New(slog.DiscardHandler)
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
 	s := &site{
-		t:       t,
-		species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
-		places:  placebus.NewBusiness(placedb.NewStore(db), nil),
+		t:        t,
+		species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
+		places:   placebus.NewBusiness(placedb.NewStore(db), nil),
+		listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
 	}
 
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
 		Places: s.places, Species: s.species, Users: users,
 		Photos:   photobus.NewBusiness(photodb.NewStore(db), files, nil),
-		Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
+		Listings: s.listings,
 		BaseURL:  base, Mail: &mail.Recorder{},
 	}); err != nil {
 		t.Fatal(err)
@@ -260,6 +262,7 @@ func TestTheIndexListsWhatIsThere(t *testing.T) {
 	for _, want := range []string{
 		"GET /api/v1", "GET /api/v1/places", "GET /api/v1/species", "GET /api/v1/species/{slug}",
 		"PUT /api/v1/species/{slug}", apiapp.UploadPattern,
+		"GET /api/v1/places/{slug}/plants", "PUT /api/v1/places/{slug}/plants/{species}",
 	} {
 		if !seen[want] {
 			t.Errorf("the index does not list %s", want)
@@ -525,5 +528,89 @@ func TestAPhotoArrivesUncheckedAndOnce(t *testing.T) {
 
 	if w := s.upload("not-a-plant", fields, data); w.Code != http.StatusNotFound {
 		t.Errorf("a photo of a plant that is not there: %d", w.Code)
+	}
+}
+
+// A plant is listed at a place the way a plant is added: created, then
+// unchanged when sent again, then updated. And never to pull: a listing is on
+// the place card at once, with no box for a steward to tick first.
+func TestAPlantIsListedAtAPlaceButNeverToPull(t *testing.T) {
+	s := serve(t)
+
+	bed, err := s.places.Create(t.Context(), placebus.Fields{Slug: "skinny-bed", Name: types.Text{EN: "Skinny bed"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if w := s.put("winecup", winecup()); w.Code != http.StatusCreated {
+		t.Fatalf("adding the plant: %d", w.Code)
+	}
+
+	list := func(place, species string, body any) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(body)
+
+		return s.api(http.MethodPut, "/api/v1/places/"+place+"/plants/"+species, s.key, bytes.NewReader(b), "application/json")
+	}
+
+	type answer struct {
+		Outcome string             `json:"outcome"`
+		Listing apiapp.ListingJSON `json:"listing"`
+	}
+
+	planted := map[string]any{"action": "protect", "planned": true, "note": map[string]string{"en": "6 plants, at the shady end"}}
+
+	w := list("skinny-bed", "winecup", planted)
+	if got := decode[answer](t, w); w.Code != http.StatusCreated || got.Outcome != "created" || !got.Listing.Planned || got.Listing.Action != "protect" {
+		t.Fatalf("created: %d %+v", w.Code, got)
+	}
+
+	if w := list("skinny-bed", "winecup", planted); w.Code != http.StatusOK || decode[answer](t, w).Outcome != "unchanged" {
+		t.Errorf("sent again: %d %s", w.Code, w.Body.String())
+	}
+
+	planted["note"] = map[string]string{"en": "4 plants, at the shady end"}
+	if w := list("skinny-bed", "winecup", planted); w.Code != http.StatusOK || decode[answer](t, w).Outcome != "updated" {
+		t.Errorf("a changed note: %d %s", w.Code, w.Body.String())
+	}
+
+	// Pull is refused with the reason, and the listing is left as it was.
+	w = list("skinny-bed", "winecup", map[string]any{"action": "pull"})
+	if p := decode[problem](t, w); w.Code != http.StatusUnprocessableEntity || p.Error.Field != "action" || !strings.Contains(p.Error.Problem, "Plants screen") {
+		t.Errorf("pull: %d %+v", w.Code, p)
+	}
+
+	if w := list("skinny-bed", "winecup", map[string]any{"action": "weed"}); w.Code != http.StatusUnprocessableEntity || decode[problem](t, w).Error.Field != "action" {
+		t.Errorf("an action that is not one: %d", w.Code)
+	}
+
+	// A steward's pull may be turned into protect: the safe direction.
+	sp, _ := s.species.BySlug(t.Context(), "winecup")
+	if _, err := s.listings.Set(t.Context(), bed.ID, sp.ID, listingbus.Fields{Action: listingbus.Pull}); err != nil {
+		t.Fatal(err)
+	}
+
+	if w := list("skinny-bed", "winecup", planted); w.Code != http.StatusOK || decode[answer](t, w).Outcome != "updated" {
+		t.Errorf("protecting what a steward marked to pull: %d %s", w.Code, w.Body.String())
+	}
+
+	// Neither the place nor the plant is made by listing.
+	if w := list("no-such-place", "winecup", planted); w.Code != http.StatusNotFound || decode[problem](t, w).Error.Field != "slug" {
+		t.Errorf("an unknown place: %d", w.Code)
+	}
+
+	if w := list("skinny-bed", "no-such-plant", planted); w.Code != http.StatusNotFound || decode[problem](t, w).Error.Field != "species" {
+		t.Errorf("an unknown plant: %d", w.Code)
+	}
+
+	// And it reads back.
+	type listed struct {
+		Place  string               `json:"place"`
+		Plants []apiapp.ListingJSON `json:"plants"`
+	}
+
+	got := decode[listed](t, s.api(http.MethodGet, "/api/v1/places/skinny-bed/plants", s.key, nil, ""))
+	if got.Place != "skinny-bed" || len(got.Plants) != 1 || got.Plants[0].Species != "winecup" || got.Plants[0].Note.EN != "4 plants, at the shady end" ||
+		got.Plants[0].CardURL != base+"/plants/winecup" {
+		t.Errorf("read back: %+v", got)
 	}
 }

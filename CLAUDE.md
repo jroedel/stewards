@@ -150,14 +150,16 @@ A question about *behaviour* starts in `business/domain/…bus`. A question abou
   what you need and why, and let the person run the target and paste the
   answer.
 - **Content reaches the live app through its API, and only when a person
-  asks for it.** Adding plants and their photos at a steward's request is
-  what `/api/v1` and the `stewards-api` skill are for, with the steward's
-  own key from `STEWARDS_API_KEY`. That is the steward using their app, not
-  an agent operating the server, so it is not a way around the rule above:
-  never as a test, never while developing, and never to read or change
-  anything but plants and photos. The API confirms nothing and checks no
-  photo, so nothing an agent sends reaches a volunteer until a person has
-  looked at it.
+  asks for it.** Adding plants, their photos and where they grow at a
+  steward's request is what `/api/v1` and the `stewards-api` skill are for,
+  with the steward's own key from `STEWARDS_API_KEY`. That is the steward
+  using their app, not an agent operating the server, so it is not a way
+  around the rule above: never as a test, never while developing, and never
+  to read or change anything but plants, photos and listings. The API
+  confirms no plant and checks no photo, so neither reaches a volunteer
+  until a person has looked at it. A listing is the exception -- it is on
+  the place card as soon as it is made -- which is why the API may only
+  protect a plant or mark it careful, never tell volunteers to pull one.
 - **Agents never set GitHub secrets or variables**, and never read
   `secrets.env`. The split mass-intentions uses applies here: `DEPLOY_*` are
   GitHub secrets, `APP_*` are GitHub variables, and runtime credentials go to

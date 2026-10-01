@@ -1,9 +1,9 @@
 ---
 name: stewards-api
-description: Add plants and their photos to the live garden steward app through its API, as the steward whose key is in STEWARDS_API_KEY. Use when the person asks to upload, import or add species data or species photos to the site — not for developing the app.
+description: Add plants, their photos and where they grow to the live garden steward app through its API, as the steward whose key is in STEWARDS_API_KEY. Use when the person asks to upload, import or add species data, species photos or a place's plants to the site — not for developing the app.
 ---
 
-# Adding plants and photos through the API
+# Adding plants, photos and listings through the API
 
 The garden steward app has a JSON API at `/api/v1` for exactly this: a
 steward's own Claude adding plants and photos without typing them into the
@@ -46,6 +46,12 @@ to be read at all (CLAUDE.md §6).
   photos were wingstem; a source saying a name is not the same as the plant
   being that species.
 - **It removes nothing.** Removing is a person's job on the screens.
+- **It never says pull.** A listing (a plant at a place) has no box for a
+  steward to tick first; it is on the place card the moment it is made. So
+  an import may protect a plant or mark it careful, and only a steward on
+  the place's Plants screen marks one to pull. Do not try to get round it
+  with a note that says "pull": tell the person which plants you think are
+  to be pulled, and let them do it.
 - **A change to a confirmed plant clears its confirmation.** The answer says
   `"confirmation_cleared": true`. Before changing a confirmed plant, tell the
   person it will need confirming again.
@@ -77,7 +83,19 @@ to be read at all (CLAUDE.md §6).
      -F 'source_url=https://commons.wikimedia.org/wiki/File:…'
    ```
 
-5. **Report** what was created, updated, unchanged and duplicate, and give the
+5. **List plants at places** with
+   `PUT /api/v1/places/<place>/plants/<species>`, once the plant exists:
+
+   ```sh
+   scripts/stewards-api PUT /api/v1/places/skinny-basement-bed/plants/pigeonberry \
+     --json '{"action": "protect", "planned": true, "note": {"en": "6 plants, at the shady end"}}'
+   ```
+
+   `planned` is true for what was planted there on purpose (it goes on the
+   place's Planned list and bloom calendar), false for what was found
+   growing. There is no count or zone field: put them in the note.
+   `GET /api/v1/places/<place>/plants` reads back what a place lists.
+6. **Report** what was created, updated, unchanged and duplicate, and give the
    person the `photos_url` of each plant: that screen is where they check the
    photos, one by one, before any volunteer sees them.
 
