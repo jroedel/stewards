@@ -214,7 +214,7 @@ func addsFor(p placebus.Place, species map[types.ID]speciesbus.Species, listed [
 		return cardAdd{ID: id, Title: title, Help: help, Action: act, Planned: planned, PostURL: post, Species: opts}
 	}
 
-	toPlant := add("add-planned", "Add to To plant", "Not in the ground yet, or more are going in: it goes on To plant and Protect until a steward marks it planted. Say how many in the note.", listingbus.Protect, true)
+	toPlant := add("add-planned", "Add to To plant", "Not in the ground yet, or more are going in: it goes on To plant and Protect until a steward marks it growing. Say how many in the note.", listingbus.Protect, true)
 	toPlant.Growing = growing
 
 	return &cardAdds{

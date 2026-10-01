@@ -88,7 +88,7 @@ func (a app) setPlant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// From the card, an empty note leaves the plant's note as it is. The
-	// card's Planted button and its "plant more" both send none, and change
+	// card's Growing button and its "plant more" both send none, and change
 	// only whether the plant is on To plant; a steward clearing a note does
 	// it on this screen, where the note is in front of them.
 	if fromCard := r.PostFormValue("return") == "card"; fromCard && f.Note.Trimmed().EN == "" && f.Note.Trimmed().ES == "" {
