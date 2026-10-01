@@ -3,8 +3,15 @@
 # stewards-api METHOD PATH [curl options...]
 #
 # Calls the garden stewards' API as the steward whose key is in
-# STEWARDS_API_KEY. This is what a steward's own Claude uses to add plants and
-# photos; see .claude/skills/stewards-api/SKILL.md.
+# STEWARDS_API_KEY, or else in the file STEWARDS_API_KEY_FILE names
+# (~/.config/stewards/api-key by default). This is what a steward's own Claude
+# uses to add plants and photos; see .claude/skills/stewards-api/SKILL.md.
+#
+# The file is the way to give Claude Code a key: its shell does not keep
+# variables between commands, and the key must not go in secrets.env, which
+# agents are never allowed to read (CLAUDE.md §6) and which holds the deploy
+# key besides. The file is read here and the key handed to curl; it is never
+# printed, so whoever runs this script does not see it either.
 #
 #   scripts/stewards-api GET /api/v1                       the index: start here
 #   scripts/stewards-api GET /api/v1/species
@@ -44,9 +51,21 @@ base="${base%/}"
 
 curl_opts=(--silent --show-error --fail-with-body --request "$method")
 
+key_file="${STEWARDS_API_KEY_FILE:-$HOME/.config/stewards/api-key}"
+if [ -z "${STEWARDS_API_KEY:-}" ] && [ -f "$key_file" ]; then
+	# A key file others can read is a key others have. Refused rather than
+	# warned about, because the warning is the line nobody reads.
+	case "$(stat -c %a "$key_file" 2>/dev/null || stat -f %Lp "$key_file")" in
+	600 | 400) ;;
+	*) die "$key_file can be read by others. Run: chmod 600 $key_file" ;;
+	esac
+
+	STEWARDS_API_KEY="$(tr -d '[:space:]' < "$key_file")"
+fi
+
 if [ -z "${STEWARDS_API_KEY:-}" ]; then
 	if [ "$path" != /api/v1 ] && [ "$path" != /api/v1/ ]; then
-		die "STEWARDS_API_KEY is not set. A steward makes a key at $base/steward/keys and sets it in their own shell; it is never written into this repository"
+		die "no API key: STEWARDS_API_KEY is not set and $key_file does not exist. A steward makes a key at $base/steward/keys and saves it in that file (chmod 600); it is never written into this repository"
 	fi
 
 	exec curl "${curl_opts[@]}" "$@" "$base$path"

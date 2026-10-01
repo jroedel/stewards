@@ -25,14 +25,18 @@ the first call in a session.
 
 ## The key
 
-`scripts/stewards-api` reads the key from `STEWARDS_API_KEY` and hands it to
-curl without putting it on a command line. The person makes a key at
-`/steward/keys` and sets it in their own shell.
+`scripts/stewards-api` reads the key from `STEWARDS_API_KEY`, or else from
+`~/.config/stewards/api-key` (mode 600), and hands it to curl without putting
+it on a command line. The person makes a key at `/steward/keys` and saves it
+in that file themselves. The file is the way for Claude Code, whose shell
+keeps no variables between commands. It is never `secrets.env`, which is not
+to be read at all (CLAUDE.md §6).
 
 - Never print it, echo it, write it to a file, or put its value in a command.
   Refer to it only as `$STEWARDS_API_KEY`, and only through the script.
-- If it is not set, or the API answers 401, stop and ask the person to make
-  or set one. Do not look for it in files.
+- Never read the key file, or look for a key anywhere else. If the script
+  says there is no key, or the API answers 401, stop and ask the person to
+  make one or save it.
 
 ## What the API will not do, and why that is right
 
