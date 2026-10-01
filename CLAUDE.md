@@ -149,6 +149,15 @@ A question about *behaviour* starts in `business/domain/…bus`. A question abou
   something from production — a log line, the state of the database — say
   what you need and why, and let the person run the target and paste the
   answer.
+- **Content reaches the live app through its API, and only when a person
+  asks for it.** Adding plants and their photos at a steward's request is
+  what `/api/v1` and the `stewards-api` skill are for, with the steward's
+  own key from `STEWARDS_API_KEY`. That is the steward using their app, not
+  an agent operating the server, so it is not a way around the rule above:
+  never as a test, never while developing, and never to read or change
+  anything but plants and photos. The API confirms nothing and checks no
+  photo, so nothing an agent sends reaches a volunteer until a person has
+  looked at it.
 - **Agents never set GitHub secrets or variables**, and never read
   `secrets.env`. The split mass-intentions uses applies here: `DEPLOY_*` are
   GitHub secrets, `APP_*` are GitHub variables, and runtime credentials go to

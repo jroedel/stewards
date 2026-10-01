@@ -119,3 +119,32 @@ func TestOnlyAFileFormIsAcceptedWhereAFileIsExpected(t *testing.T) {
 		t.Error("a GET was refused")
 	}
 }
+
+func TestTheAPIOnlyTakesJSON(t *testing.T) {
+	mw := web.JSONOnly()
+
+	for kind, want := range map[string]bool{
+		"application/json":                  true,
+		"application/json; charset=utf-8":   true,
+		"application/x-www-form-urlencoded": false,
+		"text/plain":                        false,
+		"":                                  false,
+	} {
+		r := post(map[string]string{"Content-Type": kind})
+		r.Body = io.NopCloser(strings.NewReader("{}"))
+		r.ContentLength = 2
+
+		if got := passes(t, mw, r); got != want {
+			t.Errorf("%q: passed = %v, want %v", kind, got, want)
+		}
+	}
+}
+
+func TestAnAnswerReadsAsWritten(t *testing.T) {
+	w := httptest.NewRecorder()
+	web.WriteJSON(w, http.StatusTeapot, map[string]string{"path": "/plants/<slug>"})
+
+	if w.Code != http.StatusTeapot || !strings.Contains(w.Body.String(), `"/plants/<slug>"`) || w.Header().Get("Content-Type") != "application/json; charset=utf-8" {
+		t.Errorf("%d %q %q", w.Code, w.Body.String(), w.Header().Get("Content-Type"))
+	}
+}

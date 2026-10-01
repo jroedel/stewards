@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+#
+# stewards-api METHOD PATH [curl options...]
+#
+# Calls the garden stewards' API as the steward whose key is in
+# STEWARDS_API_KEY. This is what a steward's own Claude uses to add plants and
+# photos; see .claude/skills/stewards-api/SKILL.md.
+#
+#   scripts/stewards-api GET /api/v1                       the index: start here
+#   scripts/stewards-api GET /api/v1/species
+#   scripts/stewards-api PUT /api/v1/species/winecup --json @winecup.json
+#   scripts/stewards-api POST /api/v1/species/winecup/photos \
+#       -F photo=@leaf.jpg -F kind=leaf -F source=ours
+#
+# The key is handed to curl on a file descriptor, never on its command line.
+# A command line is readable by every process on the machine (ps), and it is
+# what lands in shell history and in a Claude transcript. The variable's name
+# is what appears in a command, never its value.
+#
+# STEWARDS_URL points it somewhere else, such as a server on this machine.
+# Exits non-zero when the answer is an error, with the answer's JSON printed,
+# so that a batch stops at the first refusal and says why.
+set -euo pipefail
+
+die() { printf 'stewards-api: %s\n' "$*" >&2; exit 2; }
+
+[ $# -ge 2 ] || die "usage: stewards-api METHOD PATH [curl options...]. Start with: stewards-api GET /api/v1"
+
+method="$1" path="$2"
+shift 2
+
+case "$method" in
+GET | PUT | POST) ;;
+*) die "$method is not a method the API takes; the index (GET /api/v1) lists them" ;;
+esac
+
+case "$path" in
+/api/v1 | /api/v1/*) ;;
+*) die "$path is not under /api/v1. This only calls the API" ;;
+esac
+
+base="${STEWARDS_URL:-https://stewards.schoenstatt-fathers.us}"
+base="${base%/}"
+
+curl_opts=(--silent --show-error --fail-with-body --request "$method")
+
+if [ -z "${STEWARDS_API_KEY:-}" ]; then
+	if [ "$path" != /api/v1 ] && [ "$path" != /api/v1/ ]; then
+		die "STEWARDS_API_KEY is not set. A steward makes a key at $base/steward/keys and sets it in their own shell; it is never written into this repository"
+	fi
+
+	exec curl "${curl_opts[@]}" "$@" "$base$path"
+fi
+
+# The process substitution is on this line and nowhere earlier: bash closes
+# its descriptor when the statement that made it ends, so one made into a
+# variable first would be gone before curl could read it.
+exec curl "${curl_opts[@]}" --header @<(printf 'Authorization: Bearer %s\n' "$STEWARDS_API_KEY") "$@" "$base$path"

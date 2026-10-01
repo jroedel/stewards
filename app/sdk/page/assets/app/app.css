@@ -529,3 +529,10 @@ main > h1:first-child { margin-top: 20px; }
 .photo-about a { display: inline-block; padding: 6px 0; font-weight: 700; }
 .photo-large img { display: block; width: 100%; height: auto; border-radius: 12px; }
 input[type="file"] { display: block; width: 100%; min-height: 48px; padding: 10px 0; font: inherit; }
+
+/* ---------------------------------------------------------------- API keys */
+
+.key-new { margin-bottom: 12px; border: 1.5px solid var(--tos-protect); }
+.key-new h2 { margin: 0 0 4px; }
+.key { margin: 10px 0; padding: 12px; border-radius: 8px; background: var(--sf-neutral); font: 15px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; user-select: all; }
+code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }

@@ -41,6 +41,7 @@ var Expected = sqldb.Expected{
 	"signin_tokens": {"id", "user_id", "hash", "created_at", "expires_at", "used_at"},
 	"sessions":      {"id", "user_id", "hash", "created_at", "expires_at"},
 	"bootstrap":     {"id", "claimed_at"},
+	"api_keys":      {"id", "user_id", "name", "hash", "created_at", "expires_at", "last_used_at"},
 }
 
 // Init creates the tables. Idempotent, and run at every startup.
@@ -88,6 +89,21 @@ CREATE TABLE IF NOT EXISTS bootstrap (
     id          INTEGER PRIMARY KEY,
     claimed_at  INTEGER NOT NULL
 ) STRICT;
+
+-- A program acting as a steward; see userbus/apikey.go. A table of its own
+-- rather than a kind of session, because a key has a name and a last use,
+-- and is listed and revoked by its owner, none of which a session is.
+CREATE TABLE IF NOT EXISTS api_keys (
+    id            TEXT    PRIMARY KEY,
+    user_id       TEXT    NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    name          TEXT    NOT NULL,
+    hash          BLOB    NOT NULL,
+    created_at    INTEGER NOT NULL,
+    expires_at    INTEGER NOT NULL,
+    last_used_at  INTEGER
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS api_keys_user ON api_keys (user_id, expires_at);
 `
 
 	if _, err := db.ExecContext(ctx, schema); err != nil {
@@ -352,6 +368,134 @@ func (s *Store) DeleteUserSessions(ctx context.Context, userID types.ID) error {
 	return nil
 }
 
+// ------------------------------------------------------------------ API keys
+
+// CreateAPIKey records a key unless the steward already has limit live ones:
+// the count and the insert in one statement, as for links.
+func (s *Store) CreateAPIKey(ctx context.Context, k userbus.APIKey, limit int) (bool, error) {
+	const q = `
+INSERT INTO api_keys (id, user_id, name, hash, created_at, expires_at)
+SELECT ?, ?, ?, ?, ?, ?
+WHERE (SELECT count(*) FROM api_keys WHERE user_id = ? AND expires_at > ?) < ?`
+
+	res, err := s.db.ExecContext(ctx, q,
+		k.ID.String(), k.UserID.String(), k.Name, k.Hash, ms(k.CreatedAt), ms(k.ExpiresAt),
+		k.UserID.String(), ms(k.CreatedAt), limit)
+	if err != nil {
+		return false, fmt.Errorf("inserting the API key: %w", err)
+	}
+
+	return affected(res)
+}
+
+const apiKeyColumns = `id, user_id, name, hash, created_at, expires_at, last_used_at`
+
+// APIKeyByID finds a key by identifier.
+func (s *Store) APIKeyByID(ctx context.Context, id types.ID) (userbus.APIKey, error) {
+	k, err := scanAPIKey(s.db.QueryRowContext(ctx, `SELECT `+apiKeyColumns+` FROM api_keys WHERE id = ?`, id.String()))
+	if errors.Is(err, sql.ErrNoRows) {
+		return userbus.APIKey{}, userbus.ErrNotFound
+	}
+
+	return k, err
+}
+
+// APIKeys is a steward's unexpired keys, newest first.
+func (s *Store) APIKeys(ctx context.Context, userID types.ID, now time.Time) ([]userbus.APIKey, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+apiKeyColumns+` FROM api_keys WHERE user_id = ? AND expires_at > ? ORDER BY created_at DESC, id`,
+		userID.String(), ms(now))
+	if err != nil {
+		return nil, fmt.Errorf("listing API keys: %w", err)
+	}
+	defer rows.Close()
+
+	var keys []userbus.APIKey
+	for rows.Next() {
+		k, err := scanAPIKey(rows)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("listing API keys: %w", err)
+	}
+
+	return keys, nil
+}
+
+// DeleteAPIKey removes a key, only if it is the steward's own.
+func (s *Store) DeleteAPIKey(ctx context.Context, userID, id types.ID) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM api_keys WHERE id = ? AND user_id = ?`, id.String(), userID.String())
+	if err != nil {
+		return fmt.Errorf("deleting the API key: %w", err)
+	}
+
+	ok, err := affected(res)
+
+	switch {
+	case err != nil:
+		return err
+	case !ok:
+		return userbus.ErrNotFound
+	}
+
+	return nil
+}
+
+// DeleteUserAPIKeys removes every key an account has.
+func (s *Store) DeleteUserAPIKeys(ctx context.Context, userID types.ID) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM api_keys WHERE user_id = ?`, userID.String()); err != nil {
+		return fmt.Errorf("deleting the steward's API keys: %w", err)
+	}
+
+	return nil
+}
+
+// TouchAPIKey records a use where the last one is older than notAfter.
+func (s *Store) TouchAPIKey(ctx context.Context, id types.ID, at, notAfter time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE api_keys SET last_used_at = ? WHERE id = ? AND (last_used_at IS NULL OR last_used_at < ?)`,
+		ms(at), id.String(), ms(notAfter))
+	if err != nil {
+		return fmt.Errorf("recording the API key's use: %w", err)
+	}
+
+	return nil
+}
+
+func scanAPIKey(row interface{ Scan(...any) error }) (userbus.APIKey, error) {
+	var (
+		k                userbus.APIKey
+		rawID, rawUser   string
+		created, expires int64
+		used             sql.NullInt64
+	)
+
+	if err := row.Scan(&rawID, &rawUser, &k.Name, &k.Hash, &created, &expires, &used); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return userbus.APIKey{}, err
+		}
+
+		return userbus.APIKey{}, fmt.Errorf("reading an API key: %w", err)
+	}
+
+	var err error
+	if k.ID, err = types.ParseID(rawID); err != nil {
+		return userbus.APIKey{}, fmt.Errorf("a stored API key has a bad identifier: %w", err)
+	}
+
+	if k.UserID, err = types.ParseID(rawUser); err != nil {
+		return userbus.APIKey{}, fmt.Errorf("a stored API key names a bad account: %w", err)
+	}
+
+	k.CreatedAt, k.ExpiresAt, k.LastUsedAt = timeOf(created), timeOf(expires), timeOfNull(used)
+
+	return k, nil
+}
+
 // ------------------------------------------------------------------ bootstrap
 
 // ClaimBootstrap records that the secret is spent, reporting false if it
@@ -386,6 +530,7 @@ func (s *Store) PruneExpired(ctx context.Context, before time.Time) error {
 	for _, q := range []string{
 		`DELETE FROM signin_tokens WHERE expires_at <= ?`,
 		`DELETE FROM sessions WHERE expires_at <= ?`,
+		`DELETE FROM api_keys WHERE expires_at <= ?`,
 	} {
 		if _, err := s.db.ExecContext(ctx, q, ms(before)); err != nil {
 			return fmt.Errorf("removing expired sign-ins: %w", err)

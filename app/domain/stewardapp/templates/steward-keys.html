@@ -1,0 +1,44 @@
+{{define "title"}}API keys · Garden stewards{{end}}
+{{define "content"}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow"><a href="/steward">Places</a></p>
+<h1>API keys</h1>
+<p class="lead">A key lets a program, such as your own Claude or a script, add plants and their photos as you. What it sends arrives not yet confirmed and not checked, for a steward to look at on these screens.</p>
+
+{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+
+{{with .NewKey}}
+<div class="card key-new" role="status">
+  <h2>Your new key</h2>
+  <p>Copy it now. It is not shown again; if you lose it, revoke it and make another.</p>
+  <p class="key">{{.}}</p>
+  <p class="help">Keep it out of any file that is shared or committed. In a terminal: <code>export STEWARDS_API_KEY='…'</code>. The API starts at <a href="{{$.Data.Index}}">{{$.Data.Index}}</a>, which lists everything it takes.</p>
+</div>
+{{end}}
+
+{{if .Keys}}
+<ul class="rows">
+{{range .Keys}}<li class="row">
+  <div class="row-main-static">
+    <div class="row-name">{{.Name}}</div>
+    <div class="row-note">Made {{.Created}} · ends {{.Expires}} · last used {{.LastUsed}}</div>
+  </div>
+  <form method="post" action="/steward/keys/{{.ID}}/revoke">
+    <button class="button button-quiet button-small" type="submit">Revoke</button>
+  </form>
+</li>
+{{end}}</ul>
+{{else}}
+<div class="card empty"><p>You have no keys.</p></div>
+{{end}}
+
+<h2>Make a key</h2>
+<form class="card form" method="post" action="/steward/keys">
+  <label for="name">What it is for</label>
+  <p class="help" id="name-help">The computer or program that will hold it, such as "laptop", so you know which to revoke. A key lasts 90 days; you can have {{.Max}}.</p>
+  {{with .Problem}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="name" name="name" type="text" value="{{.Name}}" aria-describedby="name-help" maxlength="60" autocomplete="off" required>
+  <button class="button" type="submit">Make a key</button>
+</form>
+</div>
+{{end}}{{end}}

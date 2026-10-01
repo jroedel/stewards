@@ -27,6 +27,8 @@ package photobus
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -140,6 +142,10 @@ type Photo struct {
 
 	Large, Small Dimensions
 
+	// SHA256 is the original's digest, hex, by which the same photo sent
+	// twice is recognised. Empty for none recorded.
+	SHA256 string
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -172,7 +178,21 @@ var (
 	// ErrUnknown is returned by a Storer when the species or the place a
 	// photo names does not exist.
 	ErrUnknown = errors.New("the species or place is not known")
+
+	// ErrDuplicate is returned by a Storer's Create when the species already
+	// has a photo with the same content.
+	ErrDuplicate = errors.New("the species already has this photo")
 )
+
+// Duplicate is Add's answer to a photo the species already has: the one it
+// has. The screen says so; an import treats it as done.
+type Duplicate struct {
+	Photo Photo
+}
+
+func (d Duplicate) Error() string {
+	return "that photo is already kept for this plant, as photo " + d.Photo.ID.String()
+}
 
 // Storer is what the rules need from the database.
 type Storer interface {
@@ -181,6 +201,7 @@ type Storer interface {
 	Delete(ctx context.Context, id types.ID) error
 	ByID(ctx context.Context, id types.ID) (Photo, error)
 	ForSpecies(ctx context.Context, speciesID types.ID) ([]Photo, error)
+	BySHA256(ctx context.Context, speciesID types.ID, sum string) (Photo, error)
 }
 
 // File is a kept picture opened for reading. *os.File is one.
@@ -237,6 +258,18 @@ func (b *Business) Add(ctx context.Context, speciesID types.ID, f Fields, data [
 		return Photo{}, Invalid{Field: "species", Problem: "a photo needs the plant it shows"}
 	}
 
+	digest := sha256.Sum256(data)
+	sum := hex.EncodeToString(digest[:])
+
+	// Before decoding, which is the expensive part. The index below makes
+	// it a rule rather than a courtesy: two at once cannot both be kept.
+	switch existing, err := b.store.BySHA256(ctx, speciesID, sum); {
+	case err == nil:
+		return Photo{}, Duplicate{Photo: existing}
+	case !errors.Is(err, ErrNotFound):
+		return Photo{}, err
+	}
+
 	prepared, err := b.prepared(ctx, data)
 	if err != nil {
 		return Photo{}, err
@@ -247,7 +280,7 @@ func (b *Business) Add(ctx context.Context, speciesID types.ID, f Fields, data [
 	}
 
 	now := b.now().UTC().Truncate(time.Millisecond)
-	p := Photo{ID: types.NewID(), SpeciesID: speciesID, Format: prepared.Format, CreatedAt: now, UpdatedAt: now}
+	p := Photo{ID: types.NewID(), SpeciesID: speciesID, Format: prepared.Format, SHA256: sum, CreatedAt: now, UpdatedAt: now}
 	p.apply(f)
 	p.Large = Dimensions{prepared.Large.Width, prepared.Large.Height}
 	p.Small = Dimensions{prepared.Small.Width, prepared.Small.Height}
@@ -269,6 +302,12 @@ func (b *Business) Add(ctx context.Context, speciesID types.ID, f Fields, data [
 	if err := b.store.Create(ctx, p); err != nil {
 		b.remove(written)
 
+		if errors.Is(err, ErrDuplicate) {
+			if existing, err := b.store.BySHA256(ctx, speciesID, sum); err == nil {
+				return Photo{}, Duplicate{Photo: existing}
+			}
+		}
+
 		if errors.Is(err, ErrUnknown) {
 			return Photo{}, Invalid{Field: "place", Problem: "the plant or the place is not here any more. Open the page again and choose from the list"}
 		}
@@ -277,6 +316,25 @@ func (b *Business) Add(ctx context.Context, speciesID types.ID, f Fields, data [
 	}
 
 	return p, nil
+}
+
+// Import is Add for a program: a script, or a steward's Claude, through the
+// API. Two differences, both for the same reason as speciesbus.Import. It
+// cannot mark a photo checked: that is a steward's word that it shows this
+// plant, given after looking, and the wingstem photos are why. And sending a
+// photo the plant already has is not a mistake but a batch sent twice, so it
+// answers with the photo already kept and duplicate true.
+func (b *Business) Import(ctx context.Context, speciesID types.ID, f Fields, data []byte) (Photo, bool, error) {
+	if f.Checked {
+		return Photo{}, false, Invalid{Field: "checked", Problem: "a photo is checked by a steward on the plant's photos screen, after comparing it with the plant, not by an import. Leave checked out"}
+	}
+
+	p, err := b.Add(ctx, speciesID, f, data)
+	if dup, ok := errors.AsType[Duplicate](err); ok {
+		return dup.Photo, true, nil
+	}
+
+	return p, false, err
 }
 
 // prepared decodes and scales one photo at a time, turning the reasons a
