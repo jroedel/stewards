@@ -3,7 +3,7 @@
 <div lang="en">
 <p class="eyebrow"><a href="/steward/places/{{.PlaceID}}/edit">{{.PlaceName}}</a></p>
 <h1>Plants here</h1>
-<p class="lead">What is planned at {{.PlaceName}}, and what a volunteer should protect, pull or be careful with. Volunteers see this on <a href="/places/{{.Slug}}">its card</a>.</p>
+<p class="lead">What is still to plant at {{.PlaceName}}, and what a volunteer should protect, pull or be careful with. Volunteers see this on <a href="/places/{{.Slug}}">its card</a>.</p>
 
 {{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
 {{with .Problem}}<p class="problem" role="alert">{{.}} Nothing was saved yet.</p>{{end}}
@@ -16,7 +16,7 @@
     <p class="row-name">{{.Name}}{{with .Scientific}} <span class="row-note"><i>{{.}}</i></span>{{end}}</p>
     <label for="action-{{.SpeciesID}}">What to do with it here</label>
     <select id="action-{{.SpeciesID}}" name="action">{{range .Actions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
-    <label class="check"><input type="checkbox" name="planned" value="yes"{{if .Planned}} checked{{end}}> Planned here: part of the planting</label>
+    <label class="check"><input type="checkbox" name="planned" value="yes"{{if .Planned}} checked{{end}}> To plant: not in the ground yet, or more are going in</label>
     <label for="note_en-{{.SpeciesID}}">Note <span class="optional">optional</span></label>
     <input id="note_en-{{.SpeciesID}}" name="note_en" type="text" value="{{.NoteEN}}" maxlength="500">
     <label for="note_es-{{.SpeciesID}}">En español <span class="optional">optional</span></label>
@@ -43,8 +43,8 @@
   <select id="species" name="species" required>{{range .Add.Species}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
   <label for="action">What to do with it here</label>
   <select id="action" name="action">{{range .Add.Actions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
-  <label class="check"><input type="checkbox" name="planned" value="yes"{{if .Add.Planned}} checked{{end}}> Planned here: part of the planting</label>
-  <p class="help">Planned plants go on the card's "Planned here" list and its flowering calendar, and are always protected.</p>
+  <label class="check"><input type="checkbox" name="planned" value="yes"{{if .Add.Planned}} checked{{end}}> To plant: not in the ground yet, or more are going in</label>
+  <p class="help">A plant to plant goes on the card's "To plant" list and is always protected. Untick it once it is in the ground; it stays under Protect and on the flowering calendar.</p>
   <label for="note_en">Note <span class="optional">optional</span></label>
   <p class="help" id="note-help">What to know about it here: "six around the pipe outlets", "pull before it seeds".</p>
   <input id="note_en" name="note_en" type="text" value="{{.Add.NoteEN}}" aria-describedby="note-help" maxlength="500">

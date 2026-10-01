@@ -109,7 +109,7 @@ func TestAPlannedPlantIsNotOneToPull(t *testing.T) {
 		t.Fatalf("planned and pull: %d, want 422", w.Code)
 	}
 
-	for _, want := range []string{"A plant that is planned here is not one to pull.", "Nothing was saved yet.", `value="kept note"`} {
+	for _, want := range []string{"A plant still to plant here is not one to pull.", "Nothing was saved yet.", `value="kept note"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the refusal does not show %q", want)
 		}
@@ -143,8 +143,8 @@ func TestNobodySignedOutListsAPlant(t *testing.T) {
 	}
 }
 
-// The card a volunteer opens: what is planned, when it flowers, and what to
-// leave and what to take out.
+// The card a volunteer opens: what is still to plant, when it flowers, and
+// what to leave and what to take out.
 func TestTheCardSaysWhatToProtectAndWhatToPull(t *testing.T) {
 	s := serve(t)
 	s.pilot()
@@ -161,21 +161,24 @@ func TestTheCardSaysWhatToProtectAndWhatToPull(t *testing.T) {
 	sedge := s.plant("cherokee-sedge", "Cherokee sedge", "#6B8E4E")
 	johnson := s.plant("johnsongrass", "Johnsongrass", "#7A8B3C")
 	nettle := s.plant("bull-nettle", "Bull nettle", "#FFFFFF")
+	frogfruit := s.plant("frogfruit", "Frogfruit", "#F4F0F7", "5", "6")
 
 	s.list(inflow, penstemon, "protect", true, "Six around the pipe outlets")
 	s.list(inflow, sedge, "protect", true, "")
 	s.list(inflow, johnson, "pull", false, "Pull before it seeds")
 	s.list(inflow, nettle, "careful", false, "")
+	s.list(inflow, frogfruit, "protect", false, "Already spreading by the steps")
 
 	body := s.getAs("/places/rain-garden-inflow", "").Body.String()
 
 	for _, want := range []string{
-		"Planned here",
+		"To plant",
+		"the note says how many more",
 		`href="/plants/brazos-penstemon"`,
 		"Six around the pipe outlets",
 		"When it flowers",
 		`fill="#b0418f"`,
-		"Leave these. They belong here.",
+		"Leave these. They grow here.",
 		"Take these out, root and all.",
 		"Pull before it seeds",
 		"Wear gloves near these.",
@@ -187,12 +190,23 @@ func TestTheCardSaysWhatToProtectAndWhatToPull(t *testing.T) {
 		}
 	}
 
-	// The calendar has a row only for a planned plant with bloom months, and
-	// the penstemon's row fills March to May: three cells. (Swatches are
-	// stored lowercase, whatever the steward typed.)
+	// The calendar has a row for every protected plant with bloom months,
+	// planted or still to plant -- a bed keeps its calendar the day its
+	// planting is done -- and the penstemon's row fills March to May: three
+	// cells. (Swatches are stored lowercase, whatever the steward typed.)
 	cal := body[strings.Index(body, `class="calendar"`):strings.Index(body, "</table>")]
-	if strings.Contains(cal, "Cherokee sedge") || strings.Contains(cal, "Johnsongrass") {
-		t.Error("the calendar shows a plant with no bloom months, or one that is not planned")
+	if strings.Contains(cal, "Cherokee sedge") || strings.Contains(cal, "Johnsongrass") || strings.Contains(cal, "Bull nettle") {
+		t.Error("the calendar shows a plant with no bloom months, or one that is not protected")
+	}
+
+	if !strings.Contains(cal, "Frogfruit") {
+		t.Error("the calendar leaves out a protected plant that is already planted")
+	}
+
+	// Frogfruit is growing, not to plant: in Protect, not on To plant.
+	toPlant := body[strings.Index(body, `id="planned-h"`):strings.Index(body, `class="calendar"`)]
+	if strings.Contains(toPlant, "Frogfruit") || !strings.Contains(toPlant, "Brazos penstemon") {
+		t.Error("the To plant list holds the wrong plants")
 	}
 
 	if n := strings.Count(cal, `fill="#b0418f"`); n != 3 {

@@ -1,10 +1,10 @@
 // Package listingbus is the rules about a species listed at a place: what to
-// do with it there, and whether it is part of the planting.
+// do with it there, and whether there is planting still to do for it.
 //
 // This is the layer the plan insists on. Pull or protect is not a property of
 // a species -- poison ivy is native, pulled along the paths and maybe kept
 // deep in the woods -- so it lives here, on the pair, and a place card's
-// Protect and Pull panels are read from these rows. So is its "Planned here"
+// Protect and Pull panels are read from these rows. So is its "To plant"
 // list, and the species card's "Where it grows here".
 //
 // A listing is keyed by its place and its species, so a species is listed at
@@ -48,9 +48,18 @@ type Listing struct {
 	SpeciesID types.ID
 	Action    Action
 
-	// Planned says the species is part of the planting here: it goes on the
-	// place's "Planned here" list and its bloom calendar. A planned plant is
-	// always protected; see Set.
+	// Planned says there is planting still to do for the species here: none
+	// of it is in the ground yet, or more is going in beside what is growing
+	// (the note says how many). It puts the plant on the card's "To plant"
+	// list, and a steward unticks it once the planting is done; the plant
+	// stays protected, and on the flowering calendar, either way. A plant
+	// growing here and not to plant -- put in last season, or come up on its
+	// own -- is protected and not planned. A planned plant is always
+	// protected; see Set.
+	//
+	// The name is older than this meaning, when the list was "Planned
+	// here"; it is kept because the API's field and the column are both
+	// "planned", and a batch script written for one should not break.
 	Planned bool
 
 	// Note is what to know about it here: "pull before it seeds", "two at
@@ -116,10 +125,10 @@ const maxNote = 500
 
 // Set lists a species at a place, or changes how it is listed.
 //
-// One refusal is about meaning rather than shape: a planned plant cannot be
-// pulled. Planned means it was put there on purpose, and a card that told a
-// volunteer to pull what the stewards planted is exactly the mistake the
-// Phase 1 test is about.
+// One refusal is about meaning rather than shape: a plant to plant cannot be
+// pulled. A card that told a volunteer to plant something and pull it at once
+// is a contradiction, and to pull what the stewards are planting is exactly
+// the mistake the Phase 1 test is about.
 func (b *Business) Set(ctx context.Context, placeID, speciesID types.ID, f Fields) (Listing, error) {
 	f.Note = f.Note.Trimmed()
 
@@ -129,7 +138,7 @@ func (b *Business) Set(ctx context.Context, placeID, speciesID types.ID, f Field
 	case !validAction(f.Action):
 		return Listing{}, Invalid{Field: "action", Problem: "choose protect, pull or careful"}
 	case f.Planned && f.Action == Pull:
-		return Listing{}, Invalid{Field: "action", Problem: "a plant that is planned here is not one to pull. Untick planned, or choose protect or careful"}
+		return Listing{}, Invalid{Field: "action", Problem: "a plant still to plant here is not one to pull. Untick To plant, or choose protect or careful"}
 	case utf8.RuneCountInString(f.Note.EN) > maxNote || utf8.RuneCountInString(f.Note.ES) > maxNote:
 		return Listing{}, Invalid{Field: "note", Problem: fmt.Sprintf("keep the note under %d characters", maxNote)}
 	}

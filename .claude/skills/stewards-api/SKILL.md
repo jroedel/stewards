@@ -91,9 +91,13 @@ to be read at all (CLAUDE.md §6).
      --json '{"action": "protect", "planned": true, "note": {"en": "6 plants, at the shady end"}}'
    ```
 
-   `planned` is true for what was planted there on purpose (it goes on the
-   place's Planned list and bloom calendar), false for what was found
-   growing. There is no count or zone field: put them in the note.
+   `planned` is true when there is planting still to do: none of it is in
+   the ground yet, or more is going in beside what is there. It puts the
+   plant on the place's To plant list. It is false for anything already
+   growing, whether planted last week or come up on its own. Ask the person
+   which it is rather than guess: a bed planted a month ago is not "to
+   plant". There is no count or zone field: put them in the note, and for
+   "more going in" say how many ("6 in, 3 more by the wall").
    `GET /api/v1/places/<place>/plants` reads back what a place lists.
 6. **Report** what was created, updated, unchanged and duplicate, and give the
    person the `photos_url` of each plant: that screen is where they check the
