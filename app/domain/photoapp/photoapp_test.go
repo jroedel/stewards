@@ -448,3 +448,15 @@ func TestThePlantsEditFormLeadsToItsPhotos(t *testing.T) {
 		t.Error("the edit form does not link to the photos")
 	}
 }
+
+func TestTheSamePhotoTwiceIsSaidSo(t *testing.T) {
+	s := serve(t)
+	data := noisy(t)
+
+	s.upload(s.photosPath(), leaf(), data, true)
+
+	w := s.upload(s.photosPath(), leaf(), data, true)
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "That photo is already here, under Leaf close-up.") {
+		t.Errorf("the same photo twice: %d", w.Code)
+	}
+}

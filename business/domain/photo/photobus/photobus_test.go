@@ -367,3 +367,58 @@ func TestTheBestPhotoIsOursAndRecentAndChecked(t *testing.T) {
 		t.Error("a photo was found for a kind that has none")
 	}
 }
+
+// The same photo twice: refused on the screen, already done for an import.
+func TestTheSamePhotoIsKeptOnce(t *testing.T) {
+	g := setup(t)
+	data := photo(t, 600, 400)
+
+	first, err := g.photos.Add(t.Context(), g.penstemon.ID, ours(photobus.Leaf), data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = g.photos.Add(t.Context(), g.penstemon.ID, ours(photobus.Flower), data)
+	if dup, ok := errors.AsType[photobus.Duplicate](err); !ok || dup.Photo.ID != first.ID {
+		t.Errorf("the same photo again: %v", err)
+	}
+
+	f := ours(photobus.Leaf)
+	f.Checked = false
+
+	p, duplicate, err := g.photos.Import(t.Context(), g.penstemon.ID, f, data)
+	if err != nil || !duplicate || p.ID != first.ID {
+		t.Errorf("imported again: %v, %v, %v", p.ID, duplicate, err)
+	}
+
+	if got := g.files(t); len(got) != 3 {
+		t.Errorf("files: %d, want only the first photo's three", len(got))
+	}
+
+	// Another plant may have it: one photo of two plants side by side.
+	sedge, err := g.species.Create(t.Context(), speciesbus.Fields{Slug: "cherokee-sedge", Common: types.Text{EN: "Cherokee sedge"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := g.photos.Add(t.Context(), sedge.ID, ours(photobus.Leaf), data); err != nil {
+		t.Errorf("the same photo for another plant: %v", err)
+	}
+}
+
+func TestAnImportCannotCheckAPhoto(t *testing.T) {
+	g := setup(t)
+
+	_, _, err := g.photos.Import(t.Context(), g.penstemon.ID, ours(photobus.Leaf), photo(t, 600, 400))
+	if invalid, ok := errors.AsType[photobus.Invalid](err); !ok || invalid.Field != "checked" {
+		t.Errorf("an import asking to be checked: %v", err)
+	}
+
+	f := ours(photobus.Leaf)
+	f.Checked = false
+
+	p, duplicate, err := g.photos.Import(t.Context(), g.penstemon.ID, f, photo(t, 600, 400))
+	if err != nil || duplicate || p.Checked {
+		t.Errorf("an import: %+v, %v, %v", p, duplicate, err)
+	}
+}

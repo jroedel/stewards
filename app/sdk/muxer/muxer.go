@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/jroedel/stewards/app/domain/apiapp"
 	"github.com/jroedel/stewards/app/domain/authapp"
 	"github.com/jroedel/stewards/app/domain/homeapp"
 	"github.com/jroedel/stewards/app/domain/photoapp"
@@ -123,6 +124,16 @@ func New(cfg Config) (http.Handler, error) {
 		cfg.Log.Warn("sign-in is off: [server] base_url is not set")
 	}
 
+	// The API on a mux of its own, so that nothing under /api is ever
+	// reached through the cookie's chain or the cookie through the API's.
+	// Mounted only with sign-in on, like the screens: a key is made on one.
+	api := http.NewServeMux()
+	if cfg.BaseURL != "" {
+		apiapp.Routes(api, apiapp.Config{
+			Log: cfg.Log, Species: cfg.Species, Places: cfg.Places, Photos: cfg.Photos, BaseURL: cfg.BaseURL,
+		})
+	}
+
 	// The order is outermost first. RequestID before Logging so the request
 	// line carries the id; Logging outside Panics so a recovered panic still
 	// gets its request line with the 500 on it; headers inside both, so they
@@ -137,19 +148,26 @@ func New(cfg Config) (http.Handler, error) {
 	// Who is signed in comes after them, so a refused write costs no
 	// database read; the language innermost, since only the pages need it.
 	//
-	// How big and what shape are a fork rather than a line. The upload
-	// route is the one write that is a file: it gets a photo-sized limit
-	// and must be multipart. Every other route keeps 64 KB and form
-	// encoding. Two routes into the same mux, rather than one limit with an
-	// exception inside it, because a limit can only tighten (web.MaxBody):
-	// the upload must never pass through the small one at all.
+	// How big and what shape are a fork rather than a line. The two upload
+	// routes are the writes that are a file: they get a photo-sized limit
+	// and must be multipart. The rest of the API keeps 64 KB and must be
+	// JSON; every other route keeps 64 KB and form encoding. Separate
+	// branches into the muxes, rather than one limit with exceptions inside
+	// it, because a limit can only tighten (web.MaxBody): an upload must
+	// never pass through the small one at all.
+	//
+	// And who is asking is decided per branch: a session cookie for the
+	// pages, an API key for the API, never both.
 	inner := web.Wrap(mux,
 		mid.Authenticate(cfg.Log, cfg.Users),
 		mid.Lang(),
 	)
+	apiInner := web.Wrap(api, mid.APIKey(cfg.Log, cfg.Users))
 
 	shape := http.NewServeMux()
 	shape.Handle(photoapp.UploadPattern, web.Wrap(inner, web.MaxBody(maxUpload), web.MultipartOnly()))
+	shape.Handle(apiapp.UploadPattern, web.Wrap(apiInner, web.MaxBody(maxUpload), web.MultipartOnly()))
+	shape.Handle("/api/", web.Wrap(apiInner, web.MaxBody(maxBody), web.JSONOnly()))
 	shape.Handle("/", web.Wrap(inner, web.MaxBody(maxBody), web.FormEncodedOnly()))
 
 	return web.Wrap(shape,

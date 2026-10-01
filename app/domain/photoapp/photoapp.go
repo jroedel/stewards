@@ -282,12 +282,15 @@ func (a app) upload(w http.ResponseWriter, r *http.Request) {
 		_, err := a.photos.Add(r.Context(), sp.ID, f, data)
 
 		invalid, isInvalid := errors.AsType[photobus.Invalid](err)
+		dup, isDup := errors.AsType[photobus.Duplicate](err)
 
 		switch {
 		case err == nil:
 			http.Redirect(w, r, listPath(sp.ID)+"?done=added#"+string(f.Kind), http.StatusSeeOther)
 
 			return
+		case isDup:
+			v.Problems["photo"] = fmt.Sprintf("That photo is already here, under %s. Choose a different one.", dup.Photo.Kind.Label())
 		case isInvalid:
 			v.Problems[invalid.Field] = page.Sentence(invalid.Problem)
 		default:

@@ -41,7 +41,7 @@ var Expected = sqldb.Expected{
 		"id", "species_id", "place_id", "kind", "taken_year", "taken_month",
 		"source", "credit", "source_url", "license", "checked", "format",
 		"large_width", "large_height", "small_width", "small_height",
-		"created_at", "updated_at",
+		"created_at", "updated_at", "sha256",
 	},
 }
 
@@ -89,25 +89,51 @@ CREATE INDEX IF NOT EXISTS photos_place ON photos (place_id);
 		return fmt.Errorf("creating the photos table: %w", err)
 	}
 
+	// Later columns. Each arrives as an ALTER beside the CREATE above, so a
+	// fresh database and one from before the column end the same; and
+	// nothing that mentions one may sit in the CREATE block, because on a
+	// database from before it the CREATE is skipped and the column is not
+	// there yet (CLAUDE.md, and mass-intentions' four failed deploys).
+
+	// sha256 is the original's digest, hex: the same photo sent twice --
+	// a batch re-run, a double tap on Upload -- is recognised rather than
+	// kept twice. '' for a photo added before it, which no index entry
+	// covers.
+	if err := sqldb.AddColumn(ctx, db, "photos", "sha256", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+
+	// After the column, in its own statement, for the reason above. UNIQUE,
+	// so that two uploads of one photo at the same moment cannot both be
+	// kept: the second insert is refused, and a claim is one statement.
+	const index = `CREATE UNIQUE INDEX IF NOT EXISTS photos_species_sha256 ON photos (species_id, sha256) WHERE sha256 != ''`
+	if _, err := db.ExecContext(ctx, index); err != nil {
+		return fmt.Errorf("indexing photos by content: %w", err)
+	}
+
 	return nil
 }
 
 const columns = `id, species_id, place_id, kind, taken_year, taken_month,
 source, credit, source_url, license, checked, format,
-large_width, large_height, small_width, small_height, created_at, updated_at`
+large_width, large_height, small_width, small_height, created_at, updated_at, sha256`
 
 // Create inserts a photo.
 func (s *Store) Create(ctx context.Context, p photobus.Photo) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO photos (`+columns+`)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ID.String(), orNull(p.SpeciesID), orNull(p.PlaceID), string(p.Kind), p.TakenYear, p.TakenMonth,
 		string(p.Source), p.Credit, p.SourceURL, p.License, p.Checked, p.Format,
 		p.Large.Width, p.Large.Height, p.Small.Width, p.Small.Height,
-		p.CreatedAt.UnixMilli(), p.UpdatedAt.UnixMilli())
+		p.CreatedAt.UnixMilli(), p.UpdatedAt.UnixMilli(), p.SHA256)
 
 	switch {
 	case sqldb.IsForeignKeyViolation(err):
 		return photobus.ErrUnknown
+	case sqldb.IsUniqueViolation(err):
+		// The id is random, so the constraint that can collide is the
+		// content index.
+		return photobus.ErrDuplicate
 	case err != nil:
 		return fmt.Errorf("inserting the photo: %w", err)
 	}
@@ -158,6 +184,17 @@ func (s *Store) ByID(ctx context.Context, id types.ID) (photobus.Photo, error) {
 	return p, err
 }
 
+// BySHA256 is the photo of a species with this content, or
+// photobus.ErrNotFound.
+func (s *Store) BySHA256(ctx context.Context, speciesID types.ID, sum string) (photobus.Photo, error) {
+	p, err := scan(s.db.QueryRowContext(ctx, `SELECT `+columns+` FROM photos WHERE species_id = ? AND sha256 = ? AND sha256 != ''`, speciesID.String(), sum))
+	if errors.Is(err, sql.ErrNoRows) {
+		return photobus.Photo{}, photobus.ErrNotFound
+	}
+
+	return p, err
+}
+
 // ForSpecies is every photo of a species, oldest first; photobus orders them.
 func (s *Store) ForSpecies(ctx context.Context, speciesID types.ID) ([]photobus.Photo, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+columns+` FROM photos WHERE species_id = ? ORDER BY created_at, id`, speciesID.String())
@@ -196,7 +233,7 @@ func scan(row scanner) (photobus.Photo, error) {
 	err := row.Scan(&id, &species, &place, &kind, &p.TakenYear, &p.TakenMonth,
 		&source, &p.Credit, &p.SourceURL, &p.License, &p.Checked, &p.Format,
 		&p.Large.Width, &p.Large.Height, &p.Small.Width, &p.Small.Height,
-		&created, &updated)
+		&created, &updated, &p.SHA256)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return photobus.Photo{}, err

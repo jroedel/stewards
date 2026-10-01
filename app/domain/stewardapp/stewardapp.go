@@ -1,5 +1,6 @@
 // Package stewardapp is the screen where stewards add each other and turn
-// each other's access off and on.
+// each other's access off and on, and the one where each makes their own API
+// keys (keys.go).
 //
 // There is no signing yourself up: an account here can change what every
 // volunteer is told to pull. A steward adds another by address, and the new
@@ -36,6 +37,10 @@ type Users interface {
 	All(ctx context.Context) ([]userbus.User, error)
 	Create(ctx context.Context, email types.Email, name string) (userbus.User, error)
 	SetEnabled(ctx context.Context, actor, id types.ID, enabled bool) (userbus.User, error)
+
+	CreateAPIKey(ctx context.Context, userID types.ID, name string) (userbus.APIKey, string, error)
+	APIKeys(ctx context.Context, userID types.ID) ([]userbus.APIKey, error)
+	RevokeAPIKey(ctx context.Context, userID, id types.ID) error
 }
 
 // Config is what this app needs.
@@ -61,6 +66,8 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 	mux.Handle("GET "+path, guard(http.HandlerFunc(a.list)))
 	mux.Handle("POST "+path, guard(http.HandlerFunc(a.add)))
 	mux.Handle("POST "+path+"/{id}/access", guard(http.HandlerFunc(a.access)))
+
+	mountKeys(mux, a, guard)
 }
 
 type row struct {

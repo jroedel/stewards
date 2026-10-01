@@ -171,6 +171,18 @@ type Storer interface {
 	ClaimBootstrap(ctx context.Context, at time.Time) (bool, error)
 	BootstrapSpent(ctx context.Context) (bool, error)
 
+	// CreateAPIKey records a key unless the steward already has limit live
+	// ones, in one statement, as CreateToken does.
+	CreateAPIKey(ctx context.Context, k APIKey, limit int) (bool, error)
+	APIKeyByID(ctx context.Context, id types.ID) (APIKey, error)
+	APIKeys(ctx context.Context, userID types.ID, now time.Time) ([]APIKey, error)
+	DeleteAPIKey(ctx context.Context, userID, id types.ID) error
+	DeleteUserAPIKeys(ctx context.Context, userID types.ID) error
+
+	// TouchAPIKey records a use, only where the last one is before
+	// notAfter, so most uses write nothing.
+	TouchAPIKey(ctx context.Context, id types.ID, at, notAfter time.Time) error
+
 	PruneExpired(ctx context.Context, before time.Time) error
 }
 
@@ -241,9 +253,10 @@ func (b *Business) Create(ctx context.Context, email types.Email, name string) (
 // bootstrap already spent, the only way back from either would be the
 // database on the server.
 //
-// Disabling also ends every session the account has. Authenticate would
-// refuse them anyway on their next request; deleting them means a phone left
-// signed in is signed out in fact and not only in effect.
+// Disabling also ends every session the account has, and deletes its API
+// keys. Authenticate would refuse them anyway on their next request; deleting
+// them means a phone left signed in is signed out in fact and not only in
+// effect, and a key in a script is gone rather than waiting to be re-enabled.
 func (b *Business) SetEnabled(ctx context.Context, actor, id types.ID, enabled bool) (User, error) {
 	u, err := b.store.UserByID(ctx, id)
 	if err != nil {
@@ -290,6 +303,10 @@ func (b *Business) SetEnabled(ctx context.Context, actor, id types.ID, enabled b
 			// rather than returned: the change the steward asked for did
 			// happen.
 			b.log.Error("a disabled steward's sessions could not be removed", "user_id", id.String(), "error", err)
+		}
+
+		if err := b.store.DeleteUserAPIKeys(ctx, id); err != nil {
+			b.log.Error("a disabled steward's API keys could not be removed", "user_id", id.String(), "error", err)
 		}
 	}
 
