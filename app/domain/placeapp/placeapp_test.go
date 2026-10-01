@@ -32,6 +32,14 @@ type site struct {
 func serve(t *testing.T) *site {
 	t.Helper()
 
+	return serveAt(t, "https://stewards.example.invalid")
+}
+
+// serveAt is serve with a chosen base_url; "" is sign-in off, as on a server
+// whose config predates it.
+func serveAt(t *testing.T, baseURL string) *site {
+	t.Helper()
+
 	db, err := sqldb.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +63,7 @@ func serve(t *testing.T) *site {
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
 		Places: s.places, Users: users,
-		BaseURL: "https://stewards.example.invalid", Mail: &mail.Recorder{},
+		BaseURL: baseURL, Mail: &mail.Recorder{},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -90,6 +98,21 @@ func (s *site) do(method, path string, form url.Values, signedIn bool) *httptest
 	r.Header.Set("Sec-Fetch-Site", "same-origin")
 	if signedIn {
 		r.AddCookie(s.cookie)
+	}
+
+	w := httptest.NewRecorder()
+	s.h.ServeHTTP(w, r)
+
+	return w
+}
+
+// getAs reads a page signed out, in a language.
+func (s *site) getAs(path, lang string) *httptest.ResponseRecorder {
+	s.t.Helper()
+
+	r := httptest.NewRequest(http.MethodGet, path, nil)
+	if lang != "" {
+		r.Header.Set("Accept-Language", lang)
 	}
 
 	w := httptest.NewRecorder()

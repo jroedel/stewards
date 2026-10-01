@@ -1,7 +1,8 @@
-// Package placeapp is the stewards' screens for places: the list of every
-// place with its bands, and the form that adds, edits and removes one.
+// Package placeapp is places on screen: the card a volunteer opens (card.go),
+// and the stewards' screens -- the list of every place with its bands, and
+// the form that adds, edits and removes one.
 //
-// Everything here is behind sign-in and lives under /steward/. The places'
+// The stewards' screens are behind sign-in and live under /steward/. The places'
 // own addresses, /places/<slug>, are the volunteers' and come next; keeping
 // the steward screens under a prefix of their own, and addressing a place by
 // its ID there, means no slug ever has to be refused because a screen got to
@@ -39,6 +40,8 @@ const IndexPath = "/steward"
 type Places interface {
 	All(ctx context.Context) ([]placebus.Place, error)
 	ByID(ctx context.Context, id types.ID) (placebus.Place, error)
+	BySlug(ctx context.Context, slug string) (placebus.Place, error)
+	Children(ctx context.Context, id types.ID) ([]placebus.Place, error)
 	Create(ctx context.Context, f placebus.Fields) (placebus.Place, error)
 	Update(ctx context.Context, id types.ID, f placebus.Fields) (placebus.Place, error)
 	Delete(ctx context.Context, id types.ID) error

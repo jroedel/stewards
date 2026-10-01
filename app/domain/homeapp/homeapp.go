@@ -69,6 +69,7 @@ var words = wording{
 // row is one place in the list, top-level places only: a place's bands
 // belong on its own card, not in the list of where you might be standing.
 type row struct {
+	Slug    string
 	Name    types.Text
 	Purpose types.Text
 }
@@ -91,7 +92,7 @@ func (a *App) home(w http.ResponseWriter, r *http.Request) {
 	v := view{Copy: words}
 	for _, p := range all {
 		if p.TopLevel() {
-			v.Places = append(v.Places, row{Name: p.Name, Purpose: p.Purpose})
+			v.Places = append(v.Places, row{Slug: p.Slug, Name: p.Name, Purpose: p.Purpose})
 		}
 	}
 
