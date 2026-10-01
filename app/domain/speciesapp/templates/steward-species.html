@@ -9,7 +9,8 @@
 
 {{if .Species}}
 <ul class="rows">
-{{range .Species}}<li><a class="row" href="/steward/species/{{.ID}}/edit">
+{{range .Species}}<li><a class="row{{if .Thumb}} row-photo{{end}}" href="/steward/species/{{.ID}}/edit">
+  {{with .Thumb}}<img class="row-thumb" src="/photos/{{.}}/small.jpg" width="64" height="64" alt="" loading="lazy">{{end}}
   <div>
     <div class="row-name">{{.Common}}{{range .Swatches}} {{template "swatch" .}}{{end}}</div>
     {{if .Scientific}}<div class="row-note"><i>{{.Scientific}}</i></div>{{end}}

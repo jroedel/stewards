@@ -1,7 +1,11 @@
 package speciesapp_test
 
 import (
+	"bytes"
 	"database/sql"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -34,6 +38,7 @@ type site struct {
 	h       http.Handler
 	species *speciesbus.Business
 	places  *placebus.Business
+	photos  *photobus.Business
 	cookie  *http.Cookie
 }
 
@@ -65,11 +70,12 @@ func serve(t *testing.T) *site {
 		t:       t,
 		species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
 		places:  placebus.NewBusiness(placedb.NewStore(db), nil),
+		photos:  photos(t, db),
 	}
 
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
-		Places: s.places, Species: s.species, Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: photos(t, db), Users: users,
+		Places: s.places, Species: s.species, Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: s.photos, Users: users,
 		BaseURL: "https://stewards.example.invalid", Mail: &mail.Recorder{},
 	}); err != nil {
 		t.Fatal(err)
@@ -287,4 +293,71 @@ func photos(t *testing.T, db *sql.DB) *photobus.Business {
 	}
 
 	return photobus.NewBusiness(photodb.NewStore(db), files, nil)
+}
+
+// The list shows a photo beside each plant that has one, the flower before
+// the grown plant even while neither is checked: the photos an import
+// brings in all arrive unchecked, and the list is where a steward finds the
+// plant to check them.
+func TestTheListShowsEachPlantsFlower(t *testing.T) {
+	s := serve(t)
+
+	if w := s.post("/steward/species", penstemon()); w.Code != http.StatusSeeOther {
+		t.Fatalf("adding a plant: %d", w.Code)
+	}
+
+	sp, err := s.species.BySlug(t.Context(), "brazos-penstemon")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.species.Create(t.Context(), speciesbus.Fields{Slug: "frogfruit", Common: types.Text{EN: "Frogfruit"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	add := func(k photobus.Kind, shade uint8) photobus.Photo {
+		p, err := s.photos.Add(t.Context(), sp.ID, photobus.Fields{Kind: k, Source: photobus.Ours}, picture(t, shade))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return p
+	}
+
+	mature := add(photobus.Mature, 40)
+	flower := add(photobus.Flower, 200)
+
+	body := s.get("/steward/species").Body.String()
+
+	if !strings.Contains(body, `src="/photos/`+flower.ID.String()+`/small.jpg"`) {
+		t.Error("the list does not show the plant's flower")
+	}
+
+	if strings.Contains(body, mature.ID.String()) {
+		t.Error("the list shows the full-size photo, not the flower")
+	}
+
+	if n := strings.Count(body, `class="row-thumb"`); n != 1 {
+		t.Errorf("%d pictures in the list, want one: frogfruit has no photo", n)
+	}
+}
+
+// picture is an invented photo, never a real one (CLAUDE.md), in one shade
+// so two of them are different files.
+func picture(t *testing.T, shade uint8) []byte {
+	t.Helper()
+
+	img := image.NewRGBA(image.Rect(0, 0, 400, 300))
+	for y := range 300 {
+		for x := range 400 {
+			img.Set(x, y, color.RGBA{shade, uint8(x), uint8(y), 255})
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	return buf.Bytes()
 }

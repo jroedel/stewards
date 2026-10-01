@@ -422,3 +422,37 @@ func TestAnImportCannotCheckAPhoto(t *testing.T) {
 		t.Errorf("an import: %+v, %v, %v", p, duplicate, err)
 	}
 }
+
+// The list's photo goes by kind first -- a flower waiting to be checked
+// beats a checked full-size one, because a steward picks a plant out by its
+// flower -- and only within a kind does checked come first.
+func TestLeadGoesByKindThenChecked(t *testing.T) {
+	pic := func(k photobus.Kind, checked bool) photobus.Photo {
+		return photobus.Photo{ID: types.NewID(), Kind: k, Checked: checked, Source: photobus.Borrowed}
+	}
+
+	flower, mature := pic(photobus.Flower, false), pic(photobus.Mature, true)
+	if got, ok := photobus.Lead([]photobus.Photo{mature, flower}); !ok || got.ID != flower.ID {
+		t.Errorf("an unchecked flower and a checked full-size: got %v, want the flower", got.Kind)
+	}
+
+	waiting, checked := pic(photobus.Leaf, false), pic(photobus.Leaf, true)
+	if got, ok := photobus.Lead([]photobus.Photo{waiting, checked, pic(photobus.Winter, true)}); !ok || got.ID != checked.ID {
+		t.Error("of two leaves, the checked one was not chosen")
+	}
+
+	for _, order := range [][]photobus.Kind{
+		{photobus.Winter, photobus.Young},
+		{photobus.Young, photobus.Mature},
+		{photobus.Mature, photobus.Leaf},
+	} {
+		later, earlier := pic(order[0], true), pic(order[1], true)
+		if got, _ := photobus.Lead([]photobus.Photo{later, earlier}); got.ID != earlier.ID {
+			t.Errorf("%s was chosen over %s", order[0], order[1])
+		}
+	}
+
+	if _, ok := photobus.Lead(nil); ok {
+		t.Error("a plant with no photos has a lead photo")
+	}
+}
