@@ -1,0 +1,42 @@
+{{define "title"}}Photos of {{.Data.Name}} · Garden stewards{{end}}
+{{define "content"}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow"><a href="/steward/species/{{.SpeciesID}}/edit">{{.Name}}</a></p>
+<h1>Photos</h1>
+<p class="lead">Volunteers see the best checked photo of each kind on <a href="/plants/{{.Slug}}">the plant's card</a>: our own before a borrowed one, then the most recent.</p>
+
+{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+{{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below, choose the photo again, and press Add photo.</p>{{end}}
+{{if .Missing}}<p class="help">{{.Missing}} of the five kinds have no checked photo yet.</p>{{end}}
+
+{{range .Sections}}
+<section class="card photo-kind" id="{{.Kind}}" aria-labelledby="kind-{{.Kind}}">
+  <h2 id="kind-{{.Kind}}">{{.Label}}</h2>
+  {{if .Photos}}
+  <ul class="photo-list">
+  {{range .Photos}}<li>
+    <a class="photo-thumb" href="/steward/photos/{{.ID}}/edit"><img src="/photos/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="" loading="lazy"></a>
+    <div class="photo-about">
+      <p class="row-tags">{{if .Shown}}<span class="tag tag-ok">Shown on the card</span>{{else if .Checked}}<span class="tag">Checked</span>{{else}}<span class="tag tag-open">Not checked: volunteers don't see it</span>{{end}}</p>
+      <p class="row-note">{{.Caption}}</p>
+      <a href="/steward/photos/{{.ID}}/edit">Edit or check</a>
+    </div>
+  </li>
+  {{end}}</ul>
+  {{else}}
+  <p class="muted">No photo yet. <a href="/steward/species/{{$.Data.SpeciesID}}/photos?kind={{.Kind}}#add">Add one</a></p>
+  {{end}}
+</section>
+{{end}}
+
+<h2 id="add">Add a photo</h2>
+<form class="card form" method="post" action="/steward/species/{{.SpeciesID}}/photos" enctype="multipart/form-data">
+  <label for="photo">Photo</label>
+  <p class="help" id="photo-help">A JPEG or PNG, as the camera saved it. Location and camera details are removed from every copy shown.</p>
+  {{template "photo-problem" (index .Problems "photo")}}
+  <input id="photo" name="photo" type="file" accept="image/jpeg,image/png" required aria-describedby="photo-help">
+  {{template "photo-fields" .}}
+  <button class="button" type="submit">Add photo</button>
+</form>
+</div>
+{{end}}{{end}}

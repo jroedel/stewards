@@ -16,6 +16,9 @@ import (
 	"github.com/jroedel/stewards/app/sdk/muxer"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
+	"github.com/jroedel/stewards/business/domain/photo/photobus"
+	"github.com/jroedel/stewards/business/domain/photo/stores/photodb"
+	"github.com/jroedel/stewards/business/domain/photo/stores/photofs"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
@@ -92,6 +95,13 @@ func run() error {
 		return err
 	}
 
+	// At startup, so a directory that cannot be made stops the deploy's
+	// health check rather than the first steward's upload.
+	photoFiles, err := photofs.NewStore(cfg.Photos.Dir)
+	if err != nil {
+		return err
+	}
+
 	expected := expectedSchema()
 
 	if err := sqldb.CheckSchema(ctx, db, expected); err != nil {
@@ -126,6 +136,7 @@ func run() error {
 		Places:    placebus.NewBusiness(placedb.NewStore(db), nil),
 		Species:   speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
 		Listings:  listingbus.NewBusiness(listingdb.NewStore(db), nil),
+		Photos:    photobus.NewBusiness(photodb.NewStore(db), photoFiles, nil),
 		Users:     users,
 		BaseURL:   cfg.Server.BaseURL,
 		Mail:      sender,
@@ -135,7 +146,7 @@ func run() error {
 		return err
 	}
 
-	log.Info("starting", "addr", cfg.Server.Addr, "db", cfg.DB.Path)
+	log.Info("starting", "addr", cfg.Server.Addr, "db", cfg.DB.Path, "photos", cfg.Photos.Dir)
 
 	return web.Serve(ctx, log, cfg.Server.ShutdownGrace.Duration, cfg.Server.Addr, handler)
 }
@@ -145,7 +156,8 @@ func run() error {
 // A list rather than a loop over anything clever, because the order is the
 // order the references point in. Places come first of the domains: every
 // layer points at a place, and the listings of species at places reference
-// both places and species, so they go after both. A store added in
+// both places and species, so they go after both; so do photos, for the same
+// reason. A store added in
 // the wrong place fails at startup on a fresh database and nowhere else, which
 // is the cheapest moment for it to fail.
 func prepare(ctx context.Context, db *sql.DB) error {
@@ -157,6 +169,7 @@ func prepare(ctx context.Context, db *sql.DB) error {
 		{"places", placedb.Init},
 		{"species", speciesdb.Init},
 		{"plants listed at places", listingdb.Init},
+		{"photos", photodb.Init},
 		{"stewards", userdb.Init},
 	} {
 		if err := step.init(ctx, db); err != nil {
@@ -180,6 +193,7 @@ func expectedSchema() sqldb.Expected {
 		placedb.Expected,
 		speciesdb.Expected,
 		listingdb.Expected,
+		photodb.Expected,
 		userdb.Expected,
 	} {
 		maps.Copy(expected, store)

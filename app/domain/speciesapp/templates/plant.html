@@ -10,7 +10,15 @@
   <a href="/plants/{{.Slug}}?view=weeding"{{if .Weeding}} aria-current="page"{{end}}>{{say $l .Copy.Weeding}}</a>
 </nav>
 
-<div class="card photos-missing">{{range .Missing}}<p>{{say $l .}}</p>{{end}}</div>
+{{range .Figures}}
+<figure class="photo">
+  <img src="/photos/{{.ID}}/small.jpg" srcset="/photos/{{.ID}}/small.jpg {{.SmallW}}w, /photos/{{.ID}}/large.jpg {{.LargeW}}w" sizes="(max-width: 640px) 100vw, 600px" width="{{.Width}}" height="{{.Height}}" alt="{{.Alt.In $l}}"{{if gt (len $.Data.Figures) 1}} loading="lazy"{{end}}>
+  <figcaption><strong>{{say $l .Kind}}</strong>
+    <span class="photo-credit">{{if .SourceURL}}{{say $l $.Data.Copy.PhotoBy}} {{say $l .Credit}}, {{.License}} · <a href="{{.SourceURL}}" rel="noopener">{{say $l $.Data.Copy.Source}}</a>{{else}}{{say $l .Credit}}{{if .Where.EN}} · {{say $l .Where}}{{end}}{{end}}{{with .When}} · {{.}}{{end}}</span>
+  </figcaption>
+</figure>
+{{end}}
+{{if .Missing}}<div class="card photos-missing">{{range .Missing}}<p>{{say $l .}}</p>{{end}}</div>{{end}}
 
 {{if .Weeding}}
 <h2>{{say $l .Copy.WhereItGrows}}</h2>
@@ -39,6 +47,7 @@
 {{end}}
 
 {{with .EditURL}}<a class="onward" href="{{.}}" lang="en"><span>{{say $l $.Data.Copy.Edit}}</span><span aria-hidden="true">›</span></a>{{end}}
+{{with .PhotosURL}}<a class="onward" href="{{.}}" lang="en"><span>{{say $l $.Data.Copy.Photos}}</span><span aria-hidden="true">›</span></a>{{end}}
 {{end}}{{end}}
 
 {{define "plant-where"}}{{$l := .Lang}}{{with .Data}}{{if .Grows}}

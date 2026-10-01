@@ -1,6 +1,7 @@
 package stewardapp_test
 
 import (
+	"database/sql"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,9 @@ import (
 	"github.com/jroedel/stewards/app/sdk/muxer"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
+	"github.com/jroedel/stewards/business/domain/photo/photobus"
+	"github.com/jroedel/stewards/business/domain/photo/stores/photodb"
+	"github.com/jroedel/stewards/business/domain/photo/stores/photofs"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
@@ -50,6 +54,7 @@ func serve(t *testing.T, withMail bool) *site {
 		func() error { return placedb.Init(t.Context(), db) },
 		func() error { return speciesdb.Init(t.Context(), db) },
 		func() error { return listingdb.Init(t.Context(), db) },
+		func() error { return photodb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
@@ -63,7 +68,7 @@ func serve(t *testing.T, withMail bool) *site {
 	cfg := muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
 		Places: placebus.NewBusiness(placedb.NewStore(db), nil), Users: s.users,
-		Species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
+		Species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: photos(t, db),
 		BaseURL: base,
 	}
 	if withMail {
@@ -236,4 +241,17 @@ func TestSignedOutThereIsNoStewardList(t *testing.T) {
 	if w := s.do(http.MethodPost, "/steward/stewards", url.Values{"email": {"x@example.org"}}, nil); w.Code != http.StatusForbidden {
 		t.Errorf("a signed-out add: %d, want 403", w.Code)
 	}
+}
+
+// photos is the photo rules over this test's database and a directory of its
+// own.
+func photos(t *testing.T, db *sql.DB) *photobus.Business {
+	t.Helper()
+
+	files, err := photofs.NewStore(filepath.Join(t.TempDir(), "photo-files"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return photobus.NewBusiness(photodb.NewStore(db), files, nil)
 }

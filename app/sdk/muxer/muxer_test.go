@@ -1,6 +1,7 @@
 package muxer_test
 
 import (
+	"database/sql"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,9 @@ import (
 	"github.com/jroedel/stewards/app/sdk/muxer"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
+	"github.com/jroedel/stewards/business/domain/photo/photobus"
+	"github.com/jroedel/stewards/business/domain/photo/stores/photodb"
+	"github.com/jroedel/stewards/business/domain/photo/stores/photofs"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
@@ -48,7 +52,7 @@ func TestHealthzChecksTheSchema(t *testing.T) {
 				DB:       db,
 				Expected: tc.want,
 				Places:   placebus.NewBusiness(placedb.NewStore(db), nil),
-				Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
+				Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: photos(t, db),
 				Users: userbus.NewBusiness(slog.New(slog.DiscardHandler), userdb.NewStore(db), nil),
 			})
 			if err != nil {
@@ -68,4 +72,17 @@ func TestHealthzChecksTheSchema(t *testing.T) {
 			}
 		})
 	}
+}
+
+// photos is the photo rules over this test's database and a directory of its
+// own.
+func photos(t *testing.T, db *sql.DB) *photobus.Business {
+	t.Helper()
+
+	files, err := photofs.NewStore(filepath.Join(t.TempDir(), "photo-files"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return photobus.NewBusiness(photodb.NewStore(db), files, nil)
 }

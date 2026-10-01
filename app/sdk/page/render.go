@@ -113,10 +113,25 @@ func NewRenderer(log *slog.Logger, own ...fs.FS) (*Renderer, error) {
 			return nil, fmt.Errorf("the page templates could not be listed: %w", err)
 		}
 
+		// Partials are pieces an app's pages share -- the fields both the
+		// add and the edit form of a photo ask for -- in templates/partials.
+		// Parsed into each of that app's pages and no other app's, so two
+		// apps can each have a "fields" without either seeing the other's.
+		partials, err := fs.Glob(fsys, "templates/partials/*.html")
+		if err != nil {
+			return nil, fmt.Errorf("the partial templates could not be listed: %w", err)
+		}
+
 		for _, name := range names {
 			set, err := base.Clone()
 			if err != nil {
 				return nil, fmt.Errorf("the layout could not be copied: %w", err)
+			}
+
+			if len(partials) > 0 {
+				if set, err = set.ParseFS(fsys, partials...); err != nil {
+					return nil, fmt.Errorf("the partials for %s could not be read: %w", name, err)
+				}
 			}
 
 			if set, err = set.ParseFS(fsys, name); err != nil {

@@ -5,10 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
+	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/types"
@@ -25,9 +28,12 @@ import (
 // place. Both end with "Where it grows here" (design.md, "Keep from the first
 // mockups"), the way back to the places.
 //
-// The photos are not here yet. Each view says which kinds it is missing, in
-// the words design.md gives -- "No young-plant photo yet" -- which is the
-// stewards' photo list as much as the volunteer's honest answer.
+// Each view shows its own kinds of photo (design.md §5): planting the flower,
+// the grown plant and its winter look; weeding the seedling, the leaf and the
+// winter look, since a seed head is what gets pulled by mistake in February.
+// Only checked photos, the best of each kind by photobus.Best. A kind with
+// none says so in design.md's words -- "No young-plant photo yet" -- which is
+// the stewards' photo list as much as the volunteer's honest answer.
 
 // CardRoutes mounts the species card: public, and mounted whether or not
 // sign-in is configured.
@@ -46,7 +52,10 @@ type cardWording struct {
 	Statuses map[speciesbus.Status]types.Text
 	Lights   map[speciesbus.Light]types.Text
 	Waters   map[speciesbus.Water]types.Text
-	Missing  map[string]types.Text
+	Missing  map[photobus.Kind]types.Text
+	Kinds    map[photobus.Kind]types.Text
+
+	OurPhoto, PhotoBy, Source, Photos types.Text
 }
 
 // The card's own words. English, with Spanish to be written by a native
@@ -72,6 +81,10 @@ var cardWords = cardWording{
 	Planned:           types.Text{EN: "Planned"},
 	NotSure:           types.Text{EN: "Not sure it is this one? Leave it."},
 	Edit:              types.Text{EN: "Edit this plant"},
+	Photos:            types.Text{EN: "Photos of this plant"},
+	OurPhoto:          types.Text{EN: "Our photo"},
+	PhotoBy:           types.Text{EN: "Photo:"},
+	Source:            types.Text{EN: "source"},
 
 	Actions: map[listingbus.Action]types.Text{
 		listingbus.Protect: {EN: "Protect"},
@@ -91,11 +104,19 @@ var cardWords = cardWording{
 	Waters: map[speciesbus.Water]types.Text{
 		speciesbus.Dry: {EN: "Dry"}, speciesbus.Moist: {EN: "Moist"}, speciesbus.Wet: {EN: "Wet"},
 	},
-	Missing: map[string]types.Text{
-		"young":  {EN: "No young-plant photo yet."},
-		"leaf":   {EN: "No leaf photo yet."},
-		"flower": {EN: "No flower photo yet."},
-		"mature": {EN: "No full-size photo yet."},
+	Missing: map[photobus.Kind]types.Text{
+		photobus.Young:  {EN: "No young-plant photo yet."},
+		photobus.Leaf:   {EN: "No leaf photo yet."},
+		photobus.Flower: {EN: "No flower photo yet."},
+		photobus.Mature: {EN: "No full-size photo yet."},
+		photobus.Winter: {EN: "No winter photo yet."},
+	},
+	Kinds: map[photobus.Kind]types.Text{
+		photobus.Young:  {EN: "Young plant"},
+		photobus.Leaf:   {EN: "Leaf"},
+		photobus.Flower: {EN: "Flower"},
+		photobus.Mature: {EN: "Full size"},
+		photobus.Winter: {EN: "In winter"},
 	},
 }
 
@@ -129,10 +150,28 @@ type cardView struct {
 	Water       []types.Text
 	Note        types.Text
 
+	Figures []figure
 	Missing []types.Text
 	Grows   []grows
 
-	Slug, EditURL string
+	Slug, EditURL, PhotosURL string
+}
+
+// figure is one photo on the card, with what a volunteer is told about it.
+type figure struct {
+	ID                 string
+	Width, Height      int // the small picture's, which reserves the space
+	SmallW, LargeW     int
+	Kind, Alt          types.Text
+	Credit, Where      types.Text
+	When               string
+	License, SourceURL string
+}
+
+// viewKinds is the photos each view shows, in the order it shows them.
+var viewKinds = map[bool][]photobus.Kind{
+	false: {photobus.Flower, photobus.Mature, photobus.Winter},
+	true:  {photobus.Young, photobus.Leaf, photobus.Winter},
 }
 
 type monthCell struct {
@@ -187,13 +226,34 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if v.Weeding {
-		v.Missing = []types.Text{cardWords.Missing["young"], cardWords.Missing["leaf"]}
-	} else {
-		v.Missing = []types.Text{cardWords.Missing["flower"], cardWords.Missing["mature"]}
+	places, err := a.places.All(ctx)
+	if err != nil {
+		a.fail(w, r, "listing places for a species card", err)
+
+		return
 	}
 
-	if v.Grows, err = a.where(r, sp); err != nil {
+	photos, err := a.photos.ForSpecies(ctx, sp.ID)
+	if err != nil {
+		a.fail(w, r, "reading a species' photos", err)
+
+		return
+	}
+
+	names := placeNames(places)
+
+	for _, k := range viewKinds[v.Weeding] {
+		p, ok := photobus.Best(photos, k)
+		if !ok {
+			v.Missing = append(v.Missing, cardWords.Missing[k])
+
+			continue
+		}
+
+		v.Figures = append(v.Figures, figureOf(p, sp, names))
+	}
+
+	if v.Grows, err = a.where(r, sp, places, names); err != nil {
 		a.fail(w, r, "reading where a species grows", err)
 
 		return
@@ -201,6 +261,7 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 
 	if _, ok := mid.StewardFrom(ctx); ok {
 		v.EditURL = "/steward/species/" + sp.ID.String() + "/edit"
+		v.PhotosURL = "/steward/species/" + sp.ID.String() + "/photos"
 	}
 
 	a.render.Render(w, r, http.StatusOK, "plant", v)
@@ -208,14 +269,9 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 
 // where is every place the species is listed, with what to do there, in the
 // places' own list order.
-func (a app) where(r *http.Request, sp speciesbus.Species) ([]grows, error) {
+func (a app) where(r *http.Request, sp speciesbus.Species, places []placebus.Place, names map[types.ID]types.Text) ([]grows, error) {
 	listed, err := a.listings.ForSpecies(r.Context(), sp.ID)
 	if err != nil || len(listed) == 0 {
-		return nil, err
-	}
-
-	places, err := a.places.All(r.Context())
-	if err != nil {
 		return nil, err
 	}
 
@@ -236,10 +292,29 @@ func (a app) where(r *http.Request, sp speciesbus.Species) ([]grows, error) {
 			continue
 		}
 
+		out = append(out, grows{
+			Slug: p.Slug, Name: names[p.ID], Action: cardWords.Actions[l.Action],
+			Pull: l.Action == listingbus.Pull, Planned: l.Planned, Note: l.Note,
+		})
+	}
+
+	return out, nil
+}
+
+// placeNames is every place's name as the card says it. A band is named with
+// the place it is in, "Rain garden: Inflow band", since "Inflow band" alone
+// could be anywhere.
+func placeNames(places []placebus.Place) map[types.ID]types.Text {
+	byID := map[types.ID]placebus.Place{}
+	for _, p := range places {
+		byID[p.ID] = p
+	}
+
+	names := map[types.ID]types.Text{}
+
+	for _, p := range places {
 		name := p.Name
 
-		// A band is named with the place it is in, "Rain garden: Inflow
-		// band", since "Inflow band" alone could be anywhere.
 		if parent, ok := byID[p.ParentID]; ok && !p.TopLevel() {
 			name = types.Text{EN: parent.Name.EN + ": " + p.Name.EN}
 			if parent.Name.ES != "" && p.Name.ES != "" {
@@ -247,11 +322,56 @@ func (a app) where(r *http.Request, sp speciesbus.Species) ([]grows, error) {
 			}
 		}
 
-		out = append(out, grows{
-			Slug: p.Slug, Name: name, Action: cardWords.Actions[l.Action],
-			Pull: l.Action == listingbus.Pull, Planned: l.Planned, Note: l.Note,
-		})
+		names[p.ID] = name
 	}
 
-	return out, nil
+	return names
+}
+
+// figureOf is a photo as the card shows it, with its credit: "Our photo ·
+// Rain garden: Inflow band · April 2027", or the author, licence and source of
+// a borrowed one, which its licence requires beside the picture.
+func figureOf(p photobus.Photo, sp speciesbus.Species, names map[types.ID]types.Text) figure {
+	kind := cardWords.Kinds[p.Kind]
+
+	f := figure{
+		ID: p.ID.String(), Width: p.Small.Width, Height: p.Small.Height,
+		SmallW: p.Small.Width, LargeW: p.Large.Width,
+		Kind: kind,
+		Alt:  types.Text{EN: sp.Common.EN + ": " + strings.ToLower(kind.EN)},
+		When: takenWords(p.TakenYear, p.TakenMonth),
+	}
+
+	if sp.Common.ES != "" && kind.ES != "" {
+		f.Alt.ES = sp.Common.ES + ": " + strings.ToLower(kind.ES)
+	}
+
+	if p.Source == photobus.Borrowed {
+		f.Credit = types.Text{EN: p.Credit}
+		f.License, f.SourceURL = p.License, p.SourceURL
+	} else {
+		f.Credit = cardWords.OurPhoto
+		if p.Credit != "" {
+			f.Credit = types.Text{EN: p.Credit}
+		}
+		f.Where = names[p.PlaceID]
+	}
+
+	return f
+}
+
+// takenWords is "April 2027", "April", "2027" or nothing. English month
+// names, like the rest of the card's words until a native speaker writes the
+// Spanish.
+func takenWords(year, month int) string {
+	var parts []string
+	if month >= 1 && month <= 12 {
+		parts = append(parts, time.Month(month).String())
+	}
+
+	if year != 0 {
+		parts = append(parts, strconv.Itoa(year))
+	}
+
+	return strings.Join(parts, " ")
 }

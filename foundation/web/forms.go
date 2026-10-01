@@ -134,3 +134,27 @@ func formEncoded(header string) bool {
 
 	return err == nil && kind == FormEncoded
 }
+
+// Multipart is the content type a form carrying a file arrives as.
+const Multipart = "multipart/form-data"
+
+// MultipartOnly is FormEncodedOnly's counterpart for the routes that take a
+// file: a write to one of them must be a multipart form. It is mounted on
+// those routes alone, so that the expensive parse is only ever offered where
+// a handler asked for it.
+func MultipartOnly() Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			kind, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+			if !safeMethod(r.Method) && (err != nil || kind != Multipart) {
+				http.Error(w,
+					"That was not sent from one of this site's forms. Open the page again and send it from there.",
+					http.StatusUnsupportedMediaType)
+
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}

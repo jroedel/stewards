@@ -96,3 +96,26 @@ func TestOnlyAFormPostIsAccepted(t *testing.T) {
 		}
 	}
 }
+
+// The upload route's check is the mirror image: a file form and nothing else.
+func TestOnlyAFileFormIsAcceptedWhereAFileIsExpected(t *testing.T) {
+	mw := web.MultipartOnly()
+
+	for kind, want := range map[string]bool{
+		"multipart/form-data; boundary=x":   true,
+		"application/x-www-form-urlencoded": false,
+		"multipart/mixed; boundary=x":       false,
+		"multipart/form-data-ish":           false,
+		"":                                  false,
+	} {
+		if got := passes(t, mw, post(map[string]string{"Content-Type": kind})); got != want {
+			t.Errorf("%q: passed = %v, want %v", kind, got, want)
+		}
+	}
+
+	// A page read has no body to be the wrong shape.
+	get := httptest.NewRequest(http.MethodGet, "/", nil)
+	if !passes(t, mw, get) {
+		t.Error("a GET was refused")
+	}
+}

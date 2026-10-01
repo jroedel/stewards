@@ -131,7 +131,8 @@ func (s *Store) Delete(ctx context.Context, id types.ID) error {
 
 	switch {
 	case sqldb.IsForeignKeyViolation(err):
-		// A listing, or a band, still names it; see listingdb.
+		// A listing, a photo or a band still names it; see listingdb
+		// and photodb.
 		return placebus.ErrInUse
 	case err != nil:
 		return fmt.Errorf("deleting the place: %w", err)

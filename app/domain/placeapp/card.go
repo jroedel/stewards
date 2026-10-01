@@ -11,6 +11,7 @@ import (
 
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
+	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/types"
@@ -106,6 +107,12 @@ type plantLine struct {
 	Swatch     string // the first colour, for the calendar; "" for none
 	Bloom      []bool // twelve, January first
 	BloomWords string // "Mar–May", for a screen reader beside the cells
+
+	// Thumb is the id of the plant's flower photo, or its full-size one,
+	// for the Planned list: a planter imagining the bed needs to see what is
+	// going in. Empty when it has neither checked yet. Shown as a square,
+	// cropped by the stylesheet, so its own size is not needed.
+	Thumb string
 }
 
 type cardView struct {
@@ -226,6 +233,12 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if l.Planned {
+			if line, err = a.withThumb(r, line, sp); err != nil {
+				a.fail(w, r, "reading a planned plant's photos", err)
+
+				return
+			}
+
 			v.Planned = append(v.Planned, line)
 
 			if !sp.Bloom.Zero() {
@@ -316,4 +329,23 @@ func summary(listed []listingbus.Listing) types.Text {
 	}
 
 	return types.Text{EN: strings.Join(parts, " · ")}
+}
+
+// withThumb adds the picture a planter is shown beside a planned plant: its
+// flower if it has a checked one, else the grown plant.
+func (a app) withThumb(r *http.Request, line plantLine, sp speciesbus.Species) (plantLine, error) {
+	photos, err := a.photos.ForSpecies(r.Context(), sp.ID)
+	if err != nil {
+		return line, err
+	}
+
+	for _, k := range []photobus.Kind{photobus.Flower, photobus.Mature} {
+		if p, ok := photobus.Best(photos, k); ok {
+			line.Thumb = p.ID.String()
+
+			break
+		}
+	}
+
+	return line, nil
 }

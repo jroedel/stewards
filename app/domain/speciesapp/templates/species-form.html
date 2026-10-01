@@ -4,6 +4,8 @@
 <p class="eyebrow"><a href="/steward/species">Plants</a></p>
 <h1>{{.Title}}</h1>
 
+{{if .ID}}<a class="onward" href="/steward/species/{{.ID}}/photos"><span>Photos <span class="quiet">young plant, leaf, flower, full size, winter</span></span><span aria-hidden="true">›</span></a>{{end}}
+
 {{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below and press Save again.</p>{{end}}
 
 <form class="card form" method="post" action="{{if .ID}}/steward/species/{{.ID}}{{else}}/steward/species{{end}}">
