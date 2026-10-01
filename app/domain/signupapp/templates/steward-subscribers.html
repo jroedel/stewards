@@ -1,0 +1,33 @@
+{{define "title"}}Email list · Garden stewards{{end}}
+{{define "content"}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow"><a href="/steward">Places</a></p>
+<h1>Email list</h1>
+<p class="lead">People who signed up on the home page to hear about stewardship days, and confirmed their address.{{if .Pending}} {{.Pending}} more signed up and have not confirmed yet.{{end}}</p>
+
+{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+
+{{if .Rows}}
+<div class="card form">
+  <label for="bcc">Every address, to write to them all</label>
+  <p class="help" id="bcc-help">Copy these into the <strong>Bcc</strong> line of an email, never To or Cc, which would show everyone's address to everyone. Say in the email that they can reply to be taken off the list, and remove them here when they do.</p>
+  <textarea id="bcc" rows="3" readonly aria-describedby="bcc-help">{{.All}}</textarea>
+</div>
+
+<h2>{{len .Rows}} on the list</h2>
+<ul class="rows">
+{{range .Rows}}<li class="row">
+  <div class="row-main-static">
+    <div class="row-name">{{.Email}}</div>
+    <div class="row-note">Since {{.Since}} · {{.Lang}}</div>
+  </div>
+  <form method="post" action="/steward/subscribers/{{.ID}}/remove">
+    <button class="button button-quiet button-small" type="submit">Remove</button>
+  </form>
+</li>
+{{end}}</ul>
+{{else}}
+<div class="card empty"><p>Nobody has signed up yet. The form is at the top of the home page.</p></div>
+{{end}}
+</div>
+{{end}}{{end}}

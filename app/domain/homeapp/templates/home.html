@@ -3,6 +3,18 @@
 <h1>{{say $l .Copy.Title}}</h1>
 <p class="lead">{{say $l .Copy.Lead}}</p>
 
+{{if .SignUp}}{{/* The same markup as signupapp's partial "signup-fields", which shows
+     it again after a typo; keep the two alike, the honeypot above all. */}}
+<form class="card form signup" method="post" action="/subscribe">
+  <h2>{{say $l .Copy.FormTitle}}</h2>
+  <p class="help" id="signup-help">{{say $l .Copy.FormHelp}}</p>
+  <label for="signup-email">{{say $l .Copy.FormLabel}}</label>
+  <input id="signup-email" name="email" type="email" autocomplete="email" inputmode="email" required aria-describedby="signup-help">
+  <div class="honeypot" aria-hidden="true"><label for="signup-website">Leave this empty</label><input id="signup-website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
+  <button class="button" type="submit">{{say $l .Copy.FormButton}}</button>
+</form>
+{{end}}
+
 <h2>{{say $l .Copy.Days}}</h2>
 {{if .Days}}
 <ul class="days">
