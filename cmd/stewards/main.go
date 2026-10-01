@@ -16,6 +16,8 @@ import (
 	"github.com/jroedel/stewards/app/sdk/muxer"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
+	"github.com/jroedel/stewards/business/domain/species/speciesbus"
+	"github.com/jroedel/stewards/business/domain/species/stores/speciesdb"
 	"github.com/jroedel/stewards/business/domain/user/stores/userdb"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
 	"github.com/jroedel/stewards/foundation/logger"
@@ -120,6 +122,7 @@ func run() error {
 		DB:        db,
 		Expected:  expected,
 		Places:    placebus.NewBusiness(placedb.NewStore(db), nil),
+		Species:   speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
 		Users:     users,
 		BaseURL:   cfg.Server.BaseURL,
 		Mail:      sender,
@@ -149,6 +152,7 @@ func prepare(ctx context.Context, db *sql.DB) error {
 	}{
 		{"the infrastructure tables", sqldb.Init},
 		{"places", placedb.Init},
+		{"species", speciesdb.Init},
 		{"stewards", userdb.Init},
 	} {
 		if err := step.init(ctx, db); err != nil {
@@ -170,6 +174,7 @@ func expectedSchema() sqldb.Expected {
 
 	for _, store := range []sqldb.Expected{
 		placedb.Expected,
+		speciesdb.Expected,
 		userdb.Expected,
 	} {
 		maps.Copy(expected, store)

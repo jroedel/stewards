@@ -1,0 +1,125 @@
+{{define "title"}}{{.Data.Title}} · Garden stewards{{end}}
+{{define "content"}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow"><a href="/steward/species">Plants</a></p>
+<h1>{{.Title}}</h1>
+
+{{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below and press Save again.</p>{{end}}
+
+<form class="card form" method="post" action="{{if .ID}}/steward/species/{{.ID}}{{else}}/steward/species{{end}}">
+  <fieldset>
+    <legend>Name</legend>
+    {{template "species-problem" (index .Problems "common")}}
+    <label for="common_en">Common name, in English</label>
+    <input id="common_en" name="common_en" type="text" value="{{.CommonEN}}" required maxlength="60">
+    <label for="common_es">En español <span class="optional">optional</span></label>
+    <input id="common_es" name="common_es" type="text" value="{{.CommonES}}" lang="es" maxlength="60">
+    <label for="scientific">Scientific name</label>
+    {{template "species-problem" (index .Problems "scientific")}}
+    <input id="scientific" name="scientific" type="text" value="{{.Scientific}}" autocapitalize="off" spellcheck="false" placeholder="Callirhoe involucrata">
+  </fieldset>
+
+  {{if .ID}}
+  <p class="help">Its address is <strong>/plants/{{.Slug}}</strong>. It cannot change, because it may already be printed on a stake.</p>
+  {{else}}
+  <label for="slug">Address</label>
+  <p class="help" id="slug-help">The end of the link to this plant, such as <strong>winecup</strong>. Lower-case letters, numbers and hyphens. It cannot be changed later.</p>
+  {{template "species-problem" (index .Problems "slug")}}
+  <input id="slug" name="slug" type="text" value="{{.Slug}}" aria-describedby="slug-help" required maxlength="48" autocapitalize="off" autocomplete="off" spellcheck="false">
+  {{end}}
+
+  <fieldset>
+    <legend>What it is</legend>
+    <label for="status">Status</label>
+    {{template "species-problem" (index .Problems "status")}}
+    <select id="status" name="status">
+      {{range .Statuses}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
+      {{end}}
+    </select>
+  </fieldset>
+
+  <fieldset>
+    <legend>Sources</legend>
+    <p class="help">What the ID was checked against: the Wildflower Center's page, a nursery tag, a field guide. A web address is optional.</p>
+    {{template "species-problem" (index .Problems "sources")}}
+    {{range $i, $s := .Sources}}
+    <div class="source-row">
+      <label for="source_label_{{$i}}">Source {{$s.N}}</label>
+      <input id="source_label_{{$i}}" name="source_label" type="text" value="{{$s.Label}}" maxlength="120">
+      <label for="source_url_{{$i}}" class="sr-only">Web address for source {{$s.N}}</label>
+      <input id="source_url_{{$i}}" name="source_url" type="url" value="{{$s.URL}}" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://">
+    </div>
+    {{end}}
+    {{template "species-problem" (index .Problems "confirmed")}}
+    <label class="check"><input type="checkbox" name="confirmed" value="yes"{{if .Confirmed}} checked{{end}}> The ID is confirmed against these sources</label>
+    <p class="help">Leave it unticked if anybody is still unsure. The card then says "not yet confirmed", which is the honest answer.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Flower</legend>
+    <label for="flower_en">Colour, in words</label>
+    <input id="flower_en" name="flower_en" type="text" value="{{.FlowerEN}}" placeholder="Purple-pink">
+    <label for="flower_es">En español <span class="optional">optional</span></label>
+    <input id="flower_es" name="flower_es" type="text" value="{{.FlowerES}}" lang="es">
+    <label for="swatches">Colour codes <span class="optional">optional</span></label>
+    <p class="help" id="swatches-help">For the coloured dots on the bloom strip: up to four, like <strong>#8e1b4b</strong>, separated by spaces.</p>
+    {{template "species-problem" (index .Problems "swatches")}}
+    <input id="swatches" name="swatches" type="text" value="{{.Swatches}}" aria-describedby="swatches-help" autocapitalize="off" spellcheck="false">
+    <p class="label-like" id="bloom-label">Blooms in</p>
+    {{template "species-problem" (index .Problems "bloom")}}
+    <div class="months" role="group" aria-labelledby="bloom-label">
+      {{range .Months}}<label class="month"><input type="checkbox" name="bloom" value="{{.Number}}"{{if .On}} checked{{end}}><span><abbr title="{{.Long}}">{{.Short}}</abbr></span></label>{{end}}
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Mature size, in inches</legend>
+    <p class="help">From the smallest to the largest a nursery gives. A foot is 12; four feet is 48.</p>
+    {{template "species-problem" (index .Problems "height")}}
+    <div class="pair">
+      <div><label for="height_min">Height from</label><input id="height_min" name="height_min" type="number" inputmode="numeric" min="0" value="{{.HeightMin}}"></div>
+      <div><label for="height_max">to</label><input id="height_max" name="height_max" type="number" inputmode="numeric" min="0" value="{{.HeightMax}}"></div>
+    </div>
+    {{template "species-problem" (index .Problems "width")}}
+    <div class="pair">
+      <div><label for="width_min">Width from</label><input id="width_min" name="width_min" type="number" inputmode="numeric" min="0" value="{{.WidthMin}}"></div>
+      <div><label for="width_max">to</label><input id="width_max" name="width_max" type="number" inputmode="numeric" min="0" value="{{.WidthMax}}"></div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Light</legend>
+    {{template "species-problem" (index .Problems "light")}}
+    {{range .Light}}<label class="check"><input type="checkbox" name="light" value="{{.Value}}"{{if .Selected}} checked{{end}}> {{.Label}}</label>{{end}}
+  </fieldset>
+
+  <fieldset>
+    <legend>Water</legend>
+    {{template "species-problem" (index .Problems "water")}}
+    {{range .Water}}<label class="check"><input type="checkbox" name="water" value="{{.Value}}"{{if .Selected}} checked{{end}}> {{.Label}}</label>{{end}}
+  </fieldset>
+
+  <fieldset>
+    <legend>Notes for planters</legend>
+    {{template "species-problem" (index .Problems "note")}}
+    <label for="note_en">In English</label>
+    <textarea id="note_en" name="note_en" rows="4">{{.NoteEN}}</textarea>
+    <label for="note_es">En español <span class="optional">optional</span></label>
+    <textarea id="note_es" name="note_es" rows="4" lang="es">{{.NoteES}}</textarea>
+  </fieldset>
+
+  <button class="button" type="submit">Save</button>
+</form>
+
+{{if .ID}}
+<form class="card form danger" method="post" action="/steward/species/{{.ID}}/delete">
+  <h2>Remove this plant</h2>
+  {{with .DeleteProblem}}<p class="problem" role="alert">{{.}}</p>{{end}}
+  <label class="check"><input type="checkbox" name="confirm" value="yes"> Yes, remove {{.Name}}</label>
+  <button class="button button-quiet" type="submit">Remove</button>
+</form>
+{{end}}
+</div>
+{{end}}{{end}}
+
+{{define "species-problem"}}{{if .}}<p class="field-problem">{{.}}</p>{{end}}{{end}}

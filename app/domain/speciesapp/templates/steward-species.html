@@ -1,0 +1,32 @@
+{{define "title"}}Plants · Garden stewards{{end}}
+{{define "content"}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow"><a href="/steward">Places</a></p>
+<h1>Plants</h1>
+<p class="lead">One record per species. Where each one grows, and whether to pull or protect it there, comes next.</p>
+
+{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+
+{{if .Species}}
+<ul class="rows">
+{{range .Species}}<li><a class="row" href="/steward/species/{{.ID}}/edit">
+  <div>
+    <div class="row-name">{{.Common}}{{range .Swatches}} {{template "swatch" .}}{{end}}</div>
+    {{if .Scientific}}<div class="row-note"><i>{{.Scientific}}</i></div>{{end}}
+    <div class="row-tags"><span class="tag">{{.Status}}</span>{{if .Confirmed}}<span class="tag tag-ok">ID confirmed</span>{{else}}<span class="tag tag-open">Not yet confirmed</span>{{end}}{{with .Bloom}}<span class="tag">Blooms {{.}}</span>{{end}}</div>
+  </div>
+  <span class="row-go" aria-hidden="true">Edit ›</span>
+</a></li>
+{{end}}</ul>
+{{else}}
+<div class="card empty"><p>No plants yet. Start with what is going into the rain garden.</p></div>
+{{end}}
+
+<a class="button button-block" href="/steward/species/new">Add a plant</a>
+</div>
+{{end}}{{end}}
+
+{{/* A colour dot. An SVG fill rather than a style attribute, which the page's
+     CSP (style-src 'self') refuses; the faint outline is what lets a white
+     flower's dot show on white (design.md, "Flower colors are data"). */}}
+{{define "swatch"}}<svg class="swatch" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="{{.}}" stroke="#231F20" stroke-opacity="0.35"/></svg>{{end}}

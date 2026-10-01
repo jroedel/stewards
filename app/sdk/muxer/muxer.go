@@ -14,11 +14,13 @@ import (
 	"github.com/jroedel/stewards/app/domain/authapp"
 	"github.com/jroedel/stewards/app/domain/homeapp"
 	"github.com/jroedel/stewards/app/domain/placeapp"
+	"github.com/jroedel/stewards/app/domain/speciesapp"
 	"github.com/jroedel/stewards/app/domain/stewardapp"
 	"github.com/jroedel/stewards/app/sdk/health"
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
+	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
 	"github.com/jroedel/stewards/foundation/mail"
 	"github.com/jroedel/stewards/foundation/sqldb"
@@ -31,6 +33,7 @@ type Config struct {
 	DB       *sql.DB
 	Expected sqldb.Expected
 	Places   *placebus.Business
+	Species  *speciesbus.Business
 	Users    *userbus.Business
 
 	// BaseURL is the public origin. Empty means sign-in is off: its routes
@@ -53,13 +56,13 @@ const maxBody = 64 << 10
 
 // New builds the handler.
 func New(cfg Config) (http.Handler, error) {
-	if cfg.Log == nil || cfg.DB == nil || cfg.Places == nil || cfg.Users == nil {
-		return nil, errors.New("the muxer needs a logger, a database, and the place and steward rules")
+	if cfg.Log == nil || cfg.DB == nil || cfg.Places == nil || cfg.Species == nil || cfg.Users == nil {
+		return nil, errors.New("the muxer needs a logger, a database, and the place, species and steward rules")
 	}
 
 	// One renderer holding every app's pages: the stylesheet has one hashed
 	// path, and net/http panics on a pattern registered twice.
-	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, stewardapp.Templates)
+	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, stewardapp.Templates)
 	if err != nil {
 		return nil, err
 	}
@@ -91,6 +94,7 @@ func New(cfg Config) (http.Handler, error) {
 		guard := mid.Require(authapp.SignInPath)
 
 		placeapp.Routes(mux, cfg.Log, render, cfg.Places, guard)
+		speciesapp.Routes(mux, cfg.Log, render, cfg.Species, guard)
 		stewardapp.Routes(mux, stewardapp.Config{
 			Log:     cfg.Log,
 			Render:  render,

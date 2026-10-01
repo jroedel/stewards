@@ -139,7 +139,18 @@ The brand palette comes from `tokens.json`. It uses the colors **painted** in th
 ## 5. Imagery
 
 - **Our photos first.** Photo points (same spot, same direction, each season) are the backbone of the place cards. A photo is always dated and credited to its place and its photographer.
-- **Species photos need two kinds:** a **close-up** (flower or leaf) and the **mature plant in context**. Weeding cards also need a **seedling** photo.
+- **Every species photo is labelled with one of five kinds**, so each view of the card can pick the right picture:
+
+  | Kind | Shown on | Why |
+  |---|---|---|
+  | **Young plant** (seedling) | Weeding | What you're looking at when deciding whether to pull. It often looks nothing like the adult |
+  | **Leaf close-up** | Weeding, ID | Most plants spend most of the year out of bloom. Leaf shape, edges and hairs tell a native from its look-alike in March |
+  | **Flower close-up** | Planting, bloom calendar | What a planter is choosing for; it fixes the color the bloom strip shows |
+  | **Mature plant, full size** | Planting | "Will it look right here?": the size and shape in a few years, in a garden setting, not a nursery pot |
+  | **Winter / seed head** | Planting, weeding | How many prairie plants look for half the year, and why they're left standing |
+
+  Leaf and flower are separate on purpose: a combined slot gets filled with the flower, and the weeder is left with nothing to compare. Each photo also carries the **month it was taken**, its **source and credit**, and whether it has been **checked against the species**. An unchecked photo isn't shown to volunteers. A missing kind shows as "No young-plant photo yet", which also gives the stewards their photo to-do list.
+- **Look-alikes are a link between two species**, each shown with its own leaf photo side by side, not a photo kind.
 - **Borrowed photos** come from Wikimedia Commons or iNaturalist under an open license, **checked against the species** before use, and credited on the card. The skinny bed guide's rule stays: two "frostweed" photos turned out to be wingstem.
 - **The logo on photos** is always the white or black version (§2).
 - **No stock photography** of generic gardens or people.

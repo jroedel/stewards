@@ -1,0 +1,462 @@
+// Package speciesbus is the rules about species: one record per plant, read
+// two ways (phase-1-plan.md, "Species cards: one record, two jobs").
+//
+// For planting, a species is its flower colour, bloom months, mature size and
+// light: what it will look like here in a few years. For weeding it is its
+// young-plant photo, its look-alikes and what to do with it in this place.
+// The record holds what both views share and what planting needs. What to do
+// with it is not here, on purpose: pull or protect belongs to a species *and*
+// a place (poison ivy is native, pulled along the paths and maybe kept in the
+// woods), so it lives on the link between them, which is the next layer.
+//
+// # Where an ID's authority comes from
+//
+// From its sources, never from a person (CLAUDE.md, design.md principle 9).
+// So a species is "confirmed" only with a scientific name and at least one
+// source cited -- a nursery tag, the Wildflower Center's page -- and the rule
+// is here rather than in a form, so that nothing can mark an ID checked
+// without saying what it was checked against. Until then the cards say "not
+// yet confirmed", which is the honest default.
+package speciesbus
+
+import (
+	"cmp"
+	"context"
+	"errors"
+	"fmt"
+	"net/url"
+	"slices"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"github.com/jroedel/stewards/business/types"
+)
+
+// Status is what kind of plant this is to the garden, from the plan's list.
+// The zero Status is "not set yet", which the cards show as such.
+type Status string
+
+const (
+	StatusNative   Status = "native"
+	StatusCultivar Status = "cultivar" // a native-derived cultivar or hybrid
+	StatusAdapted  Status = "adapted"
+	StatusEdible   Status = "edible" // edible or herb
+	StatusInvasive Status = "invasive"
+)
+
+// Statuses is every status, in the order a form offers them.
+var Statuses = []Status{StatusNative, StatusCultivar, StatusAdapted, StatusEdible, StatusInvasive}
+
+// Label is the status in words, for a steward's form. The volunteer card will
+// carry its own, bilingual wording.
+func (s Status) Label() string {
+	switch s {
+	case StatusNative:
+		return "Native"
+	case StatusCultivar:
+		return "Native cultivar or hybrid"
+	case StatusAdapted:
+		return "Adapted"
+	case StatusEdible:
+		return "Edible or herb"
+	case StatusInvasive:
+		return "Invasive"
+	}
+
+	return "Not set"
+}
+
+// Light is the light a plant takes, as a set: most take a range.
+type Light uint8
+
+const (
+	FullSun Light = 1 << iota
+	PartShade
+	Shade
+
+	allLight = FullSun | PartShade | Shade
+)
+
+// Water is the water a plant takes, as a set. The rain garden's three bands
+// are, roughly, these three.
+type Water uint8
+
+const (
+	Dry Water = 1 << iota
+	Moist
+	Wet
+
+	allWater = Dry | Moist | Wet
+)
+
+// Size is a mature dimension in inches, from Min to Max. Zero for both is
+// "not recorded". Inches because nursery lists mix them with feet ("18–24\"",
+// "4–7'") and one unit is the only way to compare and sort them.
+type Size struct{ Min, Max int }
+
+// maxInches is twelve metres: taller than anything planted here, and short
+// enough to catch a typo in feet where inches were meant the other way round.
+const maxInches = 480
+
+// String is the size for a card: inches up to three feet, which is how a
+// nursery list writes the small plants ("18–24 in"), and whole feet above
+// that when both ends are whole feet ("4–7 ft"). Anything else stays in
+// inches rather than mixing units in one range.
+func (s Size) String() string {
+	if s.Max == 0 {
+		return ""
+	}
+
+	n, unit := func(v int) int { return v }, "in"
+	if s.Max > 36 && s.Min%12 == 0 && s.Max%12 == 0 {
+		n, unit = func(v int) int { return v / 12 }, "ft"
+	}
+
+	if s.Min == s.Max {
+		return fmt.Sprintf("%d %s", n(s.Max), unit)
+	}
+
+	return fmt.Sprintf("%d–%d %s", n(s.Min), n(s.Max), unit)
+}
+
+// Source is what an ID was checked against.
+type Source struct {
+	Label string // "Lady Bird Johnson Wildflower Center"
+	URL   string // optional; a nursery tag has none
+}
+
+// Species is one plant.
+type Species struct {
+	ID types.ID
+
+	// Slug is the species' address, /plants/winecup. Fixed once made, like a
+	// place's, because it gets printed on stakes.
+	Slug string
+
+	Common     types.Text // "Winecup" / "Copa de vino"
+	Scientific string     // "Callirhoe involucrata"
+	Status     Status
+	Confirmed  bool
+
+	// FlowerColor is the colour in words; Swatches are the same as #rrggbb,
+	// for the bloom strip's dots. Data, not interface (design.md): a white
+	// flower is #ffffff and gets an outline on the card.
+	FlowerColor types.Text
+	Swatches    []string
+	Bloom       types.Months
+
+	Height, Width Size
+	Light         Light
+	Water         Water
+
+	// Note is everything else a planter needs: how to plant, what to watch.
+	Note types.Text
+
+	Sources []Source
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// Fields is everything a steward sets. Slug is read by Create only.
+type Fields struct {
+	Slug          string
+	Common        types.Text
+	Scientific    string
+	Status        Status
+	Confirmed     bool
+	FlowerColor   types.Text
+	Swatches      []string
+	Bloom         types.Months
+	Height, Width Size
+	Light         Light
+	Water         Water
+	Note          types.Text
+	Sources       []Source
+}
+
+// Invalid is a species a steward could not save as given, shaped like
+// placebus.Invalid so an app shows both the same way.
+type Invalid struct {
+	Field   string
+	Problem string
+}
+
+func (e Invalid) Error() string { return fmt.Sprintf("%s: %s", e.Field, e.Problem) }
+
+var (
+	// ErrNotFound is returned when there is no such species.
+	ErrNotFound = errors.New("there is no such species")
+
+	// ErrSlugTaken is returned by a Storer when the address is in use; the
+	// insert is the check.
+	ErrSlugTaken = errors.New("another species already has that address")
+)
+
+// Storer is what the rules need from storage. A species is saved with its
+// sources, as one write.
+type Storer interface {
+	Create(ctx context.Context, s Species) error
+	Update(ctx context.Context, s Species) error
+	Delete(ctx context.Context, id types.ID) error
+	ByID(ctx context.Context, id types.ID) (Species, error)
+	BySlug(ctx context.Context, slug string) (Species, error)
+	All(ctx context.Context) ([]Species, error)
+}
+
+// Business applies the rules and then asks the store.
+type Business struct {
+	store Storer
+	now   func() time.Time
+}
+
+// NewBusiness constructs one; nil now means the wall clock.
+func NewBusiness(store Storer, now func() time.Time) *Business {
+	if now == nil {
+		now = time.Now
+	}
+
+	return &Business{store: store, now: now}
+}
+
+// Create adds a species.
+func (b *Business) Create(ctx context.Context, f Fields) (Species, error) {
+	f = tidy(f)
+
+	if f.Slug == "" {
+		return Species{}, Invalid{Field: "slug", Problem: "choose the plant's address, such as winecup"}
+	}
+
+	if problem := types.SlugProblem(f.Slug); problem != "" {
+		return Species{}, Invalid{Field: "slug", Problem: problem}
+	}
+
+	if err := check(f); err != nil {
+		return Species{}, err
+	}
+
+	now := b.now()
+	s := Species{ID: types.NewID(), Slug: f.Slug, CreatedAt: now, UpdatedAt: now}
+	s.apply(f)
+
+	if err := b.store.Create(ctx, s); err != nil {
+		if errors.Is(err, ErrSlugTaken) {
+			return Species{}, Invalid{Field: "slug", Problem: fmt.Sprintf("another plant already uses %q. Choose a different one", f.Slug)}
+		}
+
+		return Species{}, fmt.Errorf("adding the species %q: %w", f.Slug, err)
+	}
+
+	return s, nil
+}
+
+// Update changes everything but the address.
+func (b *Business) Update(ctx context.Context, id types.ID, f Fields) (Species, error) {
+	f = tidy(f)
+
+	s, err := b.store.ByID(ctx, id)
+	if err != nil {
+		return Species{}, err
+	}
+
+	if err := check(f); err != nil {
+		return Species{}, err
+	}
+
+	s.apply(f)
+	s.UpdatedAt = b.now()
+
+	if err := b.store.Update(ctx, s); err != nil {
+		return Species{}, fmt.Errorf("saving the species %q: %w", s.Slug, err)
+	}
+
+	return s, nil
+}
+
+// Delete removes a species. Once species are placed, a placed one will be
+// refused here, the way a place with bands is.
+func (b *Business) Delete(ctx context.Context, id types.ID) error {
+	if _, err := b.store.ByID(ctx, id); err != nil {
+		return err
+	}
+
+	return b.store.Delete(ctx, id)
+}
+
+// ByID is one species.
+func (b *Business) ByID(ctx context.Context, id types.ID) (Species, error) {
+	return b.store.ByID(ctx, id)
+}
+
+// BySlug is the species at an address.
+func (b *Business) BySlug(ctx context.Context, slug string) (Species, error) {
+	return b.store.BySlug(ctx, slug)
+}
+
+// All is every species, by English common name, ignoring case.
+func (b *Business) All(ctx context.Context) ([]Species, error) {
+	all, err := b.store.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	slices.SortStableFunc(all, func(x, y Species) int {
+		return cmp.Or(
+			strings.Compare(strings.ToLower(x.Common.EN), strings.ToLower(y.Common.EN)),
+			strings.Compare(x.Slug, y.Slug),
+		)
+	})
+
+	return all, nil
+}
+
+// ------------------------------------------------------------------ rules
+
+const (
+	maxName     = 60
+	maxNote     = 2000
+	maxSources  = 8
+	maxSwatches = 4
+	maxLabel    = 120
+)
+
+func check(f Fields) error {
+	bad := func(field, problem string) error { return Invalid{Field: field, Problem: problem} }
+
+	switch {
+	case f.Common.EN == "":
+		return bad("common", "give the plant's common name in English. Spanish is optional")
+	case utf8.RuneCountInString(f.Common.EN) > maxName || utf8.RuneCountInString(f.Common.ES) > maxName:
+		return bad("common", fmt.Sprintf("keep the common name under %d characters", maxName))
+	case utf8.RuneCountInString(f.Scientific) > maxName*2:
+		return bad("scientific", "that scientific name is longer than any there is. Check it")
+	case f.Status != "" && !slices.Contains(Statuses, f.Status):
+		return bad("status", "choose the status from the list")
+	case !f.Bloom.Valid():
+		return bad("bloom", "choose bloom months from the twelve")
+	case f.Light&^allLight != 0:
+		return bad("light", "choose the light from the list")
+	case f.Water&^allWater != 0:
+		return bad("water", "choose the water from the list")
+	case utf8.RuneCountInString(f.Note.EN) > maxNote || utf8.RuneCountInString(f.Note.ES) > maxNote:
+		return bad("note", fmt.Sprintf("keep the note under %d characters; the card is read on a phone", maxNote))
+	case len(f.Swatches) > maxSwatches:
+		return bad("swatches", fmt.Sprintf("give at most %d colours", maxSwatches))
+	case len(f.Sources) > maxSources:
+		return bad("sources", fmt.Sprintf("give at most %d sources", maxSources))
+	}
+
+	for _, sw := range f.Swatches {
+		if !isSwatch(sw) {
+			return bad("swatches", fmt.Sprintf("%q is not a colour code. Write it like #8e44ad", sw))
+		}
+	}
+
+	for field, size := range map[string]Size{"height": f.Height, "width": f.Width} {
+		switch {
+		case size.Min < 0 || size.Max < 0:
+			return bad(field, "a size cannot be below zero")
+		case size.Max > maxInches:
+			return bad(field, fmt.Sprintf("that is over %d feet. Sizes are in inches", maxInches/12))
+		case size.Min > size.Max:
+			return bad(field, "the smaller number goes first")
+		}
+	}
+
+	for _, src := range f.Sources {
+		switch {
+		case src.Label == "":
+			return bad("sources", "give each source a name, such as Lady Bird Johnson Wildflower Center")
+		case utf8.RuneCountInString(src.Label) > maxLabel:
+			return bad("sources", fmt.Sprintf("keep each source's name under %d characters", maxLabel))
+		case src.URL != "" && !isWebAddress(src.URL):
+			return bad("sources", fmt.Sprintf("%q is not a web address. Copy it from the browser, starting https://", src.URL))
+		}
+	}
+
+	if f.Confirmed && (f.Scientific == "" || len(f.Sources) == 0) {
+		return bad("confirmed", "an ID is confirmed by what it was checked against. Give the scientific name and at least one source first")
+	}
+
+	return nil
+}
+
+func isSwatch(s string) bool {
+	if len(s) != 7 || s[0] != '#' {
+		return false
+	}
+
+	for _, c := range s[1:] {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+
+	return true
+}
+
+func isWebAddress(s string) bool {
+	u, err := url.Parse(s)
+
+	return err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != ""
+}
+
+// tidy trims what was typed, lower-cases colour codes, fills a size given as
+// one number, and drops source rows left blank -- a form has spare rows, and
+// an empty one is not a source.
+func tidy(f Fields) Fields {
+	f.Slug = strings.TrimSpace(f.Slug)
+	f.Common = f.Common.Trimmed()
+	f.Scientific = strings.Join(strings.Fields(f.Scientific), " ")
+	f.FlowerColor = f.FlowerColor.Trimmed()
+	f.Note = f.Note.Trimmed()
+
+	swatches := f.Swatches[:0:0]
+	for _, sw := range f.Swatches {
+		if sw = strings.ToLower(strings.TrimSpace(sw)); sw != "" {
+			if !strings.HasPrefix(sw, "#") {
+				sw = "#" + sw
+			}
+
+			swatches = append(swatches, sw)
+		}
+	}
+	f.Swatches = swatches
+
+	for _, size := range []*Size{&f.Height, &f.Width} {
+		switch {
+		case size.Max == 0 && size.Min != 0:
+			size.Max = size.Min
+		case size.Min == 0 && size.Max != 0:
+			size.Min = size.Max
+		}
+	}
+
+	sources := f.Sources[:0:0]
+	for _, src := range f.Sources {
+		src.Label, src.URL = strings.TrimSpace(src.Label), strings.TrimSpace(src.URL)
+		if src.Label != "" || src.URL != "" {
+			sources = append(sources, src)
+		}
+	}
+	f.Sources = sources
+
+	return f
+}
+
+func (s *Species) apply(f Fields) {
+	s.Common = f.Common
+	s.Scientific = f.Scientific
+	s.Status = f.Status
+	s.Confirmed = f.Confirmed
+	s.FlowerColor = f.FlowerColor
+	s.Swatches = f.Swatches
+	s.Bloom = f.Bloom
+	s.Height = f.Height
+	s.Width = f.Width
+	s.Light = f.Light
+	s.Water = f.Water
+	s.Note = f.Note
+	s.Sources = f.Sources
+}

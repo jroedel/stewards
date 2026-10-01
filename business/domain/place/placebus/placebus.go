@@ -256,10 +256,7 @@ func (b *Business) Children(ctx context.Context, id types.ID) ([]Place, error) {
 
 // ------------------------------------------------------------------ rules
 
-const (
-	maxSlug = 48
-	maxName = 60
-)
+const maxName = 60
 
 // check is every rule except the slug's, which only Create checks. self is
 // the place being updated, or the zero ID for a new one.
@@ -316,24 +313,19 @@ func (b *Business) check(ctx context.Context, self types.ID, f Fields) error {
 	return nil
 }
 
-// checkSlug holds an address to the shape a person can read aloud and type
-// on a phone: lower case letters, digits and single hyphens.
+// checkSlug holds an address to types.SlugProblem's shape, with the place's
+// own example in each sentence.
 func checkSlug(s string) error {
-	bad := func(problem string) error { return Invalid{Field: "slug", Problem: problem} }
-
-	switch {
-	case s == "":
-		return bad("choose the place's address, such as rain-garden")
-	case len(s) > maxSlug:
-		return bad(fmt.Sprintf("keep the address under %d characters", maxSlug))
-	case strings.HasPrefix(s, "-") || strings.HasSuffix(s, "-") || strings.Contains(s, "--"):
-		return bad("use single hyphens between words, and none at the ends")
+	if s == "" {
+		return Invalid{Field: "slug", Problem: "choose the place's address, such as rain-garden"}
 	}
 
-	for _, r := range s {
-		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
-			return bad("use only lower-case letters, digits and hyphens, such as rain-garden")
+	if problem := types.SlugProblem(s); problem != "" {
+		if strings.HasPrefix(problem, "use only") {
+			problem += ", such as rain-garden"
 		}
+
+		return Invalid{Field: "slug", Problem: problem}
 	}
 
 	return nil
