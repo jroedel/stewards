@@ -25,14 +25,18 @@ the first call in a session.
 
 ## The key
 
-`scripts/stewards-api` reads the key from `STEWARDS_API_KEY` and hands it to
-curl without putting it on a command line. The person makes a key at
-`/steward/keys` and sets it in their own shell.
+`scripts/stewards-api` reads the key from `STEWARDS_API_KEY`, or else from
+`~/.config/stewards/api-key` (mode 600), and hands it to curl without putting
+it on a command line. The person makes a key at `/steward/keys` and saves it
+in that file themselves. The file is the way for Claude Code, whose shell
+keeps no variables between commands. It is never `secrets.env`, which is not
+to be read at all (CLAUDE.md §6).
 
 - Never print it, echo it, write it to a file, or put its value in a command.
   Refer to it only as `$STEWARDS_API_KEY`, and only through the script.
-- If it is not set, or the API answers 401, stop and ask the person to make
-  or set one. Do not look for it in files.
+- Never read the key file, or look for a key anywhere else. If the script
+  says there is no key, or the API answers 401, stop and ask the person to
+  make one or save it.
 
 ## What the API will not do, and why that is right
 
@@ -102,11 +106,19 @@ for telling it from a look-alike out of bloom), `flower` (a close-up),
 separate on purpose; a photo showing both is the one that shows the leaf
 better.
 
-- **Borrowed** photos come from Wikimedia Commons or iNaturalist under an open
-  licence. Take the author, licence short name and the photo's page from the
-  Commons API (`prop=imageinfo&iiprop=url|extmetadata`: `Artist`,
-  `LicenseShortName`, `descriptionurl`), not from memory. Skip anything not
-  under an open licence (CC0, CC BY, CC BY-SA).
+- **Borrowed** photos come from iNaturalist or Wikimedia Commons. The
+  stewards have decided CC0, CC BY, CC BY-SA and **CC BY-NC** are all fine
+  (the site is a non-commercial ministry, which is the use BY-NC allows).
+  Never ND, and never all-rights-reserved. Take the author, licence and the
+  photo's page from the source's API, not from memory: on iNaturalist the
+  photo's `license_code` and the observer's name, with
+  `https://www.inaturalist.org/photos/<id>` as its page; on Commons
+  `prop=imageinfo&iiprop=url|extmetadata` (`Artist`, `LicenseShortName`,
+  `descriptionurl`).
+- **Cultivars** get their own plant record when they look different from the
+  species (a white autumn sage, a pink Turk's cap), with photos of that
+  cultivar. A cultivar that looks like the species shares its record, and is
+  named in the note.
 - **Our own** photos are `source=ours`, with `place` as a slug from
   `/api/v1/places` when the person says where it was taken.
 - **Never upload a photo in which a person can be recognised.** Volunteers are

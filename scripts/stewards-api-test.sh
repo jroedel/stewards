@@ -45,6 +45,9 @@ chmod +x "$TMP/bin/curl"
 
 export PATH="$TMP/bin:$PATH"
 export FAKE_LOG="$TMP/curl"
+
+# Never the real key file, whoever runs this.
+export STEWARDS_API_KEY_FILE="$TMP/no-such-key-file"
 KEY='stw_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.SECRETSECRETSECRETSECRET'
 
 echo "the API helper"
@@ -80,6 +83,29 @@ check "and so is a method it does not take" \
 STEWARDS_URL=http://127.0.0.1:18471/ STEWARDS_API_KEY="$KEY" "$API" GET /api/v1/species > /dev/null
 check "STEWARDS_URL points it elsewhere" \
 	grep -qx 'http://127.0.0.1:18471/api/v1/species' "$FAKE_LOG.args"
+
+# The key file: read when the variable is not set, refused when others can
+# read it, and the variable wins when both are there.
+FILE="$TMP/api-key"
+printf '%s\n' "$KEY" > "$FILE"
+chmod 600 "$FILE"
+
+env -u STEWARDS_API_KEY STEWARDS_API_KEY_FILE="$FILE" "$API" GET /api/v1/species > /dev/null
+check "the key file is read when the variable is not set" \
+	grep -qx "Authorization: Bearer $KEY" "$FAKE_LOG.headers"
+check "and its key stays off the command line" \
+	bash -c '! grep -q SECRETSECRET "$0"' "$FAKE_LOG.args"
+
+STEWARDS_API_KEY=stw_from.the-variable-not-the-file STEWARDS_API_KEY_FILE="$FILE" "$API" GET /api/v1/species > /dev/null
+check "the variable wins over the file" \
+	grep -qx "Authorization: Bearer stw_from.the-variable-not-the-file" "$FAKE_LOG.headers"
+
+chmod 644 "$FILE"
+check "a key file others can read is refused" \
+	bash -c '! env -u STEWARDS_API_KEY STEWARDS_API_KEY_FILE="$1" "$0" GET /api/v1/species 2>/dev/null' "$API" "$FILE"
+
+check "no variable and no file is refused" \
+	bash -c '! env -u STEWARDS_API_KEY STEWARDS_API_KEY_FILE=/nonexistent "$0" GET /api/v1/species 2>/dev/null' "$API"
 
 echo
 printf '%d passed, %d failed\n' "$pass" "$fail"
