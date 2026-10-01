@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/jroedel/stewards/app/sdk/muxer"
+	"github.com/jroedel/stewards/business/domain/listing/listingbus"
+	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
@@ -123,6 +125,7 @@ func run() error {
 		Expected:  expected,
 		Places:    placebus.NewBusiness(placedb.NewStore(db), nil),
 		Species:   speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
+		Listings:  listingbus.NewBusiness(listingdb.NewStore(db), nil),
 		Users:     users,
 		BaseURL:   cfg.Server.BaseURL,
 		Mail:      sender,
@@ -141,8 +144,8 @@ func run() error {
 //
 // A list rather than a loop over anything clever, because the order is the
 // order the references point in. Places come first of the domains: every
-// layer points at a place, and when species-at-a-place arrives it will
-// reference both places and species, so it goes after both. A store added in
+// layer points at a place, and the listings of species at places reference
+// both places and species, so they go after both. A store added in
 // the wrong place fails at startup on a fresh database and nowhere else, which
 // is the cheapest moment for it to fail.
 func prepare(ctx context.Context, db *sql.DB) error {
@@ -153,6 +156,7 @@ func prepare(ctx context.Context, db *sql.DB) error {
 		{"the infrastructure tables", sqldb.Init},
 		{"places", placedb.Init},
 		{"species", speciesdb.Init},
+		{"plants listed at places", listingdb.Init},
 		{"stewards", userdb.Init},
 	} {
 		if err := step.init(ctx, db); err != nil {
@@ -175,6 +179,7 @@ func expectedSchema() sqldb.Expected {
 	for _, store := range []sqldb.Expected{
 		placedb.Expected,
 		speciesdb.Expected,
+		listingdb.Expected,
 		userdb.Expected,
 	} {
 		maps.Copy(expected, store)

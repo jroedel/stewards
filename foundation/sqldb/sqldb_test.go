@@ -220,6 +220,37 @@ func TestIsUniqueViolationRecognisesTheDriversError(t *testing.T) {
 	}
 }
 
+// The same, for a reference. Both directions, because both are used: a row
+// naming one that is not there, and a delete of one that is still named.
+func TestIsForeignKeyViolationRecognisesTheDriversError(t *testing.T) {
+	db := openTemp(t)
+
+	for _, q := range []string{
+		`CREATE TABLE parent (id TEXT PRIMARY KEY) STRICT`,
+		`CREATE TABLE child (parent_id TEXT NOT NULL REFERENCES parent (id)) STRICT`,
+		`INSERT INTO parent VALUES ('a')`,
+		`INSERT INTO child VALUES ('a')`,
+	} {
+		if _, err := db.ExecContext(t.Context(), q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+
+	_, err := db.ExecContext(t.Context(), `INSERT INTO child VALUES ('nobody')`)
+	if !sqldb.IsForeignKeyViolation(err) {
+		t.Errorf("a reference to nothing was not recognised: %v", err)
+	}
+
+	_, err = db.ExecContext(t.Context(), `DELETE FROM parent WHERE id = 'a'`)
+	if !sqldb.IsForeignKeyViolation(err) {
+		t.Errorf("deleting a row still referenced was not recognised: %v", err)
+	}
+
+	if sqldb.IsForeignKeyViolation(errors.New("FOREIGN KEY constraint failed")) || sqldb.IsUniqueViolation(err) {
+		t.Error("the two codes are confused")
+	}
+}
+
 func openTemp(t *testing.T) *sql.DB {
 	t.Helper()
 

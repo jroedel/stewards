@@ -159,10 +159,16 @@ WHERE id = ?`,
 	})
 }
 
-// Delete removes a species; its sources go with it.
+// Delete removes a species; its sources go with it. A species still listed at
+// a place is refused by the database, as speciesbus.ErrInUse.
 func (s *Store) Delete(ctx context.Context, id types.ID) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM species WHERE id = ?`, id.String())
-	if err != nil {
+
+	switch {
+	case sqldb.IsForeignKeyViolation(err):
+		// Still listed at a place; see listingdb.
+		return speciesbus.ErrInUse
+	case err != nil:
 		return fmt.Errorf("deleting the species: %w", err)
 	}
 

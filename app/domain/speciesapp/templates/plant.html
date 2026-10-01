@@ -1,0 +1,52 @@
+{{define "title"}}{{.Data.Name.In .Lang}} · Garden stewards{{end}}
+{{define "masthead"}}<a class="back" href="/"><span>‹ {{say .Lang .Data.Copy.Back}}</span></a>{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<h1>{{say $l .Name}}</h1>
+{{if .Scientific}}<p class="scientific"><i>{{.Scientific}}</i></p>{{end}}
+<p class="row-tags">{{if .Status.EN}}<span class="tag{{if .Invasive}} tag-off{{end}}">{{say $l .Status}}</span>{{end}}{{if not .Confirmed}}<span class="tag tag-open">{{say $l .Copy.NotConfirmed}}</span>{{end}}</p>
+
+<nav class="views" aria-label="View">
+  <a href="/plants/{{.Slug}}"{{if not .Weeding}} aria-current="page"{{end}}>{{say $l .Copy.Planting}}</a>
+  <a href="/plants/{{.Slug}}?view=weeding"{{if .Weeding}} aria-current="page"{{end}}>{{say $l .Copy.Weeding}}</a>
+</nav>
+
+<div class="card photos-missing">{{range .Missing}}<p>{{say $l .}}</p>{{end}}</div>
+
+{{if .Weeding}}
+<h2>{{say $l .Copy.WhereItGrows}}</h2>
+{{template "plant-where" $}}
+<p class="not-sure">{{say $l .Copy.NotSure}}</p>
+{{else}}
+<div class="card facts">
+  {{if or .FlowerColor.EN .Swatches}}<div class="fact"><h2>{{say $l .Copy.Flower}}</h2><p>{{range .Swatches}}<svg class="swatch" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="{{.}}" stroke="#231F20" stroke-opacity="0.35"/></svg> {{end}}{{say $l .FlowerColor}}</p></div>{{end}}
+  <div class="fact"><h2>{{say $l .Copy.Blooms}}</h2>
+    {{if .BloomWords}}<div class="strip" aria-hidden="true">{{range .Months}}<span class="strip-month{{if .On}} is-on{{end}}"><span class="strip-cell">{{if .On}}<svg viewBox="0 0 10 10" preserveAspectRatio="none"><rect width="10" height="10" rx="2" fill="{{.Swatch}}" stroke="#231F20" stroke-opacity="0.3" stroke-width="0.6"/></svg>{{end}}</span>{{.Letter}}</span>{{end}}</div>
+    <p class="sr-only">{{.BloomWords}}</p>
+    {{else}}<p class="muted">{{say $l .Copy.NoBloom}}</p>{{end}}
+  </div>
+  {{if .Height}}<div class="fact"><h2>{{say $l .Copy.Size}}</h2><p>{{.Height}} {{say $l .Copy.Tall}}{{with .Width}}, {{.}} {{say $l $.Data.Copy.Wide}}{{end}}</p></div>{{end}}
+  {{if .Light}}<div class="fact"><h2>{{say $l .Copy.Light}}</h2><p>{{range $i, $x := .Light}}{{if $i}} · {{end}}{{say $l $x}}{{end}}</p></div>{{end}}
+  {{if .Water}}<div class="fact"><h2>{{say $l .Copy.Water}}</h2><p>{{range $i, $x := .Water}}{{if $i}} · {{end}}{{say $l $x}}{{end}}</p></div>{{end}}
+</div>
+{{if .Note.EN}}<h2>{{say $l .Copy.Note}}</h2><div class="card"><p class="prose">{{say $l .Note}}</p></div>{{end}}
+<h2>{{say $l .Copy.WhereItGrows}}</h2>
+{{template "plant-where" $}}
+{{end}}
+
+{{if .Sources}}
+<h2>{{if .Confirmed}}{{say $l .Copy.CheckedAgainst}}{{else}}{{say $l .Copy.Sources}}{{end}}</h2>
+<ul class="sources">{{range .Sources}}<li>{{if .URL}}<a href="{{.URL}}" rel="noopener">{{.Label}}</a>{{else}}{{.Label}}{{end}}</li>{{end}}</ul>
+{{end}}
+
+{{with .EditURL}}<a class="onward" href="{{.}}" lang="en"><span>{{say $l $.Data.Copy.Edit}}</span><span aria-hidden="true">›</span></a>{{end}}
+{{end}}{{end}}
+
+{{define "plant-where"}}{{$l := .Lang}}{{with .Data}}{{if .Grows}}
+<ul class="rows">
+{{range .Grows}}<li><a class="row" href="/places/{{.Slug}}"><div>
+  <div class="row-name">{{say $l .Name}}</div>
+  <div class="row-tags"><span class="tag {{if .Pull}}tag-off{{else}}tag-ok{{end}}">{{say $l .Action}}</span>{{if .Planned}}<span class="tag">{{say $l $.Data.Copy.Planned}}</span>{{end}}</div>
+  {{if .Note.EN}}<div class="row-note">{{say $l .Note}}</div>{{end}}
+</div><span class="row-go" aria-hidden="true">›</span></a></li>
+{{end}}</ul>
+{{else}}<div class="card"><p class="muted">{{say $l .Copy.NotListedAnywhere}}</p></div>{{end}}{{end}}{{end}}

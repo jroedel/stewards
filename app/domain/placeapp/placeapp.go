@@ -23,7 +23,9 @@ import (
 	"strings"
 
 	"github.com/jroedel/stewards/app/sdk/page"
+	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
+	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/types"
 	"github.com/jroedel/stewards/foundation/web"
 )
@@ -47,15 +49,43 @@ type Places interface {
 	Delete(ctx context.Context, id types.ID) error
 }
 
-type app struct {
-	log    *slog.Logger
-	render *page.Renderer
-	places Places
+// SpeciesReader is what the place screens need from the species rules: the
+// list to choose from and to show.
+type SpeciesReader interface {
+	All(ctx context.Context) ([]speciesbus.Species, error)
 }
 
-// Routes mounts the app, every route behind guard.
-func Routes(mux *http.ServeMux, log *slog.Logger, render *page.Renderer, places Places, guard web.Middleware) {
-	a := app{log: log, render: render, places: places}
+// Listings is what they need from the listing rules.
+type Listings interface {
+	Set(ctx context.Context, placeID, speciesID types.ID, f listingbus.Fields) (listingbus.Listing, error)
+	Remove(ctx context.Context, placeID, speciesID types.ID) error
+	ForPlace(ctx context.Context, placeID types.ID) ([]listingbus.Listing, error)
+}
+
+// Config is what this app needs.
+type Config struct {
+	Log      *slog.Logger
+	Render   *page.Renderer
+	Places   Places
+	Species  SpeciesReader
+	Listings Listings
+}
+
+type app struct {
+	log      *slog.Logger
+	render   *page.Renderer
+	places   Places
+	species  SpeciesReader
+	listings Listings
+}
+
+func newApp(cfg Config) app {
+	return app{log: cfg.Log, render: cfg.Render, places: cfg.Places, species: cfg.Species, listings: cfg.Listings}
+}
+
+// Routes mounts the stewards' screens, every route behind guard.
+func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
+	a := newApp(cfg)
 
 	for pattern, h := range map[string]http.HandlerFunc{
 		"GET " + IndexPath:                 a.index,
@@ -64,6 +94,11 @@ func Routes(mux *http.ServeMux, log *slog.Logger, render *page.Renderer, places 
 		"GET /steward/places/{id}/edit":    a.editForm,
 		"POST /steward/places/{id}":        a.update,
 		"POST /steward/places/{id}/delete": a.remove,
+
+		// What grows at the place; plants.go.
+		"GET /steward/places/{id}/plants":                   a.plants,
+		"POST /steward/places/{id}/plants":                  a.setPlant,
+		"POST /steward/places/{id}/plants/{species}/remove": a.removePlant,
 	} {
 		mux.Handle(pattern, guard(h))
 	}

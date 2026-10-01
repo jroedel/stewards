@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/jroedel/stewards/app/sdk/page"
+	"github.com/jroedel/stewards/business/domain/listing/listingbus"
+	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/types"
 	"github.com/jroedel/stewards/foundation/web"
@@ -36,20 +38,47 @@ const path = "/steward/species"
 type Species interface {
 	All(ctx context.Context) ([]speciesbus.Species, error)
 	ByID(ctx context.Context, id types.ID) (speciesbus.Species, error)
+	BySlug(ctx context.Context, slug string) (speciesbus.Species, error)
 	Create(ctx context.Context, f speciesbus.Fields) (speciesbus.Species, error)
 	Update(ctx context.Context, id types.ID, f speciesbus.Fields) (speciesbus.Species, error)
 	Delete(ctx context.Context, id types.ID) error
 }
 
-type app struct {
-	log     *slog.Logger
-	render  *page.Renderer
-	species Species
+// PlaceReader is what the species card needs from the place rules: the
+// places a species is listed at.
+type PlaceReader interface {
+	All(ctx context.Context) ([]placebus.Place, error)
 }
 
-// Routes mounts the app, every route behind guard.
-func Routes(mux *http.ServeMux, log *slog.Logger, render *page.Renderer, species Species, guard web.Middleware) {
-	a := app{log: log, render: render, species: species}
+// Listings is what it needs from the listing rules.
+type Listings interface {
+	ForSpecies(ctx context.Context, speciesID types.ID) ([]listingbus.Listing, error)
+}
+
+// Config is what this app needs.
+type Config struct {
+	Log      *slog.Logger
+	Render   *page.Renderer
+	Species  Species
+	Places   PlaceReader
+	Listings Listings
+}
+
+type app struct {
+	log      *slog.Logger
+	render   *page.Renderer
+	species  Species
+	places   PlaceReader
+	listings Listings
+}
+
+func newApp(cfg Config) app {
+	return app{log: cfg.Log, render: cfg.Render, species: cfg.Species, places: cfg.Places, listings: cfg.Listings}
+}
+
+// Routes mounts the stewards' screens, every route behind guard.
+func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
+	a := newApp(cfg)
 
 	for pattern, h := range map[string]http.HandlerFunc{
 		"GET " + path:                   a.list,

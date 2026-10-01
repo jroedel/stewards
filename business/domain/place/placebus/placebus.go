@@ -107,6 +107,10 @@ var ErrNotFound = errors.New("there is no such place")
 // adding the same place at once cannot both succeed.
 var ErrSlugTaken = errors.New("another place already has that address")
 
+// ErrInUse is returned by a Storer's Delete when something still points at
+// the place -- plants listed there -- and the database refused the delete.
+var ErrInUse = errors.New("the place is still in use")
+
 // Storer is what the rules need from storage.
 type Storer interface {
 	Create(ctx context.Context, p Place) error
@@ -195,7 +199,7 @@ func (b *Business) Update(ctx context.Context, id types.ID, f Fields) (Place, er
 	return p, nil
 }
 
-// Delete removes a place that nothing is part of.
+// Delete removes a place that nothing is part of and nothing is listed at.
 //
 // A place with smaller places inside it is refused rather than taking them
 // with it: the rain garden's bands are places a volunteer has been told to
@@ -217,7 +221,17 @@ func (b *Business) Delete(ctx context.Context, id types.ID) error {
 		return Invalid{Field: "place", Problem: fmt.Sprintf("%s has %d smaller places inside it. Move or remove those first", p.Name.EN, len(kids))}
 	}
 
-	return b.store.Delete(ctx, id)
+	// Plants listed here are the other thing that keeps a place: the
+	// database refuses the delete while a listing names it.
+	if err := b.store.Delete(ctx, id); err != nil {
+		if errors.Is(err, ErrInUse) {
+			return Invalid{Field: "place", Problem: fmt.Sprintf("%s still has plants listed. Take them off its list first", p.Name.EN)}
+		}
+
+		return err
+	}
+
+	return nil
 }
 
 // ByID is one place, by the identifier that never changes. The edit screens

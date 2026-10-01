@@ -17,14 +17,69 @@
 {{if .Bands}}
 <h2>{{say $l .Copy.Inside}}</h2>
 <ul class="rows">
-{{range .Bands}}<li><a class="row" href="/places/{{.Slug}}"><div><div class="row-name">{{say $l .Name}}</div>{{if .Purpose.EN}}<div class="row-note">{{say $l .Purpose}}</div>{{end}}</div><span class="row-go" aria-hidden="true">›</span></a></li>
+{{range .Bands}}<li><a class="row" href="/places/{{.Slug}}"><div><div class="row-name">{{say $l .Name}}</div>{{if .Purpose.EN}}<div class="row-note">{{say $l .Purpose}}</div>{{end}}{{if .Summary.EN}}<div class="row-summary">{{say $l .Summary}}</div>{{end}}</div><span class="row-go" aria-hidden="true">›</span></a></li>
 {{end}}</ul>
 {{end}}
 
+{{if .Listed}}
+{{if .Planned}}
+<h2>{{say $l .Copy.PlannedHere}}</h2>
+<ul class="rows">
+{{range .Planned}}<li><a class="row" href="/plants/{{.Slug}}"><div>
+  <div class="row-name">{{say $l .Name}}</div>
+  {{if .Scientific}}<div class="row-note"><i>{{.Scientific}}</i></div>{{end}}
+  {{if .Size.EN}}<div class="row-note">{{say $l .Size}}</div>{{end}}
+  {{if .Note.EN}}<div class="row-summary">{{say $l .Note}}</div>{{end}}
+</div><span class="row-go" aria-hidden="true">›</span></a></li>
+{{end}}</ul>
+{{end}}
+
+{{if .Calendar}}
+<h2>{{say $l .Copy.Flowers}}</h2>
+<div class="card calendar-card">
+<p class="help">{{say $l .Copy.FlowersHelp}}</p>
+<table class="calendar">
+  <thead><tr><th scope="col"><span class="sr-only">Plant</span></th>{{range $.Data.Months}}<th scope="col" aria-hidden="true">{{.}}</th>{{end}}</tr></thead>
+  <tbody>
+  {{range .Calendar}}<tr>
+    <th scope="row">{{say $l .Name}}<span class="sr-only">: {{.BloomWords}}</span></th>
+    {{$swatch := .Swatch}}{{range .Bloom}}<td aria-hidden="true">{{if .}}<svg viewBox="0 0 10 10" width="100%" height="18" preserveAspectRatio="none"><rect width="10" height="10" rx="2" fill="{{if $swatch}}{{$swatch}}{{else}}#2B3990{{end}}" stroke="#231F20" stroke-opacity="0.3" stroke-width="0.6"/></svg>{{end}}</td>{{end}}
+  </tr>
+  {{end}}</tbody>
+</table>
+</div>
+{{end}}
+
+<div class="panels card-gap">
+  <section class="panel panel-protect" aria-labelledby="protect-h">
+    <h2 id="protect-h"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>{{say $l .Copy.Protect}}</h2>
+    <p class="panel-help">{{say $l .Copy.ProtectHelp}}</p>
+    {{if .Protect}}<ul>{{range .Protect}}<li><a href="/plants/{{.Slug}}">{{say $l .Name}}</a>{{if .Note.EN}}<span class="panel-note">{{say $l .Note}}</span>{{end}}</li>{{end}}</ul>
+    {{else}}<p class="panel-none">{{say $l $.Data.Copy.NothingHere}}</p>{{end}}
+  </section>
+  <section class="panel panel-pull" aria-labelledby="pull-h">
+    <h2 id="pull-h"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v14"/><path d="M6 12l6 6 6-6"/></svg>{{say $l .Copy.Pull}}</h2>
+    <p class="panel-help">{{say $l .Copy.PullHelp}}</p>
+    {{if .Pull}}<ul>{{range .Pull}}<li><a href="/plants/{{.Slug}}">{{say $l .Name}}</a>{{if .Note.EN}}<span class="panel-note">{{say $l .Note}}</span>{{end}}</li>{{end}}</ul>
+    {{else}}<p class="panel-none">{{say $l $.Data.Copy.NothingHere}}</p>{{end}}
+  </section>
+</div>
+
+{{if .Careful}}
+<section class="panel panel-careful" aria-labelledby="careful-h">
+  <h2 id="careful-h"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17v.5"/></svg>{{say $l .Copy.Careful}}</h2>
+  <p class="panel-help">{{say $l .Copy.CarefulHelp}}</p>
+  <ul>{{range .Careful}}<li><a href="/plants/{{.Slug}}">{{say $l .Name}}</a>{{if .Note.EN}}<span class="panel-note">{{say $l .Note}}</span>{{end}}</li>{{end}}</ul>
+</section>
+{{end}}
+
+<p class="not-sure">{{say $l .Copy.NotSure}}</p>
+{{else}}
 <div class="card empty card-gap">
   <p>{{say $l .Copy.NotListed}}</p>
   <p class="empty-advice">{{say $l .Copy.NotSure}}</p>
 </div>
+{{end}}
 
 {{if .PhotoPoint.EN}}
 <h2>{{say $l .Copy.PhotoPoint}}</h2>

@@ -12,6 +12,8 @@ import (
 
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/muxer"
+	"github.com/jroedel/stewards/business/domain/listing/listingbus"
+	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
@@ -50,6 +52,7 @@ func serve(t *testing.T, bootstrap, baseURL string) site {
 		func() error { return sqldb.Init(t.Context(), db) },
 		func() error { return placedb.Init(t.Context(), db) },
 		func() error { return speciesdb.Init(t.Context(), db) },
+		func() error { return listingdb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
@@ -61,11 +64,11 @@ func serve(t *testing.T, bootstrap, baseURL string) site {
 	s := site{users: userbus.NewBusiness(log, userdb.NewStore(db), nil), mail: &mail.Recorder{}}
 
 	s.h, err = muxer.New(muxer.Config{
-		Log:       log,
-		DB:        db,
-		Expected:  sqldb.Infrastructure,
-		Places:    placebus.NewBusiness(placedb.NewStore(db), nil),
-		Species:   speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
+		Log:      log,
+		DB:       db,
+		Expected: sqldb.Infrastructure,
+		Places:   placebus.NewBusiness(placedb.NewStore(db), nil),
+		Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
 		Users:     s.users,
 		BaseURL:   baseURL,
 		Mail:      s.mail,

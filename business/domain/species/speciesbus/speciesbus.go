@@ -192,6 +192,10 @@ var (
 	// ErrSlugTaken is returned by a Storer when the address is in use; the
 	// insert is the check.
 	ErrSlugTaken = errors.New("another species already has that address")
+
+	// ErrInUse is returned by a Storer's Delete when the species is still
+	// listed at a place and the database refused the delete.
+	ErrInUse = errors.New("the species is still listed somewhere")
 )
 
 // Storer is what the rules need from storage. A species is saved with its
@@ -274,14 +278,27 @@ func (b *Business) Update(ctx context.Context, id types.ID, f Fields) (Species, 
 	return s, nil
 }
 
-// Delete removes a species. Once species are placed, a placed one will be
-// refused here, the way a place with bands is.
+// Delete removes a species that is not listed anywhere.
+//
+// Refused while it is listed, rather than taking its listings with it: a
+// listing is a volunteer being told to protect or pull it somewhere, and
+// that advice disappearing as a side effect of tidying the plant list is not
+// something anybody would mean.
 func (b *Business) Delete(ctx context.Context, id types.ID) error {
-	if _, err := b.store.ByID(ctx, id); err != nil {
+	sp, err := b.store.ByID(ctx, id)
+	if err != nil {
 		return err
 	}
 
-	return b.store.Delete(ctx, id)
+	if err := b.store.Delete(ctx, id); err != nil {
+		if errors.Is(err, ErrInUse) {
+			return Invalid{Field: "species", Problem: fmt.Sprintf("%s is still listed at a place. Take it off those lists first", sp.Common.EN)}
+		}
+
+		return err
+	}
+
+	return nil
 }
 
 // ByID is one species.

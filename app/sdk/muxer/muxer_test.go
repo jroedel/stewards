@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/jroedel/stewards/app/sdk/muxer"
+	"github.com/jroedel/stewards/business/domain/listing/listingbus"
+	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
@@ -46,8 +48,8 @@ func TestHealthzChecksTheSchema(t *testing.T) {
 				DB:       db,
 				Expected: tc.want,
 				Places:   placebus.NewBusiness(placedb.NewStore(db), nil),
-				Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
-				Users:    userbus.NewBusiness(slog.New(slog.DiscardHandler), userdb.NewStore(db), nil),
+				Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
+				Users: userbus.NewBusiness(slog.New(slog.DiscardHandler), userdb.NewStore(db), nil),
 			})
 			if err != nil {
 				t.Fatalf("New: %v", err)

@@ -12,6 +12,8 @@ import (
 
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/muxer"
+	"github.com/jroedel/stewards/business/domain/listing/listingbus"
+	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
@@ -27,6 +29,7 @@ type site struct {
 	t       *testing.T
 	h       http.Handler
 	species *speciesbus.Business
+	places  *placebus.Business
 	cookie  *http.Cookie
 }
 
@@ -43,6 +46,7 @@ func serve(t *testing.T) *site {
 		func() error { return sqldb.Init(t.Context(), db) },
 		func() error { return placedb.Init(t.Context(), db) },
 		func() error { return speciesdb.Init(t.Context(), db) },
+		func() error { return listingdb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
@@ -52,11 +56,15 @@ func serve(t *testing.T) *site {
 
 	log := slog.New(slog.DiscardHandler)
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
-	s := &site{t: t, species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil)}
+	s := &site{
+		t:       t,
+		species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
+		places:  placebus.NewBusiness(placedb.NewStore(db), nil),
+	}
 
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
-		Places: placebus.NewBusiness(placedb.NewStore(db), nil), Species: s.species, Users: users,
+		Places: s.places, Species: s.species, Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Users: users,
 		BaseURL: "https://stewards.example.invalid", Mail: &mail.Recorder{},
 	}); err != nil {
 		t.Fatal(err)
