@@ -92,6 +92,8 @@ func (a app) setPlant(w http.ResponseWriter, r *http.Request) {
 	invalid, isInvalid := errors.AsType[listingbus.Invalid](err)
 
 	switch {
+	case err == nil && r.PostFormValue("return") == "card":
+		http.Redirect(w, r, cardAnchor(p, f), http.StatusSeeOther)
 	case err == nil:
 		http.Redirect(w, r, "/steward/places/"+p.ID.String()+"/plants?done=saved", http.StatusSeeOther)
 	case isInvalid:
@@ -176,6 +178,23 @@ func (a app) showPlants(w http.ResponseWriter, r *http.Request, status int, p pl
 	v.AllListed = !v.NoSpecies && len(v.Add.Species) == 1
 
 	a.render.Render(w, r, status, "place-plants", v)
+}
+
+// cardAnchor is where a card's "+ Add" comes back to: the place's card, at
+// the list the plant went on. Made from the place and a fixed word, never
+// from anything the form sent, so the form cannot be used to send a steward
+// somewhere else. A refusal is not sent back: it is shown on the Plants
+// screen with the form refilled, as for the screen's own form.
+func cardAnchor(p placebus.Place, f listingbus.Fields) string {
+	anchor := map[listingbus.Action]string{
+		listingbus.Protect: "protect-h", listingbus.Pull: "pull-h", listingbus.Careful: "careful-h",
+	}[f.Action]
+
+	if f.Planned {
+		anchor = "planned-h"
+	}
+
+	return "/places/" + p.Slug + "#" + anchor
 }
 
 func actionOptions(chosen listingbus.Action) []option {
