@@ -201,6 +201,7 @@ type Storer interface {
 	Delete(ctx context.Context, id types.ID) error
 	ByID(ctx context.Context, id types.ID) (Photo, error)
 	ForSpecies(ctx context.Context, speciesID types.ID) ([]Photo, error)
+	All(ctx context.Context) ([]Photo, error)
 	BySHA256(ctx context.Context, speciesID types.ID, sum string) (Photo, error)
 }
 
@@ -439,6 +440,24 @@ func (b *Business) ForSpecies(ctx context.Context, speciesID types.ID) ([]Photo,
 	return all, nil
 }
 
+// BySpecies is every photo there is, checked or not, grouped by the species
+// it shows, in no particular order within a species: for a screen that
+// shows one beside each plant (see Lead), in one query rather than one per
+// plant.
+func (b *Business) BySpecies(ctx context.Context) (map[types.ID][]Photo, error) {
+	all, err := b.store.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	by := make(map[types.ID][]Photo)
+	for _, p := range all {
+		by[p.SpeciesID] = append(by[p.SpeciesID], p)
+	}
+
+	return by, nil
+}
+
 // Open reads one of a photo's pictures. The caller decides who may see it:
 // Checked is on the Photo it returns.
 func (b *Business) Open(ctx context.Context, id types.ID, size Size) (Photo, File, error) {
@@ -477,6 +496,43 @@ func Best(photos []Photo, k Kind) (Photo, bool) {
 	}
 
 	return best, found
+}
+
+// LeadOrder is the order of kinds Lead looks through: the flower says most
+// about a plant at a glance, then the leaf, which is what it is told apart by
+// out of bloom; the grown plant before the seedling, and winter last, since
+// bare stems look much alike in a thumbnail.
+var LeadOrder = []Kind{Flower, Leaf, Mature, Young, Winter}
+
+// Lead is the photo a steward's list of plants shows beside one: the first
+// kind in LeadOrder that has a photo, and of that kind a checked one if
+// there is one, else the best of those still waiting to be checked.
+//
+// Unchecked photos count, unlike Best, because the list is behind sign-in
+// and a steward may see every photo; a plant whose photos all came in
+// through the API and are waiting to be looked at should still be easy to
+// pick out. The volunteers' pages keep to Best.
+func Lead(photos []Photo) (Photo, bool) {
+	for _, k := range LeadOrder {
+		if p, ok := Best(photos, k); ok {
+			return p, true
+		}
+
+		var best Photo
+		found := false
+
+		for _, p := range photos {
+			if p.Kind == k && (!found || Better(p, best) < 0) {
+				best, found = p, true
+			}
+		}
+
+		if found {
+			return best, true
+		}
+	}
+
+	return Photo{}, false
 }
 
 // Better orders two photos of the same kind, the one to show first first: our

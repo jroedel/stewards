@@ -56,9 +56,11 @@ type Listings interface {
 	ForSpecies(ctx context.Context, speciesID types.ID) ([]listingbus.Listing, error)
 }
 
-// PhotoReader is what the species card needs from the photo rules.
+// PhotoReader is what the species card and the list need from the photo
+// rules.
 type PhotoReader interface {
 	ForSpecies(ctx context.Context, speciesID types.ID) ([]photobus.Photo, error)
+	BySpecies(ctx context.Context) (map[types.ID][]photobus.Photo, error)
 }
 
 // Config is what this app needs.
@@ -106,6 +108,10 @@ type listRow struct {
 	ID, Slug, Common, Scientific, Status, Bloom string
 	Confirmed                                   bool
 	Swatches                                    []string
+
+	// Thumb is the id of the photo shown beside the plant (photobus.Lead),
+	// or empty when it has none.
+	Thumb string
 }
 
 type listView struct {
@@ -121,12 +127,25 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	photos, err := a.photos.BySpecies(r.Context())
+	if err != nil {
+		a.fail(w, r, "listing photos for the stewards' list of plants", err)
+
+		return
+	}
+
 	v := listView{}
 	for _, sp := range all {
-		v.Species = append(v.Species, listRow{
+		row := listRow{
 			ID: sp.ID.String(), Slug: sp.Slug, Common: sp.Common.EN, Scientific: sp.Scientific,
 			Status: sp.Status.Label(), Bloom: sp.Bloom.String(), Confirmed: sp.Confirmed, Swatches: sp.Swatches,
-		})
+		}
+
+		if p, ok := photobus.Lead(photos[sp.ID]); ok {
+			row.Thumb = p.ID.String()
+		}
+
+		v.Species = append(v.Species, row)
 	}
 
 	// A fixed sentence chosen by a word, never the query echoed.

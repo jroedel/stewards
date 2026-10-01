@@ -197,9 +197,19 @@ func (s *Store) BySHA256(ctx context.Context, speciesID types.ID, sum string) (p
 
 // ForSpecies is every photo of a species, oldest first; photobus orders them.
 func (s *Store) ForSpecies(ctx context.Context, speciesID types.ID) ([]photobus.Photo, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+columns+` FROM photos WHERE species_id = ? ORDER BY created_at, id`, speciesID.String())
+	return s.list(ctx, "listing a species' photos", `SELECT `+columns+` FROM photos WHERE species_id = ? ORDER BY created_at, id`, speciesID.String())
+}
+
+// All is every photo of every species, for a screen that shows one beside
+// each plant: one query rather than one per plant.
+func (s *Store) All(ctx context.Context) ([]photobus.Photo, error) {
+	return s.list(ctx, "listing every photo", `SELECT `+columns+` FROM photos ORDER BY created_at, id`)
+}
+
+func (s *Store) list(ctx context.Context, doing, query string, args ...any) ([]photobus.Photo, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("listing a species' photos: %w", err)
+		return nil, fmt.Errorf("%s: %w", doing, err)
 	}
 	defer rows.Close()
 
@@ -213,7 +223,7 @@ func (s *Store) ForSpecies(ctx context.Context, speciesID types.ID) ([]photobus.
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("listing a species' photos: %w", err)
+		return nil, fmt.Errorf("%s: %w", doing, err)
 	}
 
 	return all, nil
