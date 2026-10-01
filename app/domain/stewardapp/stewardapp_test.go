@@ -24,6 +24,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/species/stores/speciesdb"
 	"github.com/jroedel/stewards/business/domain/user/stores/userdb"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
+	"github.com/jroedel/stewards/business/domain/workday/stores/workdaydb"
+	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
 	"github.com/jroedel/stewards/business/types"
 	"github.com/jroedel/stewards/foundation/mail"
 	"github.com/jroedel/stewards/foundation/sqldb"
@@ -56,6 +58,7 @@ func serve(t *testing.T, withMail bool) *site {
 		func() error { return listingdb.Init(t.Context(), db) },
 		func() error { return photodb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
+		func() error { return workdaydb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
 			t.Fatal(err)
@@ -68,7 +71,8 @@ func serve(t *testing.T, withMail bool) *site {
 	cfg := muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
 		Places: placebus.NewBusiness(placedb.NewStore(db), nil), Users: s.users,
-		Species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: photos(t, db),
+		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
+		Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: photos(t, db),
 		BaseURL: base,
 	}
 	if withMail {

@@ -1,0 +1,14 @@
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow">{{say $l .Copy.PlacesEyebrow}}</p>
+<h1>{{say $l .Copy.PlacesTitle}}</h1>
+<p class="lead">{{say $l .Copy.PlacesLead}}</p>
+
+<h2>{{say $l .Copy.Places}}</h2>
+{{if .Places}}
+<ul class="rows">
+{{range .Places}}<li><a class="row" href="/places/{{.Slug}}"><div><div class="row-name">{{say $l .Name}}</div>{{if .Purpose.EN}}<div class="row-note">{{say $l .Purpose}}</div>{{end}}</div><span class="row-go" aria-hidden="true">›</span></a></li>
+{{end}}</ul>
+{{else}}
+<div class="card empty"><p>{{say $l .Copy.Empty}}</p></div>
+{{end}}
+{{end}}{{end}}

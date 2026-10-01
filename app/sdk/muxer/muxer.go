@@ -18,6 +18,7 @@ import (
 	"github.com/jroedel/stewards/app/domain/placeapp"
 	"github.com/jroedel/stewards/app/domain/speciesapp"
 	"github.com/jroedel/stewards/app/domain/stewardapp"
+	"github.com/jroedel/stewards/app/domain/workdayapp"
 	"github.com/jroedel/stewards/app/sdk/health"
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
@@ -26,6 +27,7 @@ import (
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
+	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
 	"github.com/jroedel/stewards/foundation/mail"
 	"github.com/jroedel/stewards/foundation/sqldb"
 	"github.com/jroedel/stewards/foundation/web"
@@ -41,6 +43,7 @@ type Config struct {
 	Listings *listingbus.Business
 	Photos   *photobus.Business
 	Users    *userbus.Business
+	Workdays *workdaybus.Business
 
 	// BaseURL is the public origin. Empty means sign-in is off: its routes
 	// are not mounted, and with no other write in the app, the origin check
@@ -67,13 +70,13 @@ const maxUpload = photobus.MaxBytes + 1<<20
 
 // New builds the handler.
 func New(cfg Config) (http.Handler, error) {
-	if cfg.Log == nil || cfg.DB == nil || cfg.Places == nil || cfg.Species == nil || cfg.Listings == nil || cfg.Photos == nil || cfg.Users == nil {
-		return nil, errors.New("the muxer needs a logger, a database, and the place, species, listing, photo and steward rules")
+	if cfg.Log == nil || cfg.DB == nil || cfg.Places == nil || cfg.Species == nil || cfg.Listings == nil || cfg.Photos == nil || cfg.Users == nil || cfg.Workdays == nil {
+		return nil, errors.New("the muxer needs a logger, a database, and the place, species, listing, photo, steward and work-day rules")
 	}
 
 	// One renderer holding every app's pages: the stylesheet has one hashed
 	// path, and net/http panics on a pattern registered twice.
-	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, stewardapp.Templates)
+	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, stewardapp.Templates, workdayapp.Templates)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +89,7 @@ func New(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("GET /static/fonts/{file}", render.Files("fonts"))
 	mux.HandleFunc("GET /static/img/{file}", render.Files("img"))
 
-	homeapp.New(cfg.Log, render, cfg.Places).Routes(mux)
+	homeapp.New(cfg.Log, render, cfg.Places, cfg.Workdays).Routes(mux)
 	places := placeapp.Config{Log: cfg.Log, Render: render, Places: cfg.Places, Species: cfg.Species, Listings: cfg.Listings, Photos: cfg.Photos}
 	species := speciesapp.Config{Log: cfg.Log, Render: render, Species: cfg.Species, Places: cfg.Places, Listings: cfg.Listings, Photos: cfg.Photos}
 	photos := photoapp.Config{Log: cfg.Log, Render: render, Photos: cfg.Photos, Species: cfg.Species, Places: cfg.Places}
@@ -113,6 +116,7 @@ func New(cfg Config) (http.Handler, error) {
 		placeapp.Routes(mux, places, guard)
 		speciesapp.Routes(mux, species, guard)
 		photoapp.Routes(mux, photos, guard)
+		workdayapp.Routes(mux, workdayapp.Config{Log: cfg.Log, Render: render, Days: cfg.Workdays}, guard)
 		stewardapp.Routes(mux, stewardapp.Config{
 			Log:     cfg.Log,
 			Render:  render,

@@ -307,7 +307,9 @@ h2 {
 
 .form select,
 .form textarea,
-.form input[type="number"] {
+.form input[type="number"],
+.form input[type="date"],
+.form input[type="time"] {
   min-height: 48px;
   padding: 10px 12px;
   border: 1.5px solid var(--muted);
@@ -424,7 +426,7 @@ main > h1:first-child { margin-top: 20px; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .pair > div { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .pair label { font-weight: 500; }
-.pair input[type="number"], .pair input[type="text"], .pair select { max-width: none; width: 100%; min-width: 0; }
+.pair input[type="number"], .pair input[type="text"], .pair input[type="time"], .pair select { max-width: none; width: 100%; min-width: 0; }
 
 .swatch { display: inline-block; vertical-align: -2px; }
 .row-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
@@ -559,3 +561,17 @@ code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap
 /* A To plant row's "Planted" button, under the row, for a steward. */
 .planted { margin: 6px 0 4px; }
 .planted .quiet { font-weight: 400; color: var(--muted); }
+
+/* ---------------------------------------------------------------- work days */
+
+/* The home page's list of stewardship days. A day that is today, or under
+   way, is the "Today" banner design.md gives a work day: white on the shrine
+   blue (11:1), with its tag in yellow. */
+.days { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.day-when { font: 700 19px var(--font-display); color: var(--sf-blue); }
+.day-hours { display: block; font: 500 16px var(--font-body); color: var(--muted); }
+.day-title { font-size: 18px; font-weight: 700; }
+.day-today { background: var(--sf-blue); border-color: var(--sf-blue); color: var(--sf-white); }
+.day-today .day-when, .day-today .day-hours { color: var(--sf-white); }
+.day-tag { display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--sf-yellow); color: var(--sf-blue-dk); font-size: 14px; font-weight: 700; }
+.explore-what { margin-top: 4px; text-align: center; }

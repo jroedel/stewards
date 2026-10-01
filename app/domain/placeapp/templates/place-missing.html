@@ -2,5 +2,5 @@
 {{define "content"}}{{$l := .Lang}}{{with .Data}}
 <h1><span lang="en">We can't find that place</span></h1>
 <p class="lead"><span lang="en">The address may have a typo. Choose the place from the list instead.</span></p>
-<a class="onward" href="/"><span>{{say $l .Back}}</span><span aria-hidden="true">›</span></a>
+<a class="onward" href="/places"><span>{{say $l .Back}}</span><span aria-hidden="true">›</span></a>
 {{end}}{{end}}

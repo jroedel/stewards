@@ -1,5 +1,5 @@
 {{define "title"}}{{.Data.Name.In .Lang}} · Garden stewards{{end}}
-{{define "masthead"}}<a class="back" href="/"><span>‹ {{say .Lang .Data.Copy.Back}}</span></a>{{end}}
+{{define "masthead"}}<a class="back" href="/places"><span>‹ {{say .Lang .Data.Copy.Back}}</span></a>{{end}}
 {{define "content"}}{{$l := .Lang}}{{with .Data}}
 {{with .Parent}}<p class="part-of">{{say $l $.Data.Copy.PartOf}} <a href="/places/{{.Slug}}">{{say $l .Name}}</a></p>{{end}}
 <h1>{{say $l .Name}}</h1>
