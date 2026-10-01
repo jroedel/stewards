@@ -34,7 +34,12 @@ func TestAVolunteerFindsTheRainGardenAndItsBands(t *testing.T) {
 	s := serve(t)
 	s.pilot()
 
-	home := s.getAs("/", "").Body.String()
+	// The home page's "Explore the trail" leads to the list.
+	if !strings.Contains(s.getAs("/", "").Body.String(), `href="/places"`) {
+		t.Fatal("the home page does not lead to the list of places")
+	}
+
+	home := s.getAs("/places", "").Body.String()
 	if !strings.Contains(home, `href="/places/rain-garden"`) {
 		t.Fatal("the list does not link to the rain garden")
 	}
@@ -53,7 +58,7 @@ func TestAVolunteerFindsTheRainGardenAndItsBands(t *testing.T) {
 		"Full sun, wet after storms.",
 		"Inside this place",
 		"Not sure what something is? Leave it.",
-		`href="/"><span>‹ All places</span></a>`,
+		`href="/places"><span>‹ All places</span></a>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the card does not show %q", want)
@@ -130,7 +135,7 @@ func TestAnUnknownPlaceSaysWhatToDo(t *testing.T) {
 	s := serve(t)
 
 	w := s.getAs("/places/no-such-place", "")
-	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "We can't find that place") || !strings.Contains(w.Body.String(), `<a class="onward" href="/">`) {
+	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "We can't find that place") || !strings.Contains(w.Body.String(), `<a class="onward" href="/places">`) {
 		t.Errorf("an unknown place: %d\n%s", w.Code, w.Body)
 	}
 }

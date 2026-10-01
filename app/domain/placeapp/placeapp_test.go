@@ -23,6 +23,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/species/stores/speciesdb"
 	"github.com/jroedel/stewards/business/domain/user/stores/userdb"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
+	"github.com/jroedel/stewards/business/domain/workday/stores/workdaydb"
+	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
 	"github.com/jroedel/stewards/business/types"
 	"github.com/jroedel/stewards/foundation/mail"
 	"github.com/jroedel/stewards/foundation/sqldb"
@@ -62,6 +64,7 @@ func serveAt(t *testing.T, baseURL string) *site {
 		func() error { return listingdb.Init(t.Context(), db) },
 		func() error { return photodb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
+		func() error { return workdaydb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
 			t.Fatal(err)
@@ -79,7 +82,8 @@ func serveAt(t *testing.T, baseURL string) *site {
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
 		Places: s.places, Users: users,
-		Species: s.species, Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: photos(t, db),
+		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
+		Species:  s.species, Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: photos(t, db),
 		BaseURL: baseURL, Mail: &mail.Recorder{},
 	}); err != nil {
 		t.Fatal(err)
@@ -226,10 +230,10 @@ func TestAStewardAddsTheRainGardenAndItsBands(t *testing.T) {
 		t.Error("the bands are not listed under the garden in order")
 	}
 
-	// And the volunteers' home screen shows the garden, not its bands.
-	home := s.do(http.MethodGet, "/", nil, false).Body.String()
+	// And the volunteers' list of places shows the garden, not its bands.
+	home := s.do(http.MethodGet, "/places", nil, false).Body.String()
 	if !strings.Contains(home, "Rain garden") || strings.Contains(home, "Inflow band") {
-		t.Error("the home screen should list the garden and not its bands")
+		t.Error("the list of places should show the garden and not its bands")
 	}
 }
 

@@ -1,10 +1,10 @@
 {{define "title"}}Sign in · Garden stewards{{end}}
-{{define "signin-link"}}<a href="/">Back to the places list</a>{{end}}
+{{define "signin-link"}}<a href="/places">Back to the places list</a>{{end}}
 {{define "content"}}{{$l := .Lang}}{{with .Data}}
 <div lang="en">
 <p class="eyebrow">Garden stewards</p>
 <h1>Sign in</h1>
-<p class="lead">For the stewards who edit places and plants. Volunteers don't need to sign in: everything you need is on the <a href="/">places list</a>.</p>
+<p class="lead">For the stewards who edit places and plants. Volunteers don't need to sign in: everything you need is on the <a href="/places">places list</a>.</p>
 
 {{if .Problem.EN}}<p class="problem" role="alert">{{say $l .Problem}}</p>{{end}}
 

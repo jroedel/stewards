@@ -129,15 +129,5 @@ func (a app) showKeys(w http.ResponseWriter, r *http.Request, status int, v keys
 // day is a date as a steward reads it, in the garden's own time zone so that
 // "used today" means today in Texas.
 func day(t time.Time) string {
-	return t.In(garden).Format("2 January 2006")
+	return t.In(types.Garden).Format("2 January 2006")
 }
-
-// garden is the garden's time zone. Loaded once; on a machine with no zone
-// database it falls back to UTC rather than failing a page over a date.
-var garden = func() *time.Location {
-	if loc, err := time.LoadLocation("America/Chicago"); err == nil {
-		return loc
-	}
-
-	return time.UTC
-}()

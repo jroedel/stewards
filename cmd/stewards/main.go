@@ -25,6 +25,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/species/stores/speciesdb"
 	"github.com/jroedel/stewards/business/domain/user/stores/userdb"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
+	"github.com/jroedel/stewards/business/domain/workday/stores/workdaydb"
+	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
 	"github.com/jroedel/stewards/foundation/logger"
 	"github.com/jroedel/stewards/foundation/mail"
 	"github.com/jroedel/stewards/foundation/sqldb"
@@ -138,6 +140,7 @@ func run() error {
 		Listings:  listingbus.NewBusiness(listingdb.NewStore(db), nil),
 		Photos:    photobus.NewBusiness(photodb.NewStore(db), photoFiles, nil),
 		Users:     users,
+		Workdays:  workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
 		BaseURL:   cfg.Server.BaseURL,
 		Mail:      sender,
 		Bootstrap: cfg.Auth.BootstrapSecret,
@@ -157,7 +160,7 @@ func run() error {
 // order the references point in. Places come first of the domains: every
 // layer points at a place, and the listings of species at places reference
 // both places and species, so they go after both; so do photos, for the same
-// reason. A store added in
+// reason. Stewardship days reference nothing, and go last. A store added in
 // the wrong place fails at startup on a fresh database and nowhere else, which
 // is the cheapest moment for it to fail.
 func prepare(ctx context.Context, db *sql.DB) error {
@@ -171,6 +174,7 @@ func prepare(ctx context.Context, db *sql.DB) error {
 		{"plants listed at places", listingdb.Init},
 		{"photos", photodb.Init},
 		{"stewards", userdb.Init},
+		{"stewardship days", workdaydb.Init},
 	} {
 		if err := step.init(ctx, db); err != nil {
 			return fmt.Errorf("preparing %s: %w", step.what, err)
@@ -195,6 +199,7 @@ func expectedSchema() sqldb.Expected {
 		listingdb.Expected,
 		photodb.Expected,
 		userdb.Expected,
+		workdaydb.Expected,
 	} {
 		maps.Copy(expected, store)
 	}

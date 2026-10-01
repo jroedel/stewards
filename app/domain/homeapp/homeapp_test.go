@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jroedel/stewards/app/sdk/muxer"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
@@ -21,6 +22,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/species/stores/speciesdb"
 	"github.com/jroedel/stewards/business/domain/user/stores/userdb"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
+	"github.com/jroedel/stewards/business/domain/workday/stores/workdaydb"
+	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
 	"github.com/jroedel/stewards/business/types"
 	"github.com/jroedel/stewards/foundation/sqldb"
 )
@@ -28,6 +31,16 @@ import (
 // Through the muxer, so the page is tested as served: with its middleware,
 // its stylesheet and its language.
 func server(t *testing.T) (http.Handler, *placebus.Business) {
+	t.Helper()
+
+	h, places, _, _ := serverWithDays(t)
+
+	return h, places
+}
+
+// serverWithDays is server with the work-day rules on a clock the test sets,
+// starting at nine on Thursday 1 October 2026 in Austin.
+func serverWithDays(t *testing.T) (http.Handler, *placebus.Business, *workdaybus.Business, *time.Time) {
 	t.Helper()
 
 	db, err := sqldb.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -43,6 +56,7 @@ func server(t *testing.T) (http.Handler, *placebus.Business) {
 		func() error { return listingdb.Init(t.Context(), db) },
 		func() error { return photodb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
+		func() error { return workdaydb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
 			t.Fatalf("Init: %v", err)
@@ -50,6 +64,8 @@ func server(t *testing.T) (http.Handler, *placebus.Business) {
 	}
 
 	places := placebus.NewBusiness(placedb.NewStore(db), nil)
+	clock := time.Date(2026, 10, 1, 9, 0, 0, 0, types.Garden)
+	days := workdaybus.NewBusiness(workdaydb.NewStore(db), func() time.Time { return clock })
 
 	h, err := muxer.New(muxer.Config{
 		Log:      slog.New(slog.DiscardHandler),
@@ -57,13 +73,14 @@ func server(t *testing.T) (http.Handler, *placebus.Business) {
 		Expected: sqldb.Infrastructure,
 		Places:   places,
 		Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: photos(t, db),
-		Users: userbus.NewBusiness(slog.New(slog.DiscardHandler), userdb.NewStore(db), nil),
+		Users:    userbus.NewBusiness(slog.New(slog.DiscardHandler), userdb.NewStore(db), nil),
+		Workdays: days,
 	})
 	if err != nil {
 		t.Fatalf("muxer.New: %v", err)
 	}
 
-	return h, places
+	return h, places, days, &clock
 }
 
 func get(t *testing.T, h http.Handler, path, accept string) (int, string) {
@@ -80,22 +97,22 @@ func get(t *testing.T, h http.Handler, path, accept string) (int, string) {
 	return rec.Code, rec.Body.String()
 }
 
-func TestWithNoPlacesTheHomeScreenSaysSo(t *testing.T) {
+func TestWithNoPlacesTheListSaysSo(t *testing.T) {
 	h, _ := server(t)
 
-	code, body := get(t, h, "/", "")
+	code, body := get(t, h, "/places", "")
 	if code != http.StatusOK {
 		t.Fatalf("status %d", code)
 	}
 
-	for _, want := range []string{"Where are you working?", "No places have been added yet.", "https://schoenstatt-fathers.us/trail/"} {
+	for _, want := range []string{"Where are you working?", "No places have been added yet."} {
 		if !strings.Contains(body, want) {
-			t.Errorf("the home screen has no %q", want)
+			t.Errorf("the list of places has no %q", want)
 		}
 	}
 }
 
-func TestTheHomeScreenListsPlacesWithoutTheirBands(t *testing.T) {
+func TestTheListShowsPlacesWithoutTheirBands(t *testing.T) {
 	h, places := server(t)
 
 	garden, err := places.Create(t.Context(), placebus.Fields{
@@ -115,7 +132,7 @@ func TestTheHomeScreenListsPlacesWithoutTheirBands(t *testing.T) {
 		}
 	}
 
-	_, body := get(t, h, "/", "")
+	_, body := get(t, h, "/places", "")
 
 	fire, rain := strings.Index(body, "Fire pit"), strings.Index(body, "Rain garden")
 	if fire < 0 || rain < 0 || fire > rain {
@@ -132,12 +149,81 @@ func TestTheHomeScreenListsPlacesWithoutTheirBands(t *testing.T) {
 
 	// In Spanish: the Spanish name where it is written, and the English
 	// marked where it is not.
-	_, es := get(t, h, "/", "es")
+	_, es := get(t, h, "/places", "es")
 	if !strings.Contains(es, "Jardín de lluvia") {
 		t.Error("the Spanish page does not use the Spanish name")
 	}
 	if !strings.Contains(es, `<span lang="en">Fire pit</span>`) {
 		t.Error("an English-only name in the Spanish page is not marked lang=en")
+	}
+}
+
+// What the QR code on the trail's signs leads to, before any day is on the
+// calendar: the welcome, the way to the places, and the way to the prayers
+// for a pilgrim who scanned the wrong sign.
+func TestTheHomePageWelcomesANewcomer(t *testing.T) {
+	h, _ := server(t)
+
+	code, body := get(t, h, "/", "")
+	if code != http.StatusOK {
+		t.Fatalf("status %d", code)
+	}
+
+	for _, want := range []string{
+		"Come help in the garden", "special skills", "Upcoming stewardship days",
+		"No days are scheduled just now.", `href="/places"`, "https://schoenstatt-fathers.us/trail/",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the home page has no %q", want)
+		}
+	}
+}
+
+func TestTheHomePageListsTheDaysComingUp(t *testing.T) {
+	h, _, days, clock := serverWithDays(t)
+
+	on := func(day, from, to int, title string) workdaybus.Fields {
+		return workdaybus.Fields{
+			Starts: time.Date(2026, 10, day, from, 0, 0, 0, types.Garden),
+			Ends:   time.Date(2026, 10, day, to, 0, 0, 0, types.Garden),
+			Title:  types.Text{EN: title},
+		}
+	}
+
+	for _, f := range []workdaybus.Fields{on(24, 8, 11, "Mulching the paths"), on(10, 8, 11, "Planting the rain garden"), on(1, 8, 11, "Weeding the skinny bed")} {
+		if _, err := days.Create(t.Context(), f); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, body := get(t, h, "/", "")
+
+	today, tenth, later := strings.Index(body, "Weeding the skinny bed"), strings.Index(body, "Planting the rain garden"), strings.Index(body, "Mulching the paths")
+	if today < 0 || !(today < tenth && tenth < later) {
+		t.Errorf("want the days soonest first, today's at the top")
+	}
+
+	if !strings.Contains(body, "Saturday, October 10") || !strings.Contains(body, "8:00–11:00 am") {
+		t.Error("a day's date and hours are not written out")
+	}
+
+	// At nine on the first the morning's work is under way.
+	if !strings.Contains(body, "Happening now") || strings.Contains(body, "No days are scheduled") {
+		t.Error("the day under way is not marked as happening now")
+	}
+
+	// Once it is over it leaves the page, and nothing is happening now.
+	*clock = time.Date(2026, 10, 1, 12, 0, 0, 0, types.Garden)
+
+	_, body = get(t, h, "/", "")
+	if strings.Contains(body, "Weeding the skinny bed") || strings.Contains(body, "Happening now") {
+		t.Error("a day that is over is still on the home page")
+	}
+
+	// In Spanish, the English is marked until a native speaker writes it.
+	_, es := get(t, h, "/", "es")
+	if !strings.Contains(es, `<span lang="en">Planting the rain garden</span>`) {
+		t.Error("an English-only title on the Spanish page is not marked lang=en")
 	}
 }
 

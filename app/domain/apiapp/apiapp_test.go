@@ -31,6 +31,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/species/stores/speciesdb"
 	"github.com/jroedel/stewards/business/domain/user/stores/userdb"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
+	"github.com/jroedel/stewards/business/domain/workday/stores/workdaydb"
+	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
 	"github.com/jroedel/stewards/business/types"
 	"github.com/jroedel/stewards/foundation/mail"
 	"github.com/jroedel/stewards/foundation/sqldb"
@@ -64,6 +66,7 @@ func serve(t *testing.T) *site {
 		func() error { return listingdb.Init(t.Context(), db) },
 		func() error { return photodb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
+		func() error { return workdaydb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
 			t.Fatal(err)
@@ -87,6 +90,7 @@ func serve(t *testing.T) *site {
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
 		Places: s.places, Species: s.species, Users: users,
+		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
 		Photos:   photobus.NewBusiness(photodb.NewStore(db), files, nil),
 		Listings: s.listings,
 		BaseURL:  base, Mail: &mail.Recorder{},

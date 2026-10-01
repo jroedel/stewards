@@ -1,0 +1,28 @@
+{{define "title"}}Stewardship days · Garden stewards{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow"><a href="/steward">Places</a></p>
+<h1>Stewardship days</h1>
+<p class="lead">The days anyone may come and help. Upcoming days are on the home page, which is where the QR code on the trail signs leads.</p>
+
+{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+
+<h2>Coming up</h2>
+{{if .Upcoming}}
+<ul class="rows">
+{{range .Upcoming}}<li><a class="row" href="/steward/days/{{.ID}}/edit"><div><div class="row-name">{{say $l .Date}}</div><div class="row-note">{{say $l .Hours}} · {{say $l .Title}}</div></div><span class="row-go" aria-hidden="true">Edit ›</span></a></li>
+{{end}}</ul>
+{{else}}
+<div class="card empty"><p>No days are scheduled. The home page says so, and asks people to check back.</p></div>
+{{end}}
+
+<a class="button button-block" href="/steward/days/new">Add a day</a>
+
+{{if .Recent}}
+<h2>Just past</h2>
+<ul class="rows">
+{{range .Recent}}<li><a class="row" href="/steward/days/{{.ID}}/edit"><div><div class="row-name">{{say $l .Date}}</div><div class="row-note">{{say $l .Hours}} · {{say $l .Title}}</div></div><span class="row-go" aria-hidden="true">Edit ›</span></a></li>
+{{end}}</ul>
+{{end}}
+</div>
+{{end}}{{end}}

@@ -1,0 +1,61 @@
+{{define "title"}}{{.Data.Heading}} · Garden stewards{{end}}
+{{define "content"}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow"><a href="/steward/days">Stewardship days</a></p>
+<h1>{{.Heading}}</h1>
+
+{{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below and press Save again.</p>{{end}}
+
+<form class="card form" method="post" action="{{if .ID}}/steward/days/{{.ID}}{{else}}/steward/days{{end}}">
+  <label for="date">Date</label>
+  {{template "field-problem" (index .Problems "date")}}
+  <input id="date" name="date" type="date" value="{{.Date}}" required>
+
+  <div class="pair">
+    <div>
+      <label for="starts">Starts</label>
+      <input id="starts" name="starts" type="time" value="{{.Starts}}" step="900" required>
+    </div>
+    <div>
+      <label for="ends">Ends</label>
+      <input id="ends" name="ends" type="time" value="{{.Ends}}" step="900" required>
+    </div>
+  </div>
+  {{template "field-problem" (index .Problems "ends")}}
+  <p class="help">Austin time.</p>
+
+  <fieldset>
+    <legend>What you will work on</legend>
+    <p class="help" id="title-help">A few words, for the list on the home page: "Planting the rain garden", "Weeding the skinny bed".</p>
+    {{template "field-problem" (index .Problems "title")}}
+    <label for="title_en">In English</label>
+    <input id="title_en" name="title_en" type="text" value="{{.TitleEN}}" aria-describedby="title-help" required maxlength="80">
+    <label for="title_es">En español <span class="optional">optional</span></label>
+    <input id="title_es" name="title_es" type="text" value="{{.TitleES}}" lang="es" maxlength="80">
+  </fieldset>
+
+  <fieldset>
+    <legend>Details <span class="optional">optional</span></legend>
+    <p class="help">Anything a newcomer would want to know: where to meet, what to wear, what the work is like.</p>
+    {{template "field-problem" (index .Problems "details")}}
+    <label for="details_en">In English</label>
+    <textarea id="details_en" name="details_en" rows="4" maxlength="1000">{{.DetailsEN}}</textarea>
+    <label for="details_es">En español <span class="optional">optional</span></label>
+    <textarea id="details_es" name="details_es" rows="4" lang="es" maxlength="1000">{{.DetailsES}}</textarea>
+  </fieldset>
+
+  <button class="button" type="submit">Save</button>
+</form>
+
+{{if .ID}}
+<form class="card form danger" method="post" action="/steward/days/{{.ID}}/delete">
+  <h2>Remove this day</h2>
+  {{with .DeleteProblem}}<p class="problem" role="alert">{{.}}</p>{{end}}
+  <label class="check"><input type="checkbox" name="confirm" value="yes"> Yes, take it off the calendar</label>
+  <button class="button button-quiet" type="submit">Remove</button>
+</form>
+{{end}}
+</div>
+{{end}}{{end}}
+
+{{define "field-problem"}}{{if .}}<p class="field-problem">{{.}}</p>{{end}}{{end}}

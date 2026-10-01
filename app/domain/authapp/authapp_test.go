@@ -24,6 +24,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/species/stores/speciesdb"
 	"github.com/jroedel/stewards/business/domain/user/stores/userdb"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
+	"github.com/jroedel/stewards/business/domain/workday/stores/workdaydb"
+	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
 	"github.com/jroedel/stewards/business/types"
 	"github.com/jroedel/stewards/foundation/mail"
 	"github.com/jroedel/stewards/foundation/sqldb"
@@ -59,6 +61,7 @@ func serve(t *testing.T, bootstrap, baseURL string) site {
 		func() error { return listingdb.Init(t.Context(), db) },
 		func() error { return photodb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
+		func() error { return workdaydb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
 			t.Fatal(err)
@@ -75,6 +78,7 @@ func serve(t *testing.T, bootstrap, baseURL string) site {
 		Places:   placebus.NewBusiness(placedb.NewStore(db), nil),
 		Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: photos(t, db),
 		Users:     s.users,
+		Workdays:  workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
 		BaseURL:   baseURL,
 		Mail:      s.mail,
 		Bootstrap: bootstrap,

@@ -20,6 +20,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/species/stores/speciesdb"
 	"github.com/jroedel/stewards/business/domain/user/stores/userdb"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
+	"github.com/jroedel/stewards/business/domain/workday/stores/workdaydb"
+	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
 	"github.com/jroedel/stewards/foundation/sqldb"
 )
 
@@ -53,7 +55,8 @@ func TestHealthzChecksTheSchema(t *testing.T) {
 				Expected: tc.want,
 				Places:   placebus.NewBusiness(placedb.NewStore(db), nil),
 				Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: photos(t, db),
-				Users: userbus.NewBusiness(slog.New(slog.DiscardHandler), userdb.NewStore(db), nil),
+				Users:    userbus.NewBusiness(slog.New(slog.DiscardHandler), userdb.NewStore(db), nil),
+				Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
 			})
 			if err != nil {
 				t.Fatalf("New: %v", err)
