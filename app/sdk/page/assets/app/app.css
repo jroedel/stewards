@@ -422,9 +422,9 @@ main > h1:first-child { margin-top: 20px; }
 .month input:focus-visible + span { outline: 3px solid var(--sf-blue); outline-offset: 2px; }
 
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.pair > div { display: flex; flex-direction: column; gap: 6px; }
+.pair > div { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .pair label { font-weight: 500; }
-.pair input[type="number"] { max-width: none; width: 100%; }
+.pair input[type="number"], .pair input[type="text"], .pair select { max-width: none; width: 100%; min-width: 0; }
 
 .swatch { display: inline-block; vertical-align: -2px; }
 .row-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
@@ -499,3 +499,33 @@ main > h1:first-child { margin-top: 20px; }
 
 .sources { margin: 0; padding-left: 20px; }
 .sources li { padding: 4px 0; overflow-wrap: anywhere; }
+
+/* ---------------------------------------------------------------- photos */
+
+.muted { color: var(--muted); }
+
+/* A photo on a plant card: full width of the column, its space reserved by
+   the width and height attributes so the page does not jump as it loads. */
+.photo { margin: 12px 0 0; }
+.photo img { display: block; width: 100%; height: auto; border-radius: 12px; background: var(--sf-neutral); }
+.photo figcaption { margin-top: 6px; font-size: 15px; }
+.photo figcaption strong { display: block; font-size: 17px; }
+.photo-credit { color: var(--muted); overflow-wrap: anywhere; }
+.photos-missing { margin-top: 12px; }
+
+/* The Planned list's picture: a square, cropped, before the name. */
+.row-thumb { flex: none; width: 64px; height: 64px; border-radius: 8px; object-fit: cover; background: var(--sf-neutral); }
+
+/* The stewards' photos screen: a section per kind, a row per photo. */
+.photo-kind { margin-top: 12px; }
+.photo-kind h2 { margin: 0 0 8px; font-size: 19px; }
+.photo-kind > p { margin: 0; }
+.photo-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; }
+.photo-list li { display: flex; gap: 12px; align-items: flex-start; }
+.photo-thumb { flex: none; width: 96px; }
+.photo-thumb img { display: block; width: 96px; height: 96px; object-fit: cover; border-radius: 8px; background: var(--sf-neutral); }
+.photo-about { min-width: 0; }
+.photo-about p { margin: 0 0 4px; }
+.photo-about a { display: inline-block; padding: 6px 0; font-weight: 700; }
+.photo-large img { display: block; width: 100%; height: auto; border-radius: 12px; }
+input[type="file"] { display: block; width: 100%; min-height: 48px; padding: 10px 0; font: inherit; }

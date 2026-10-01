@@ -23,6 +23,12 @@ shutdown_grace = "15s"
 # Beside the binary, above any web-servable directory.
 path = "stewards.db"
 
+[photos]
+# Where photo files are kept. Leave it out for a directory called photo-files
+# beside the database, which is where it belongs: never under public_html.
+# Photos reach a browser only through the app.
+# dir = "photo-files"
+
 [log]
 # debug, info, warn or error.
 level = "info"

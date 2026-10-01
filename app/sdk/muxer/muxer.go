@@ -13,6 +13,7 @@ import (
 
 	"github.com/jroedel/stewards/app/domain/authapp"
 	"github.com/jroedel/stewards/app/domain/homeapp"
+	"github.com/jroedel/stewards/app/domain/photoapp"
 	"github.com/jroedel/stewards/app/domain/placeapp"
 	"github.com/jroedel/stewards/app/domain/speciesapp"
 	"github.com/jroedel/stewards/app/domain/stewardapp"
@@ -20,6 +21,7 @@ import (
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
+	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
@@ -36,6 +38,7 @@ type Config struct {
 	Places   *placebus.Business
 	Species  *speciesbus.Business
 	Listings *listingbus.Business
+	Photos   *photobus.Business
 	Users    *userbus.Business
 
 	// BaseURL is the public origin. Empty means sign-in is off: its routes
@@ -56,15 +59,20 @@ type Config struct {
 // web.MaxBody).
 const maxBody = 64 << 10
 
+// maxUpload is the body limit on the upload route: the largest photo
+// photobus accepts, and room for the form's text fields and the multipart
+// boundaries around them.
+const maxUpload = photobus.MaxBytes + 1<<20
+
 // New builds the handler.
 func New(cfg Config) (http.Handler, error) {
-	if cfg.Log == nil || cfg.DB == nil || cfg.Places == nil || cfg.Species == nil || cfg.Listings == nil || cfg.Users == nil {
-		return nil, errors.New("the muxer needs a logger, a database, and the place, species, listing and steward rules")
+	if cfg.Log == nil || cfg.DB == nil || cfg.Places == nil || cfg.Species == nil || cfg.Listings == nil || cfg.Photos == nil || cfg.Users == nil {
+		return nil, errors.New("the muxer needs a logger, a database, and the place, species, listing, photo and steward rules")
 	}
 
 	// One renderer holding every app's pages: the stylesheet has one hashed
 	// path, and net/http panics on a pattern registered twice.
-	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, stewardapp.Templates)
+	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, stewardapp.Templates)
 	if err != nil {
 		return nil, err
 	}
@@ -78,11 +86,13 @@ func New(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("GET /static/img/{file}", render.Files("img"))
 
 	homeapp.New(cfg.Log, render, cfg.Places).Routes(mux)
-	places := placeapp.Config{Log: cfg.Log, Render: render, Places: cfg.Places, Species: cfg.Species, Listings: cfg.Listings}
-	species := speciesapp.Config{Log: cfg.Log, Render: render, Species: cfg.Species, Places: cfg.Places, Listings: cfg.Listings}
+	places := placeapp.Config{Log: cfg.Log, Render: render, Places: cfg.Places, Species: cfg.Species, Listings: cfg.Listings, Photos: cfg.Photos}
+	species := speciesapp.Config{Log: cfg.Log, Render: render, Species: cfg.Species, Places: cfg.Places, Listings: cfg.Listings, Photos: cfg.Photos}
+	photos := photoapp.Config{Log: cfg.Log, Render: render, Photos: cfg.Photos, Species: cfg.Species, Places: cfg.Places}
 
 	placeapp.CardRoutes(mux, places)
 	speciesapp.CardRoutes(mux, species)
+	photoapp.FileRoutes(mux, photos)
 
 	if cfg.BaseURL != "" {
 		authapp.Routes(mux, authapp.Config{
@@ -101,6 +111,7 @@ func New(cfg Config) (http.Handler, error) {
 
 		placeapp.Routes(mux, places, guard)
 		speciesapp.Routes(mux, species, guard)
+		photoapp.Routes(mux, photos, guard)
 		stewardapp.Routes(mux, stewardapp.Config{
 			Log:     cfg.Log,
 			Render:  render,
@@ -125,15 +136,27 @@ func New(cfg Config) (http.Handler, error) {
 	//
 	// Who is signed in comes after them, so a refused write costs no
 	// database read; the language innermost, since only the pages need it.
-	return web.Wrap(mux,
+	//
+	// How big and what shape are a fork rather than a line. The upload
+	// route is the one write that is a file: it gets a photo-sized limit
+	// and must be multipart. Every other route keeps 64 KB and form
+	// encoding. Two routes into the same mux, rather than one limit with an
+	// exception inside it, because a limit can only tighten (web.MaxBody):
+	// the upload must never pass through the small one at all.
+	inner := web.Wrap(mux,
+		mid.Authenticate(cfg.Log, cfg.Users),
+		mid.Lang(),
+	)
+
+	shape := http.NewServeMux()
+	shape.Handle(photoapp.UploadPattern, web.Wrap(inner, web.MaxBody(maxUpload), web.MultipartOnly()))
+	shape.Handle("/", web.Wrap(inner, web.MaxBody(maxBody), web.FormEncodedOnly()))
+
+	return web.Wrap(shape,
 		web.RequestID(),
 		web.Logging(cfg.Log),
 		web.Panics(cfg.Log),
 		web.SecureHeaders(page.Policy()),
 		web.SameOriginOnly(cfg.BaseURL),
-		web.MaxBody(maxBody),
-		web.FormEncodedOnly(),
-		mid.Authenticate(cfg.Log, cfg.Users),
-		mid.Lang(),
 	), nil
 }

@@ -1,6 +1,7 @@
 package placeapp_test
 
 import (
+	"database/sql"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,9 @@ import (
 	"github.com/jroedel/stewards/app/sdk/muxer"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
+	"github.com/jroedel/stewards/business/domain/photo/photobus"
+	"github.com/jroedel/stewards/business/domain/photo/stores/photodb"
+	"github.com/jroedel/stewards/business/domain/photo/stores/photofs"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
@@ -56,6 +60,7 @@ func serveAt(t *testing.T, baseURL string) *site {
 		func() error { return placedb.Init(t.Context(), db) },
 		func() error { return speciesdb.Init(t.Context(), db) },
 		func() error { return listingdb.Init(t.Context(), db) },
+		func() error { return photodb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
@@ -74,7 +79,7 @@ func serveAt(t *testing.T, baseURL string) *site {
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
 		Places: s.places, Users: users,
-		Species: s.species, Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
+		Species: s.species, Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: photos(t, db),
 		BaseURL: baseURL, Mail: &mail.Recorder{},
 	}); err != nil {
 		t.Fatal(err)
@@ -350,4 +355,17 @@ func TestTheConfirmationIsNotAnEcho(t *testing.T) {
 	if strings.Contains(body, "<b>hello") || strings.Contains(body, `class="done"`) {
 		t.Error("the query reached the page")
 	}
+}
+
+// photos is the photo rules over this test's database and a directory of its
+// own.
+func photos(t *testing.T, db *sql.DB) *photobus.Business {
+	t.Helper()
+
+	files, err := photofs.NewStore(filepath.Join(t.TempDir(), "photo-files"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return photobus.NewBusiness(photodb.NewStore(db), files, nil)
 }

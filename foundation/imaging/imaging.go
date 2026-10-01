@@ -1,0 +1,219 @@
+// Package imaging turns a photo as a phone sends it into the two pictures a
+// page shows: a large one and a small one, both JPEG, both the right way up,
+// and neither carrying anything the original said about where or how it was
+// taken.
+//
+// That last part is the reason this exists rather than serving the upload.
+// A phone photo's EXIF holds the GPS position to a few metres, the phone's
+// make and serial-ish identifiers, and the time to the second; a photo of the
+// garden is a photo of somebody's house, and before long of volunteers.
+// Re-encoding from decoded pixels is the one way to be sure none of it
+// survives: there is no list of tags to strip that can be incomplete. The
+// original is the caller's to keep or not, privately.
+//
+// Two things are read from the EXIF before it is dropped, because the picture
+// is wrong without them or the form is tedious without them: the orientation
+// (a phone held upright saves the pixels sideways and a tag saying so) and
+// the date it was taken, which the caller can offer as the month.
+//
+// JPEG and PNG only. iPhones store HEIC, but Safari converts to JPEG on upload
+// unless the form asks for HEIC by name, and decoding HEIC in Go would mean a
+// C library on a shared host that has none. WebP decodes with x/image, but
+// nobody's phone camera produces it, and every format accepted is one more
+// decoder facing the internet.
+package imaging
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"image/png"
+
+	// The standard library decodes and encodes, but has no scaler: image/draw
+	// only composites at 1:1. x/image/draw is the Go team's own answer, the
+	// same Draw API with interpolating scalers added.
+	xdraw "golang.org/x/image/draw"
+)
+
+// The sizes, as the longest side in pixels.
+//
+// Large is for a phone held upright at three device pixels per CSS pixel,
+// with room for a tablet; past that the file grows and nobody can see the
+// difference on a card. Small is the card's own column, 390 CSS pixels at
+// two device pixels each, with a little to spare.
+const (
+	LargeSide = 1600
+	SmallSide = 800
+
+	// MinSide is the smallest photo worth keeping. Below this a leaf's edge
+	// is a few pixels, and the photo would be a reason to stop looking
+	// rather than a way to tell two plants apart.
+	MinSide = 300
+
+	// MaxPixels refuses a decompression bomb: a few kilobytes that claim
+	// to be a 100,000-pixel square and would take gigabytes to decode. The
+	// largest phone cameras in common use are 50 megapixels; this allows
+	// those and a little more.
+	MaxPixels = 60_000_000
+
+	quality = 82
+)
+
+// The reasons a photo is refused. Each is a sentence continuation, for the
+// caller to put in front of a person.
+var (
+	ErrNotAPhoto = errors.New("that file is not a photo this site can read. Send a JPEG or PNG; a phone's camera roll gives one")
+	ErrTooSmall  = fmt.Errorf("that photo is too small to show anything. It needs to be at least %d pixels on its longer side", MinSide)
+	ErrTooLarge  = errors.New("that photo has more pixels than any phone camera takes. Send the photo as the camera saved it")
+)
+
+// Picture is one encoded size.
+type Picture struct {
+	JPEG          []byte
+	Width, Height int
+}
+
+// Prepared is what Prepare makes of a photo.
+type Prepared struct {
+	Large, Small Picture
+
+	// Format is the original's, "jpeg" or "png", for naming the original
+	// if the caller keeps it.
+	Format string
+
+	// Taken is when the camera says the photo was taken, to the month, by
+	// the camera's own clock.
+	Taken Taken
+}
+
+// Taken is the date from the EXIF, to the month. Year and Month are zero
+// when there was none.
+type Taken struct {
+	Year, Month int
+}
+
+// Prepare decodes a photo and makes its two sizes.
+func Prepare(data []byte) (Prepared, error) {
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || (format != "jpeg" && format != "png") {
+		return Prepared{}, ErrNotAPhoto
+	}
+
+	// Checked before decoding, which is the whole point: the header is
+	// read for free, the pixels are not.
+	switch {
+	case cfg.Width*cfg.Height > MaxPixels || cfg.Width <= 0 || cfg.Height <= 0:
+		return Prepared{}, ErrTooLarge
+	case max(cfg.Width, cfg.Height) < MinSide:
+		return Prepared{}, ErrTooSmall
+	}
+
+	var src image.Image
+	if format == "jpeg" {
+		src, err = jpeg.Decode(bytes.NewReader(data))
+	} else {
+		src, err = png.Decode(bytes.NewReader(data))
+	}
+
+	if err != nil {
+		return Prepared{}, ErrNotAPhoto
+	}
+
+	meta := readEXIF(data, format)
+
+	p := Prepared{Format: format, Taken: meta.taken}
+
+	if p.Large, err = sized(src, LargeSide, meta.orientation); err != nil {
+		return Prepared{}, err
+	}
+
+	if p.Small, err = sized(src, SmallSide, meta.orientation); err != nil {
+		return Prepared{}, err
+	}
+
+	return p, nil
+}
+
+// sized scales src so its longer side is at most side, turns it upright, and
+// encodes it. Never larger than the original: a small borrowed photo is
+// re-encoded at its own size rather than blown up.
+//
+// Scaled before it is turned, because turning is a pixel-by-pixel copy and
+// the scaled image has a fraction of the pixels.
+func sized(src image.Image, side, orientation int) (Picture, error) {
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+
+	if long := max(w, h); long > side {
+		w, h = max(1, w*side/long), max(1, h*side/long)
+	}
+
+	// Onto white, so a PNG's transparent parts are paper rather than the
+	// black a JPEG would otherwise make of them.
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	xdraw.Draw(dst, dst.Bounds(), image.NewUniform(color.White), image.Point{}, xdraw.Src)
+	xdraw.CatmullRom.Scale(dst, dst.Bounds(), src, b, xdraw.Over, nil)
+
+	out := orient(dst, orientation)
+
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, out, &jpeg.Options{Quality: quality}); err != nil {
+		return Picture{}, fmt.Errorf("encoding the photo: %w", err)
+	}
+
+	return Picture{JPEG: buf.Bytes(), Width: out.Bounds().Dx(), Height: out.Bounds().Dy()}, nil
+}
+
+// orient applies an EXIF orientation, 1 to 8, so the pixels are the way the
+// photo was meant to be seen. Anything else is treated as 1, upright, which is
+// what a browser does with a tag it does not understand.
+//
+// The eight are the four rotations, each with and without a mirror. Written
+// as where each output pixel comes from, rather than as rotations composed,
+// so each case can be checked against the specification's own picture of it
+// in one line.
+func orient(src *image.RGBA, o int) *image.RGBA {
+	if o < 2 || o > 8 {
+		return src
+	}
+
+	w, h := src.Bounds().Dx(), src.Bounds().Dy()
+
+	dw, dh := w, h
+	if o >= 5 {
+		dw, dh = h, w
+	}
+
+	dst := image.NewRGBA(image.Rect(0, 0, dw, dh))
+
+	for y := range dh {
+		for x := range dw {
+			var sx, sy int
+
+			switch o {
+			case 2: // mirrored
+				sx, sy = w-1-x, y
+			case 3: // upside down
+				sx, sy = w-1-x, h-1-y
+			case 4: // upside down, mirrored
+				sx, sy = x, h-1-y
+			case 5: // on its side, mirrored
+				sx, sy = y, x
+			case 6: // a phone held upright: turn a quarter clockwise
+				sx, sy = y, h-1-x
+			case 7: // on its other side, mirrored
+				sx, sy = w-1-y, h-1-x
+			case 8: // a quarter anticlockwise
+				sx, sy = w-1-y, x
+			}
+
+			i, j := dst.PixOffset(x, y), src.PixOffset(sx, sy)
+			copy(dst.Pix[i:i+4], src.Pix[j:j+4])
+		}
+	}
+
+	return dst
+}

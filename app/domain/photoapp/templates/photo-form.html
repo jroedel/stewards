@@ -1,0 +1,25 @@
+{{define "title"}}{{.Data.Kind}} of {{.Data.Name}} · Garden stewards{{end}}
+{{define "content"}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow"><a href="/steward/species/{{.SpeciesID}}/photos">Photos of {{.Name}}</a></p>
+<h1>{{.Kind}}</h1>
+
+<p class="photo-large"><img src="/photos/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="The photo being edited"></p>
+<p class="help"><a href="/photos/{{.ID}}/large.jpg">Open it larger</a> to compare it with the plant. {{.Original}}</p>
+
+{{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below and press Save again.</p>{{end}}
+
+<form class="card form" method="post" action="/steward/photos/{{.ID}}">
+  {{template "photo-fields" .}}
+  <button class="button" type="submit">Save</button>
+</form>
+
+<form class="card form danger" method="post" action="/steward/photos/{{.ID}}/delete">
+  <h2>Remove this photo</h2>
+  <p class="help">The photo and its files go. To use a different photo, add it and remove this one.</p>
+  {{with .DeleteProblem}}<p class="problem" role="alert">{{.}}</p>{{end}}
+  <label class="check"><input type="checkbox" name="confirm" value="yes"> Yes, remove this photo</label>
+  <button class="button button-quiet" type="submit">Remove</button>
+</form>
+</div>
+{{end}}{{end}}

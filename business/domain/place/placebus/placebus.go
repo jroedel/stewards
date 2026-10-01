@@ -108,7 +108,8 @@ var ErrNotFound = errors.New("there is no such place")
 var ErrSlugTaken = errors.New("another place already has that address")
 
 // ErrInUse is returned by a Storer's Delete when something still points at
-// the place -- plants listed there -- and the database refused the delete.
+// the place -- plants listed there, or a photo taken there -- and the
+// database refused the delete.
 var ErrInUse = errors.New("the place is still in use")
 
 // Storer is what the rules need from storage.
@@ -221,11 +222,12 @@ func (b *Business) Delete(ctx context.Context, id types.ID) error {
 		return Invalid{Field: "place", Problem: fmt.Sprintf("%s has %d smaller places inside it. Move or remove those first", p.Name.EN, len(kids))}
 	}
 
-	// Plants listed here are the other thing that keeps a place: the
-	// database refuses the delete while a listing names it.
+	// Plants listed here, and photos that say they were taken here, are
+	// the other things that keep a place: the database refuses the delete
+	// while a listing or a photo names it.
 	if err := b.store.Delete(ctx, id); err != nil {
 		if errors.Is(err, ErrInUse) {
-			return Invalid{Field: "place", Problem: fmt.Sprintf("%s still has plants listed. Take them off its list first", p.Name.EN)}
+			return Invalid{Field: "place", Problem: fmt.Sprintf("%s still has plants listed, or photos taken there. Take the plants off its list, and clear the place from those photos, first", p.Name.EN)}
 		}
 
 		return err

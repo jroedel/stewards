@@ -1,0 +1,54 @@
+{{/* What a steward says about a photo: the fields both the add form and the
+edit form ask for. */}}
+{{define "photo-problem"}}{{if .}}<p class="field-problem">{{.}}</p>{{end}}{{end}}
+
+{{define "photo-fields"}}{{$p := .Problems}}{{with .Fields}}
+  <label for="kind">What it shows</label>
+  {{template "photo-problem" (index $p "kind")}}
+  <select id="kind" name="kind" required>{{range .Kinds}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+
+  <fieldset>
+    <legend>Whose photo</legend>
+    {{template "photo-problem" (index $p "source")}}
+    <label class="check"><input type="radio" name="source" value="ours"{{if .Ours}} checked{{end}}> Ours: taken here</label>
+    <label class="check"><input type="radio" name="source" value="borrowed"{{if not .Ours}} checked{{end}}> Borrowed, under an open licence</label>
+
+    <label for="credit">Credit <span class="optional">optional for ours</span></label>
+    <p class="help" id="credit-help">For a borrowed photo, the author's name as its page gives it. For one of ours, leave it empty unless the photographer wants to be named; the card then credits the garden stewards.</p>
+    {{template "photo-problem" (index $p "credit")}}
+    <input id="credit" name="credit" type="text" value="{{.Credit}}" maxlength="200" aria-describedby="credit-help">
+
+    <label for="source_url">Where it came from <span class="optional">borrowed only</span></label>
+    {{template "photo-problem" (index $p "source_url")}}
+    <input id="source_url" name="source_url" type="url" value="{{.SourceURL}}" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://commons.wikimedia.org/wiki/File:…">
+
+    <label for="license">Licence <span class="optional">borrowed only</span></label>
+    {{template "photo-problem" (index $p "license")}}
+    <input id="license" name="license" type="text" value="{{.License}}" maxlength="100" placeholder="CC BY-SA 4.0">
+  </fieldset>
+
+  <fieldset>
+    <legend>When and where</legend>
+    <div class="pair">
+      <div>
+        <label for="taken_month">Month</label>
+        {{template "photo-problem" (index $p "taken_month")}}
+        <select id="taken_month" name="taken_month">{{range .Months}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+      </div>
+      <div>
+        <label for="taken_year">Year</label>
+        {{template "photo-problem" (index $p "taken_year")}}
+        <input id="taken_year" name="taken_year" type="text" inputmode="numeric" value="{{.TakenYear}}" maxlength="4" placeholder="2027">
+      </div>
+    </div>
+    <p class="help">Leave both empty and the date the camera recorded is used, when it recorded one.</p>
+
+    <label for="place">Where it was taken <span class="optional">optional</span></label>
+    {{template "photo-problem" (index $p "place")}}
+    <select id="place" name="place">{{range .Places}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+  </fieldset>
+
+  {{template "photo-problem" (index $p "checked")}}
+  <label class="check"><input type="checkbox" name="checked" value="yes"{{if .Checked}} checked{{end}}> Checked: it shows {{$.Name}}</label>
+  <p class="help">Compare it with the sources on the plant's page first. Volunteers see a photo only once this is ticked: two "frostweed" photos once turned out to be wingstem.</p>
+{{end}}{{end}}

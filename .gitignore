@@ -30,6 +30,7 @@ config.toml
 # nursery lists are the nursery's own catalogue. Both stay on the machine that
 # holds them, and nothing in the build may depend on them being present.
 /photos/
+/photo-files/
 *.csv
 
 # Keys of any kind.

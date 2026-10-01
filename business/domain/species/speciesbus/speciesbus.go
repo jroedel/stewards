@@ -194,7 +194,7 @@ var (
 	ErrSlugTaken = errors.New("another species already has that address")
 
 	// ErrInUse is returned by a Storer's Delete when the species is still
-	// listed at a place and the database refused the delete.
+	// listed at a place, or has photos, and the database refused the delete.
 	ErrInUse = errors.New("the species is still listed somewhere")
 )
 
@@ -292,7 +292,7 @@ func (b *Business) Delete(ctx context.Context, id types.ID) error {
 
 	if err := b.store.Delete(ctx, id); err != nil {
 		if errors.Is(err, ErrInUse) {
-			return Invalid{Field: "species", Problem: fmt.Sprintf("%s is still listed at a place. Take it off those lists first", sp.Common.EN)}
+			return Invalid{Field: "species", Problem: fmt.Sprintf("%s is still listed at a place or has photos. Take it off those lists and remove its photos first", sp.Common.EN)}
 		}
 
 		return err

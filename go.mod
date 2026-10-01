@@ -16,6 +16,7 @@ tool golang.org/x/vuln/cmd/govulncheck
 
 require (
 	github.com/BurntSushi/toml v1.6.0
+	golang.org/x/image v0.46.0
 	modernc.org/sqlite v1.60.1
 )
 

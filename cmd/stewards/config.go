@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -39,6 +40,14 @@ type config struct {
 	DB struct {
 		Path string `toml:"path"`
 	} `toml:"db"`
+
+	// Photos is where photo files are kept. Empty means a directory called
+	// photo-files beside the database: in the application's directory, which
+	// deploy.sh already refuses to let Apache serve, and the reason the
+	// config.toml on the server needs nothing new for photos to work.
+	Photos struct {
+		Dir string `toml:"dir"`
+	} `toml:"photos"`
 	Log struct {
 		Level string `toml:"level"`
 		File  string `toml:"file"`
@@ -125,6 +134,10 @@ func loadConfig(path string) (config, error) {
 		return cfg, fmt.Errorf("%s needs [db] path, the file the garden's records are kept in", path)
 	}
 
+	if cfg.Photos.Dir == "" {
+		cfg.Photos.Dir = filepath.Join(filepath.Dir(cfg.DB.Path), "photo-files")
+	}
+
 	// Optional, and sign-in is off without it. Not required, because the
 	// config.toml already on the server predates it: a binary that refused
 	// to start without base_url would fail the deploy's pre-flight, and a
@@ -182,6 +195,7 @@ func (c config) summary() string {
 	fmt.Fprintf(&b, "listening on   %s\n", c.Server.Addr)
 	fmt.Fprintf(&b, "public address %s\n", orElse(c.Server.BaseURL, "NOT SET - sign-in is off"))
 	fmt.Fprintf(&b, "database       %s\n", c.DB.Path)
+	fmt.Fprintf(&b, "photos         %s\n", c.Photos.Dir)
 	fmt.Fprintf(&b, "log level      %s\n", orElse(c.Log.Level, "info"))
 	fmt.Fprintf(&b, "log file       %s\n", orElse(c.Log.File, "(stderr)"))
 	fmt.Fprintf(&b, "shutdown grace %s\n", c.Server.ShutdownGrace.Duration)

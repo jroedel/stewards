@@ -155,3 +155,25 @@ func TestAMissingFileSaysWhatToCopy(t *testing.T) {
 		t.Errorf("got %v, want advice to copy config.example.toml", err)
 	}
 }
+
+// Photos go beside the database unless the file says otherwise, which is
+// why the config.toml already on the server needs no new key for them.
+func TestPhotosGoBesideTheDatabase(t *testing.T) {
+	cfg, err := loadConfig(writeConfig(t, "[db]\npath = \"/srv/stewards/stewards.db\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.Photos.Dir != "/srv/stewards/photo-files" {
+		t.Errorf("photos in %q", cfg.Photos.Dir)
+	}
+
+	if !strings.Contains(cfg.summary(), "photos         /srv/stewards/photo-files\n") {
+		t.Error("-check does not say where photos go")
+	}
+
+	cfg, err = loadConfig(writeConfig(t, "[db]\npath = \"stewards.db\"\n[photos]\ndir = \"/elsewhere/photos\"\n"))
+	if err != nil || cfg.Photos.Dir != "/elsewhere/photos" {
+		t.Errorf("a chosen directory: %q, %v", cfg.Photos.Dir, err)
+	}
+}

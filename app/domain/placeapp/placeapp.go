@@ -24,6 +24,7 @@ import (
 
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
+	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/types"
@@ -55,6 +56,12 @@ type SpeciesReader interface {
 	All(ctx context.Context) ([]speciesbus.Species, error)
 }
 
+// PhotoReader is what the place card needs from the photo rules: a picture
+// beside each plant on its "Planned here" list.
+type PhotoReader interface {
+	ForSpecies(ctx context.Context, speciesID types.ID) ([]photobus.Photo, error)
+}
+
 // Listings is what they need from the listing rules.
 type Listings interface {
 	Set(ctx context.Context, placeID, speciesID types.ID, f listingbus.Fields) (listingbus.Listing, error)
@@ -69,6 +76,7 @@ type Config struct {
 	Places   Places
 	Species  SpeciesReader
 	Listings Listings
+	Photos   PhotoReader
 }
 
 type app struct {
@@ -77,10 +85,11 @@ type app struct {
 	places   Places
 	species  SpeciesReader
 	listings Listings
+	photos   PhotoReader
 }
 
 func newApp(cfg Config) app {
-	return app{log: cfg.Log, render: cfg.Render, places: cfg.Places, species: cfg.Species, listings: cfg.Listings}
+	return app{log: cfg.Log, render: cfg.Render, places: cfg.Places, species: cfg.Species, listings: cfg.Listings, photos: cfg.Photos}
 }
 
 // Routes mounts the stewards' screens, every route behind guard.
