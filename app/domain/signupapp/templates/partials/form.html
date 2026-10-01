@@ -1,0 +1,14 @@
+{{/* The sign-up form, on the page that shows it again after a typo. The
+     home page carries its own copy of this markup (homeapp), since a partial
+     belongs to one app; keep the two alike, the honeypot above all. */}}
+{{define "signup-fields"}}{{$l := .Lang}}{{with .Data}}
+<form class="card form signup" method="post" action="/subscribe">
+  <h2>{{say $l .Copy.FormTitle}}</h2>
+  <p class="help" id="signup-help">{{say $l .Copy.FormHelp}}</p>
+  <label for="signup-email">{{say $l .Copy.FormLabel}}</label>
+  {{with .Problem.EN}}<p class="field-problem" role="alert">{{say $l $.Data.Problem}}</p>{{end}}
+  <input id="signup-email" name="email" type="email" value="{{.Email}}" autocomplete="email" inputmode="email" required aria-describedby="signup-help">
+  <div class="honeypot" aria-hidden="true"><label for="signup-website">Leave this empty</label><input id="signup-website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
+  <button class="button" type="submit">{{say $l .Copy.FormButton}}</button>
+</form>
+{{end}}{{end}}

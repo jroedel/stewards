@@ -23,6 +23,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/domain/species/stores/speciesdb"
+	"github.com/jroedel/stewards/business/domain/subscriber/stores/subscriberdb"
+	"github.com/jroedel/stewards/business/domain/subscriber/subscriberbus"
 	"github.com/jroedel/stewards/business/domain/user/stores/userdb"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
 	"github.com/jroedel/stewards/business/domain/workday/stores/workdaydb"
@@ -129,21 +131,24 @@ func run() error {
 	}
 
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
-	go prune(ctx, log, users)
+	subscribers := subscriberbus.NewBusiness(subscriberdb.NewStore(db), nil)
+	go prune(ctx, log, users, subscribers)
 
 	handler, err := muxer.New(muxer.Config{
-		Log:       log,
-		DB:        db,
-		Expected:  expected,
-		Places:    placebus.NewBusiness(placedb.NewStore(db), nil),
-		Species:   speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
-		Listings:  listingbus.NewBusiness(listingdb.NewStore(db), nil),
-		Photos:    photobus.NewBusiness(photodb.NewStore(db), photoFiles, nil),
-		Users:     users,
-		Workdays:  workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
-		BaseURL:   cfg.Server.BaseURL,
-		Mail:      sender,
-		Bootstrap: cfg.Auth.BootstrapSecret,
+		Log:      log,
+		DB:       db,
+		Expected: expected,
+		Places:   placebus.NewBusiness(placedb.NewStore(db), nil),
+		Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
+		Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
+		Photos:   photobus.NewBusiness(photodb.NewStore(db), photoFiles, nil),
+		Users:    users,
+		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
+
+		Subscribers: subscribers,
+		BaseURL:     cfg.Server.BaseURL,
+		Mail:        sender,
+		Bootstrap:   cfg.Auth.BootstrapSecret,
 	})
 	if err != nil {
 		return err
@@ -160,7 +165,7 @@ func run() error {
 // order the references point in. Places come first of the domains: every
 // layer points at a place, and the listings of species at places reference
 // both places and species, so they go after both; so do photos, for the same
-// reason. Stewardship days reference nothing, and go last. A store added in
+// reason. Stewardship days and the email list reference nothing, and go last. A store added in
 // the wrong place fails at startup on a fresh database and nowhere else, which
 // is the cheapest moment for it to fail.
 func prepare(ctx context.Context, db *sql.DB) error {
@@ -175,6 +180,7 @@ func prepare(ctx context.Context, db *sql.DB) error {
 		{"photos", photodb.Init},
 		{"stewards", userdb.Init},
 		{"stewardship days", workdaydb.Init},
+		{"the email list", subscriberdb.Init},
 	} {
 		if err := step.init(ctx, db); err != nil {
 			return fmt.Errorf("preparing %s: %w", step.what, err)
@@ -200,6 +206,7 @@ func expectedSchema() sqldb.Expected {
 		photodb.Expected,
 		userdb.Expected,
 		workdaydb.Expected,
+		subscriberdb.Expected,
 	} {
 		maps.Copy(expected, store)
 	}
@@ -207,17 +214,21 @@ func expectedSchema() sqldb.Expected {
 	return expected
 }
 
-// prune clears expired sign-in links and sessions, at startup and then every
-// six hours. Housekeeping: nothing depends on it for correctness, since every
-// check reads the expiry, so a failure is logged and the next round tries
-// again.
-func prune(ctx context.Context, log *slog.Logger, users *userbus.Business) {
+// prune clears expired sign-in links and sessions, and sign-ups to the email
+// list that were never confirmed, at startup and then every six hours.
+// Housekeeping: nothing depends on it for correctness, since every check
+// reads the expiry, so a failure is logged and the next round tries again.
+func prune(ctx context.Context, log *slog.Logger, users *userbus.Business, subscribers *subscriberbus.Business) {
 	tick := time.NewTicker(6 * time.Hour)
 	defer tick.Stop()
 
 	for {
 		if err := users.Prune(ctx); err != nil && ctx.Err() == nil {
 			log.Warn("expired sign-ins could not be pruned", "error", err)
+		}
+
+		if err := subscribers.Prune(ctx); err != nil && ctx.Err() == nil {
+			log.Warn("unconfirmed sign-ups could not be pruned", "error", err)
 		}
 
 		select {
