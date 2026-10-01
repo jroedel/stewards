@@ -19,6 +19,7 @@ import (
 	"github.com/jroedel/stewards/app/sdk/health"
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
+	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
@@ -34,6 +35,7 @@ type Config struct {
 	Expected sqldb.Expected
 	Places   *placebus.Business
 	Species  *speciesbus.Business
+	Listings *listingbus.Business
 	Users    *userbus.Business
 
 	// BaseURL is the public origin. Empty means sign-in is off: its routes
@@ -56,8 +58,8 @@ const maxBody = 64 << 10
 
 // New builds the handler.
 func New(cfg Config) (http.Handler, error) {
-	if cfg.Log == nil || cfg.DB == nil || cfg.Places == nil || cfg.Species == nil || cfg.Users == nil {
-		return nil, errors.New("the muxer needs a logger, a database, and the place, species and steward rules")
+	if cfg.Log == nil || cfg.DB == nil || cfg.Places == nil || cfg.Species == nil || cfg.Listings == nil || cfg.Users == nil {
+		return nil, errors.New("the muxer needs a logger, a database, and the place, species, listing and steward rules")
 	}
 
 	// One renderer holding every app's pages: the stylesheet has one hashed
@@ -76,7 +78,11 @@ func New(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("GET /static/img/{file}", render.Files("img"))
 
 	homeapp.New(cfg.Log, render, cfg.Places).Routes(mux)
-	placeapp.CardRoutes(mux, cfg.Log, render, cfg.Places)
+	places := placeapp.Config{Log: cfg.Log, Render: render, Places: cfg.Places, Species: cfg.Species, Listings: cfg.Listings}
+	species := speciesapp.Config{Log: cfg.Log, Render: render, Species: cfg.Species, Places: cfg.Places, Listings: cfg.Listings}
+
+	placeapp.CardRoutes(mux, places)
+	speciesapp.CardRoutes(mux, species)
 
 	if cfg.BaseURL != "" {
 		authapp.Routes(mux, authapp.Config{
@@ -93,8 +99,8 @@ func New(cfg Config) (http.Handler, error) {
 		// to a 404 is worse than the 404.
 		guard := mid.Require(authapp.SignInPath)
 
-		placeapp.Routes(mux, cfg.Log, render, cfg.Places, guard)
-		speciesapp.Routes(mux, cfg.Log, render, cfg.Species, guard)
+		placeapp.Routes(mux, places, guard)
+		speciesapp.Routes(mux, species, guard)
 		stewardapp.Routes(mux, stewardapp.Config{
 			Log:     cfg.Log,
 			Render:  render,

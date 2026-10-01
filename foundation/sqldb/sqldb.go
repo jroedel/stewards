@@ -265,3 +265,19 @@ func IsUniqueViolation(err error) bool {
 
 	return ok && e.Code() == sqliteConstraintUnique
 }
+
+// sqliteConstraintForeignKey is SQLITE_CONSTRAINT_FOREIGNKEY.
+const sqliteConstraintForeignKey = 787
+
+// IsForeignKeyViolation reports whether a write was refused by a REFERENCES
+// clause: a row pointing at one that does not exist, or a delete of one that
+// others still point at.
+//
+// The second is how "do not delete what is still in use" is one statement: a
+// reference with no ON DELETE action makes the delete itself the check, so
+// nothing can slip a new reference in between a count and the delete.
+func IsForeignKeyViolation(err error) bool {
+	e, ok := errors.AsType[*sqlite.Error](err)
+
+	return ok && e.Code() == sqliteConstraintForeignKey
+}

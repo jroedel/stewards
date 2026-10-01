@@ -4,6 +4,8 @@
 <p class="eyebrow"><a href="/steward">Places</a></p>
 <h1>{{.Title}}</h1>
 
+{{if .ID}}<a class="onward" href="/steward/places/{{.ID}}/plants"><span>Plants here <span class="quiet">protect, pull, planned</span></span><span aria-hidden="true">›</span></a>{{end}}
+
 {{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below and press Save again.</p>{{end}}
 
 <form class="card form" method="post" action="{{if .ID}}/steward/places/{{.ID}}{{else}}/steward/places{{end}}">

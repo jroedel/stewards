@@ -431,3 +431,71 @@ main > h1:first-child { margin-top: 20px; }
 .row-tags .tag { margin-left: 0; }
 .tag-ok { color: var(--tos-protect); background: var(--tos-protect-tint); }
 .tag-open { color: var(--tos-sun); background: var(--tos-sun-tint); }
+
+/* ---------------------------------------------------------------- plants on a card */
+
+.row-summary { margin-top: 4px; font-size: 15px; font-weight: 700; color: var(--tos-protect); }
+
+/* The flowering calendar: a plant per row, twelve month columns, a filled
+   cell in the plant's own colour where it blooms. Narrow enough for a phone:
+   the name column takes what the twelve cells leave. */
+.calendar-card { padding: 14px 12px; }
+.calendar { width: 100%; border-collapse: separate; border-spacing: 2px 4px; table-layout: fixed; margin-top: 8px; }
+.calendar thead th { font: 700 13px var(--font-body); color: var(--muted); text-align: center; }
+.calendar thead th:first-child { width: 34%; }
+.calendar tbody th { font-weight: 500; font-size: 15px; text-align: left; padding-right: 4px; overflow-wrap: anywhere; }
+.calendar td { height: 22px; padding: 0; border-radius: 3px; background: var(--sf-neutral); vertical-align: middle; }
+.calendar td svg { display: block; }
+
+/* Protect and Pull: a pair, always side by side, always an icon and the word
+   (design.md). The colour is a third way of saying it, never the only one. */
+.panels { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.panel { padding: 14px; border-radius: 14px; border: 1.5px solid; min-width: 0; }
+.panel h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 20px; }
+.panel ul { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.panel li a { display: inline-block; padding: 8px 0; font-weight: 700; color: var(--sf-ink); overflow-wrap: anywhere; }
+.panel-help { margin: 4px 0 0; font-size: 15px; }
+.panel-note { display: block; margin-top: -4px; font-size: 15px; color: var(--muted); }
+.panel-none { margin: 8px 0 0; font-size: 15px; color: var(--muted); }
+.icon { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.panel-protect { background: var(--tos-protect-tint); border-color: var(--tos-protect); }
+.panel-protect h2 { color: var(--tos-protect); }
+.panel-pull { background: var(--tos-pull-tint); border-color: var(--tos-pull); }
+.panel-pull h2 { color: var(--tos-pull); }
+.panel-careful { margin-top: 10px; background: var(--tos-sun-tint); border-color: var(--tos-sun); }
+.panel-careful h2 { color: var(--tos-sun); }
+
+.not-sure { margin: 16px 0 0; padding: 12px 14px; border-radius: 12px; background: var(--sf-white); border: 1px solid var(--rule); font-weight: 700; text-align: center; }
+
+.listing { padding: 14px; }
+.listing .form { margin-top: 0; }
+.listing .row-name { margin: 0; }
+
+/* ---------------------------------------------------------------- the plant card */
+
+.scientific { margin: 2px 0 0; font-size: 17px; }
+
+/* Planting and Weeding: two links that look like a pair of tabs. Real links,
+   48px tall, so the choice survives being shared and needs no script. */
+.views { display: grid; grid-template-columns: 1fr 1fr; margin: 16px 0 12px; border: 1.5px solid var(--sf-blue); border-radius: 12px; overflow: hidden; }
+.views a { display: flex; align-items: center; justify-content: center; min-height: 48px; font: 700 17px var(--font-body); color: var(--sf-blue); text-decoration: none; background: var(--sf-white); }
+.views a[aria-current="page"] { color: var(--sf-white); background: var(--sf-blue); }
+
+.photos-missing p { margin: 0; color: var(--muted); }
+.photos-missing p + p { margin-top: 4px; }
+
+.facts { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
+.fact h2 { margin: 0 0 4px; font-size: 17px; }
+.fact p { margin: 0; }
+.fact .swatch { vertical-align: -2px; }
+
+/* The bloom strip: twelve cells in a row, the month's initial under each. */
+.strip { display: grid; grid-template-columns: repeat(12, 1fr); gap: 3px; }
+.strip-month { display: flex; flex-direction: column; align-items: center; gap: 2px; font: 700 13px var(--font-body); color: var(--muted); }
+.strip-month.is-on { color: var(--sf-ink); }
+.strip-cell { display: block; width: 100%; height: 22px; border-radius: 3px; background: var(--sf-neutral); overflow: hidden; }
+.strip-cell svg { display: block; width: 100%; height: 100%; }
+
+.sources { margin: 0; padding-left: 20px; }
+.sources li { padding: 4px 0; overflow-wrap: anywhere; }

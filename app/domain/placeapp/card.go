@@ -1,26 +1,32 @@
 package placeapp
 
 import (
+	"cmp"
 	"errors"
-	"log/slog"
+	"fmt"
 	"net/http"
+	"slices"
+	"strings"
+	"time"
 
 	"github.com/jroedel/stewards/app/sdk/mid"
-	"github.com/jroedel/stewards/app/sdk/page"
+	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
+	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/types"
 )
 
 // This file is the place card: the page a volunteer opens from the list,
 // at /places/<slug>. design.md, section 6: "What's here, what do I do?"
 //
-// It shows what a place holds today -- its name, what it is for, its
-// conditions, its photo point, the smaller places inside it and, for a
-// station's space, the way to that station's prayer. The rest of the card in
-// the mockups (the dated photo, today's job, Protect and Pull, the bloom
-// calendar) arrives with the data behind it, and until then the card says
-// plainly that the plants are not listed yet, with the one piece of advice
-// that keeps a native in the ground: not sure? Leave it.
+// It shows what a place holds -- its name, what it is for, its conditions,
+// the smaller places inside it, its photo point and, for a station's space,
+// the way to that station's prayer -- and the plants listed there: what is
+// planned, when it flowers, and the Protect, Pull and Careful panels. The
+// dated photo and today's job arrive with the data behind them.
+//
+// Whatever is listed, the card ends its plant sections with the one piece of
+// advice that keeps a native in the ground: not sure? Leave it.
 //
 // Public, like the list. The Phase 1 test is a volunteer with a phone and no
 // account, so nothing here asks who you are; a steward who is signed in also
@@ -33,8 +39,8 @@ const trailURL = "https://schoenstatt-fathers.us/trail/"
 
 // CardRoutes mounts the place card. Unlike Routes it is not behind sign-in,
 // and it is mounted whether or not sign-in is configured.
-func CardRoutes(mux *http.ServeMux, log *slog.Logger, render *page.Renderer, places Places) {
-	a := app{log: log, render: render, places: places}
+func CardRoutes(mux *http.ServeMux, cfg Config) {
+	a := newApp(cfg)
 
 	mux.HandleFunc("GET /places/{slug}", a.card)
 }
@@ -43,7 +49,9 @@ func CardRoutes(mux *http.ServeMux, log *slog.Logger, render *page.Renderer, pla
 // speaker (design.md, principle 6); until then say marks the English.
 type cardWording struct {
 	Back, PartOf, Inside, Conditions, PhotoPoint, PhotoPointHelp,
-	StationIntro, StationGo, NotListed, NotSure, Edit types.Text
+	StationIntro, StationGo, NotListed, NotSure, Edit,
+	PlannedHere, Flowers, FlowersHelp,
+	Protect, ProtectHelp, Pull, PullHelp, Careful, CarefulHelp, NothingHere types.Text
 }
 
 var cardWords = cardWording{
@@ -58,12 +66,46 @@ var cardWords = cardWording{
 	NotListed:      types.Text{EN: "The plants for this place are not listed yet."},
 	NotSure:        types.Text{EN: "Not sure what something is? Leave it."},
 	Edit:           types.Text{EN: "Edit this place"},
+	PlannedHere:    types.Text{EN: "Planned here"},
+	Flowers:        types.Text{EN: "When it flowers"},
+	FlowersHelp:    types.Text{EN: "Each row is a plant planned here, coloured in the months it blooms."},
+	Protect:        types.Text{EN: "Protect"},
+	ProtectHelp:    types.Text{EN: "Leave these. They belong here."},
+	Pull:           types.Text{EN: "Pull"},
+	PullHelp:       types.Text{EN: "Take these out, root and all."},
+	Careful:        types.Text{EN: "Careful"},
+	CarefulHelp:    types.Text{EN: "Wear gloves near these."},
+	NothingHere:    types.Text{EN: "Nothing listed."},
+}
+
+// monthLetters head the flowering calendar's twelve columns. Spanish gives
+// January its own letter, enero.
+var monthLetters = map[types.Lang][]string{
+	types.English: strings.Split("J F M A M J J A S O N D", " "),
+	types.Spanish: strings.Split("E F M A M J J A S O N D", " "),
 }
 
 type cardRow struct {
 	Slug    string
 	Name    types.Text
 	Purpose types.Text
+
+	// Summary is a band's plants in a few words, on its parent's card:
+	// "4 to plant · 1 to pull".
+	Summary types.Text
+}
+
+// plantLine is one plant on a card: on the Planned list, in a panel, or a
+// row of the flowering calendar.
+type plantLine struct {
+	Slug       string
+	Name       types.Text
+	Scientific string
+	Note       types.Text
+	Size       types.Text
+	Swatch     string // the first colour, for the calendar; "" for none
+	Bloom      []bool // twelve, January first
+	BloomWords string // "Mar–May", for a screen reader beside the cells
 }
 
 type cardView struct {
@@ -78,6 +120,13 @@ type cardView struct {
 	// Station and StationURL are set for a station's space.
 	Station    types.Text
 	StationURL string
+
+	// The plants listed here. Listed is false when there are none at all,
+	// and the card then says the plants are not listed yet.
+	Listed                 bool
+	Planned, Calendar      []plantLine
+	Protect, Pull, Careful []plantLine
+	Months                 []string
 
 	// EditURL is set only for a signed-in steward.
 	EditURL string
@@ -124,8 +173,71 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	species, err := a.speciesByID(r)
+	if err != nil {
+		a.fail(w, r, "reading species for a card", err)
+
+		return
+	}
+
 	for _, b := range bands {
-		v.Bands = append(v.Bands, cardRow{Slug: b.Slug, Name: b.Name, Purpose: b.Purpose})
+		row := cardRow{Slug: b.Slug, Name: b.Name, Purpose: b.Purpose}
+
+		listed, err := a.listings.ForPlace(ctx, b.ID)
+		if err != nil {
+			a.fail(w, r, "reading what is listed in a band", err)
+
+			return
+		}
+
+		row.Summary = summary(listed)
+		v.Bands = append(v.Bands, row)
+	}
+
+	listed, err := a.listings.ForPlace(ctx, p.ID)
+	if err != nil {
+		a.fail(w, r, "reading what is listed at a place", err)
+
+		return
+	}
+
+	v.Listed = len(listed) > 0
+	v.Months = monthLetters[mid.LangFrom(ctx)]
+
+	for _, l := range listed {
+		sp, ok := species[l.SpeciesID]
+		if !ok {
+			continue // removed between the two reads; the reference makes it rare
+		}
+
+		line := lineOf(sp, l)
+
+		// A planned plant is always protected (listingbus.Set), so it is in
+		// the Protect panel as well as on the Planned list: the panel is
+		// what a weeder reads a month later, and "leave this" has to include
+		// everything that was put in on purpose.
+		switch l.Action {
+		case listingbus.Protect:
+			v.Protect = append(v.Protect, line)
+		case listingbus.Pull:
+			v.Pull = append(v.Pull, line)
+		case listingbus.Careful:
+			v.Careful = append(v.Careful, line)
+		}
+
+		if l.Planned {
+			v.Planned = append(v.Planned, line)
+
+			if !sp.Bloom.Zero() {
+				v.Calendar = append(v.Calendar, line)
+			}
+		}
+	}
+
+	for _, list := range [][]plantLine{v.Planned, v.Calendar, v.Protect, v.Pull, v.Careful} {
+		slices.SortStableFunc(list, func(x, y plantLine) int {
+			return cmp.Compare(strings.ToLower(x.Name.EN), strings.ToLower(y.Name.EN))
+		})
 	}
 
 	if name, ok := stationName[p.TrailAnchor]; ok {
@@ -138,4 +250,70 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.render.Render(w, r, http.StatusOK, "place", v)
+}
+
+// speciesByID is every species, by identifier: one read for the whole card,
+// rather than one per listing.
+func (a app) speciesByID(r *http.Request) (map[types.ID]speciesbus.Species, error) {
+	all, err := a.species.All(r.Context())
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(map[types.ID]speciesbus.Species, len(all))
+	for _, sp := range all {
+		out[sp.ID] = sp
+	}
+
+	return out, nil
+}
+
+func lineOf(sp speciesbus.Species, l listingbus.Listing) plantLine {
+	line := plantLine{
+		Slug: sp.Slug, Name: sp.Common, Scientific: sp.Scientific, Note: l.Note,
+		Bloom: make([]bool, 12), BloomWords: sp.Bloom.String(),
+	}
+
+	if len(sp.Swatches) > 0 {
+		line.Swatch = sp.Swatches[0]
+	}
+
+	for m := time.January; m <= time.December; m++ {
+		line.Bloom[m-1] = sp.Bloom.Has(m)
+	}
+
+	switch h, w := sp.Height.String(), sp.Width.String(); {
+	case h != "" && w != "":
+		line.Size = types.Text{EN: h + " tall, " + w + " wide"}
+	case h != "":
+		line.Size = types.Text{EN: h + " tall"}
+	}
+
+	return line
+}
+
+// summary is a band's listings in a few words for its row on the parent's
+// card. English only, like the rest of the card's own wording for now.
+func summary(listed []listingbus.Listing) types.Text {
+	var planned, pull int
+	for _, l := range listed {
+		if l.Planned {
+			planned++
+		}
+
+		if l.Action == listingbus.Pull {
+			pull++
+		}
+	}
+
+	var parts []string
+	if planned > 0 {
+		parts = append(parts, fmt.Sprintf("%d to plant", planned))
+	}
+
+	if pull > 0 {
+		parts = append(parts, fmt.Sprintf("%d to pull", pull))
+	}
+
+	return types.Text{EN: strings.Join(parts, " · ")}
 }

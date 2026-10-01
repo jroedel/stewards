@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/jroedel/stewards/app/sdk/muxer"
+	"github.com/jroedel/stewards/business/domain/listing/listingbus"
+	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
@@ -34,6 +36,7 @@ func server(t *testing.T) (http.Handler, *placebus.Business) {
 		func() error { return sqldb.Init(t.Context(), db) },
 		func() error { return placedb.Init(t.Context(), db) },
 		func() error { return speciesdb.Init(t.Context(), db) },
+		func() error { return listingdb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
@@ -48,8 +51,8 @@ func server(t *testing.T) (http.Handler, *placebus.Business) {
 		DB:       db,
 		Expected: sqldb.Infrastructure,
 		Places:   places,
-		Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
-		Users:    userbus.NewBusiness(slog.New(slog.DiscardHandler), userdb.NewStore(db), nil),
+		Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
+		Users: userbus.NewBusiness(slog.New(slog.DiscardHandler), userdb.NewStore(db), nil),
 	})
 	if err != nil {
 		t.Fatalf("muxer.New: %v", err)

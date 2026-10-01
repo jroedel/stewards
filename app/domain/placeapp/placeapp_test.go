@@ -11,6 +11,8 @@ import (
 
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/muxer"
+	"github.com/jroedel/stewards/business/domain/listing/listingbus"
+	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
@@ -23,10 +25,11 @@ import (
 )
 
 type site struct {
-	t      *testing.T
-	h      http.Handler
-	places *placebus.Business
-	cookie *http.Cookie
+	t       *testing.T
+	h       http.Handler
+	places  *placebus.Business
+	species *speciesbus.Business
+	cookie  *http.Cookie
 }
 
 // Through the muxer, signed in as a steward, so every request passes the same
@@ -52,6 +55,7 @@ func serveAt(t *testing.T, baseURL string) *site {
 		func() error { return sqldb.Init(t.Context(), db) },
 		func() error { return placedb.Init(t.Context(), db) },
 		func() error { return speciesdb.Init(t.Context(), db) },
+		func() error { return listingdb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
@@ -61,12 +65,16 @@ func serveAt(t *testing.T, baseURL string) *site {
 
 	log := slog.New(slog.DiscardHandler)
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
-	s := &site{t: t, places: placebus.NewBusiness(placedb.NewStore(db), nil)}
+	s := &site{
+		t:       t,
+		places:  placebus.NewBusiness(placedb.NewStore(db), nil),
+		species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
+	}
 
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
 		Places: s.places, Users: users,
-		Species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
+		Species: s.species, Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
 		BaseURL: baseURL, Mail: &mail.Recorder{},
 	}); err != nil {
 		t.Fatal(err)

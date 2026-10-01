@@ -128,7 +128,12 @@ WHERE id = ?`,
 // Delete removes a place.
 func (s *Store) Delete(ctx context.Context, id types.ID) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM places WHERE id = ?`, id.String())
-	if err != nil {
+
+	switch {
+	case sqldb.IsForeignKeyViolation(err):
+		// A listing, or a band, still names it; see listingdb.
+		return placebus.ErrInUse
+	case err != nil:
 		return fmt.Errorf("deleting the place: %w", err)
 	}
 
