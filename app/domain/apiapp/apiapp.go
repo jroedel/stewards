@@ -1,6 +1,6 @@
 // Package apiapp is the JSON API at /api/v1: how a program -- a script, or a
-// steward's own Claude -- adds plants and their photos without typing them
-// into the screens.
+// steward's own Claude -- adds plants, their photos and where they grow
+// without typing them into the screens.
 //
 // # The index is the route table
 //
@@ -14,8 +14,8 @@
 // # What a key can and cannot do
 //
 // A key acts as the steward who made it (mid.APIKey), and only through the
-// import rules: speciesbus.Import and photobus.Import. Neither will confirm a
-// plant or check a photo. A batch from a program lands as "not yet confirmed"
+// import rules: speciesbus.Import, photobus.Import and listingbus.Import.
+// None will confirm a plant, check a photo, or tell volunteers to pull one. A batch from a program lands as "not yet confirmed"
 // and "not checked", and a person ticks those on the screens after looking --
 // the wingstem lesson, which applies to Claude as much as to a nursery tag.
 //
@@ -38,6 +38,7 @@ import (
 
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
+	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
@@ -68,6 +69,13 @@ type Species interface {
 // Places is what it needs from the place rules.
 type Places interface {
 	All(ctx context.Context) ([]placebus.Place, error)
+	BySlug(ctx context.Context, slug string) (placebus.Place, error)
+}
+
+// Listings is what it needs from the listing rules.
+type Listings interface {
+	ForPlace(ctx context.Context, placeID types.ID) ([]listingbus.Listing, error)
+	Import(ctx context.Context, placeID, speciesID types.ID, f listingbus.Fields) (listingbus.Imported, error)
 }
 
 // Photos is what it needs from the photo rules.
@@ -78,10 +86,11 @@ type Photos interface {
 
 // Config is what this app needs.
 type Config struct {
-	Log     *slog.Logger
-	Species Species
-	Places  Places
-	Photos  Photos
+	Log      *slog.Logger
+	Species  Species
+	Places   Places
+	Photos   Photos
+	Listings Listings
 
 	// BaseURL is the public origin, for the absolute links in answers: a
 	// program reading them may be anywhere.
@@ -89,18 +98,19 @@ type Config struct {
 }
 
 type app struct {
-	log     *slog.Logger
-	species Species
-	places  Places
-	photos  Photos
-	base    string
+	log      *slog.Logger
+	species  Species
+	places   Places
+	photos   Photos
+	listings Listings
+	base     string
 }
 
 // Routes mounts the API on its own mux. Each route that needs a key is
 // behind mid.RequireKey; mid.APIKey, which reads the key, is the muxer's to
 // put around the whole of it.
 func Routes(mux *http.ServeMux, cfg Config) {
-	a := app{log: cfg.Log, species: cfg.Species, places: cfg.Places, photos: cfg.Photos, base: cfg.BaseURL}
+	a := app{log: cfg.Log, species: cfg.Species, places: cfg.Places, photos: cfg.Photos, listings: cfg.Listings, base: cfg.BaseURL}
 	require := mid.RequireKey()
 
 	for _, e := range a.endpoints() {
@@ -178,6 +188,22 @@ func (a app) endpoints() []Endpoint {
 			Returns: `{"places": [{slug, name, parent, card_url}]}`, handler: a.listPlaces,
 		},
 		{
+			Method: http.MethodGet, Path: Prefix + "/places/{slug}/plants", NeedsKey: true,
+			Summary: "What is listed at a place: each plant, what to do with it there, and whether it is part of the planting.",
+			Returns: `{"place": slug, "plants": [{species, action, planned, note, card_url}]}`, handler: a.placePlants,
+		},
+		{
+			Method: http.MethodPut, Path: Prefix + "/places/{slug}/plants/{species}", NeedsKey: true,
+			Summary: "List a plant at a place, or change how it is listed. The plant must already be added. Sending what is already there changes nothing. A listing is on the place card as soon as it is made, so an import can only protect a plant or mark it careful: a steward marks one to pull, on the place's Plants screen.",
+			Body: &Body{Encoding: "json", Fields: []Field{
+				{Name: "action", Type: "string", Required: true, Values: importActions(), Description: "protect: leave it. careful: it stays or goes as the note says, but handle it with gloves on."},
+				{Name: "planned", Type: "boolean", Description: "True when it is part of the planting here: it goes on the place's Planned list and bloom calendar."},
+				text("note", `What to know about it here, such as "6 plants, at the shady end".`, false),
+			}},
+			Returns: `201 {"outcome": "created", "place": slug, "listing": {...}}, or 200 with "updated" or "unchanged".`,
+			handler: a.putPlacePlant,
+		},
+		{
 			Method: http.MethodGet, Path: Prefix + "/species", NeedsKey: true,
 			Summary: "Every plant, by common name. Read this before adding, to see what is already here.",
 			Returns: `{"species": [plant]}`, handler: a.listSpecies,
@@ -237,6 +263,7 @@ func (a app) index(w http.ResponseWriter, r *http.Request) {
 		Rules: []string{
 			"Nothing sent here is confirmed or checked. A steward confirms a plant, and checks a photo, on its screen after looking. Sending confirmed or checked is refused.",
 			"Nothing is removed through the API. A person does that on the screens.",
+			"An import never marks a plant to pull at a place. A steward does that on the place's Plants screen.",
 			"Sending a plant exactly as it is already changes nothing, and the same photo twice is kept once, so a batch can safely be sent again.",
 			"A plant's slug is its address, /plants/<slug>, and cannot change once made: lower-case letters, numbers and hyphens, such as winecup.",
 			"Sizes are whole inches. Months are 1 to 12.",

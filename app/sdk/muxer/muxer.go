@@ -130,7 +130,7 @@ func New(cfg Config) (http.Handler, error) {
 	api := http.NewServeMux()
 	if cfg.BaseURL != "" {
 		apiapp.Routes(api, apiapp.Config{
-			Log: cfg.Log, Species: cfg.Species, Places: cfg.Places, Photos: cfg.Photos, BaseURL: cfg.BaseURL,
+			Log: cfg.Log, Species: cfg.Species, Places: cfg.Places, Photos: cfg.Photos, Listings: cfg.Listings, BaseURL: cfg.BaseURL,
 		})
 	}
 
