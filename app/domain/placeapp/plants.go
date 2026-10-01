@@ -87,6 +87,25 @@ func (a app) setPlant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// From the card, an empty note leaves the plant's note as it is. The
+	// card's Planted button and its "plant more" both send none, and change
+	// only whether the plant is on To plant; a steward clearing a note does
+	// it on this screen, where the note is in front of them.
+	if fromCard := r.PostFormValue("return") == "card"; fromCard && f.Note.Trimmed().EN == "" && f.Note.Trimmed().ES == "" {
+		listed, err := a.listings.ForPlace(r.Context(), p.ID)
+		if err != nil {
+			a.fail(w, r, "reading what is listed at a place", err)
+
+			return
+		}
+
+		for _, l := range listed {
+			if l.SpeciesID == speciesID {
+				f.Note = l.Note
+			}
+		}
+	}
+
 	_, err = a.listings.Set(r.Context(), p.ID, speciesID, f)
 
 	invalid, isInvalid := errors.AsType[listingbus.Invalid](err)

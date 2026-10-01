@@ -197,7 +197,7 @@ func (a app) endpoints() []Endpoint {
 			Summary: "List a plant at a place, or change how it is listed. The plant must already be added. Sending what is already there changes nothing. A listing is on the place card as soon as it is made, so an import can only protect a plant or mark it careful: a steward marks one to pull, on the place's Plants screen.",
 			Body: &Body{Encoding: "json", Fields: []Field{
 				{Name: "action", Type: "string", Required: true, Values: importActions(), Description: "protect: leave it. careful: it stays or goes as the note says, but handle it with gloves on."},
-				{Name: "planned", Type: "boolean", Description: "True when it is part of the planting here: it goes on the place's Planned list and bloom calendar."},
+				{Name: "planned", Type: "boolean", Description: "True when there is planting still to do: none of it is in the ground yet, or more is going in (say how many in the note). It goes on the place's To plant list. False for a plant already growing here, planted or come up on its own: it is protected and on the flowering calendar either way."},
 				text("note", `What to know about it here, such as "6 plants, at the shady end".`, false),
 			}},
 			Returns: `201 {"outcome": "created", "place": slug, "listing": {...}}, or 200 with "updated" or "unchanged".`,

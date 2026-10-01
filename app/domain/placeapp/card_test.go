@@ -220,3 +220,69 @@ func TestAddingFromThePlantsScreenStaysThere(t *testing.T) {
 		t.Errorf("a return that is not card: %d %q", w.Code, loc)
 	}
 }
+
+// From To plant to planted and back, from the card: the Planted button takes
+// a plant off To plant and leaves it protected with its note; "plant more"
+// puts one that is growing back on To plant, keeping its note unless a new
+// one is typed.
+func TestAPlantGoesFromToPlantToPlantedAndBack(t *testing.T) {
+	s := serve(t)
+	s.pilot()
+
+	garden := s.place("rain-garden").ID.String()
+	penstemon := s.plant("brazos-penstemon", "Brazos penstemon", "#B0418F", "3", "4")
+
+	if w := s.list(garden, penstemon, "protect", true, "6 plants, in the middle"); w.Code != http.StatusSeeOther {
+		t.Fatalf("listing: %d", w.Code)
+	}
+
+	toPlant := func() string {
+		body := s.get("/places/rain-garden").Body.String()
+
+		return body[strings.Index(body, `id="planned-h"`):strings.Index(body, `class="panels`)]
+	}
+
+	if got := toPlant(); !strings.Contains(got, "Planted ✓") || !strings.Contains(got, `name="species" value="`+penstemon+`"`) {
+		t.Fatal("a To plant row has no Planted button")
+	}
+
+	if strings.Contains(s.getAs("/places/rain-garden", "").Body.String(), "Planted ✓") {
+		t.Error("a volunteer is shown the Planted button")
+	}
+
+	// Planted: what the button sends.
+	w := s.post("/steward/places/"+garden+"/plants", url.Values{"species": {penstemon}, "action": {"protect"}, "return": {"card"}})
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/places/rain-garden#protect-h" {
+		t.Fatalf("planted: %d %q", w.Code, w.Header().Get("Location"))
+	}
+
+	body := s.get("/places/rain-garden").Body.String()
+	protect := body[strings.Index(body, "panel-protect"):strings.Index(body, "panel-pull")]
+
+	if got := toPlant(); strings.Contains(got, `<div class="row-name">Brazos penstemon`) {
+		t.Error("a planted plant is still on To plant")
+	}
+
+	if !strings.Contains(protect, "Brazos penstemon") || !strings.Contains(protect, "6 plants, in the middle") {
+		t.Error("a planted plant left Protect, or lost its note")
+	}
+
+	// It is offered under "plant more" now, not as a new plant.
+	if got := toPlant(); !strings.Contains(got, `<optgroup label="Already growing here: plant more"><option value="`+penstemon+`">Brazos penstemon</option>`) {
+		t.Error("the To plant form does not offer the planted penstemon to plant more of")
+	}
+
+	// Plant more, with no note: back on To plant, note kept.
+	s.post("/steward/places/"+garden+"/plants", url.Values{"species": {penstemon}, "action": {"protect"}, "planned": {"yes"}, "return": {"card"}})
+	if got := toPlant(); !strings.Contains(got, "6 plants, in the middle") {
+		t.Error("planting more lost the note")
+	}
+
+	// And a note typed replaces it.
+	s.post("/steward/places/"+garden+"/plants", url.Values{
+		"species": {penstemon}, "action": {"protect"}, "planned": {"yes"}, "return": {"card"}, "note_en": {"6 in, 3 more by the wall"},
+	})
+	if got := toPlant(); !strings.Contains(got, "6 in, 3 more by the wall") || strings.Contains(got, "6 plants, in the middle") {
+		t.Error("a new note did not replace the old one")
+	}
+}

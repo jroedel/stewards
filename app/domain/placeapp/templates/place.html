@@ -24,13 +24,20 @@
 {{if or .Listed .Adds}}
 {{if or .Planned .Adds}}
 <h2 id="planned-h">{{say $l .Copy.PlannedHere}}</h2>
+<p class="help">{{say $l .Copy.PlannedHelp}}</p>
 {{if .Planned}}<ul class="rows">
-{{range .Planned}}<li><a class="row{{if .Thumb}} row-photo{{end}}" href="/plants/{{.Slug}}">{{with .Thumb}}<img class="row-thumb" src="/photos/{{.}}/small.jpg" width="64" height="64" alt="" loading="lazy">{{end}}<div>
+{{range $line := .Planned}}<li><a class="row{{if .Thumb}} row-photo{{end}}" href="/plants/{{.Slug}}">{{with .Thumb}}<img class="row-thumb" src="/photos/{{.}}/small.jpg" width="64" height="64" alt="" loading="lazy">{{end}}<div>
   <div class="row-name">{{say $l .Name}}</div>
   {{if .Scientific}}<div class="row-note"><i>{{.Scientific}}</i></div>{{end}}
   {{if .Size.EN}}<div class="row-note">{{say $l .Size}}</div>{{end}}
   {{if .Note.EN}}<div class="row-summary">{{say $l .Note}}</div>{{end}}
-</div><span class="row-go" aria-hidden="true">›</span></a></li>
+</div><span class="row-go" aria-hidden="true">›</span></a>
+{{with $.Data.Adds}}<form class="planted" method="post" action="{{.Planned.PostURL}}" lang="en">
+  <input type="hidden" name="species" value="{{$line.SpeciesID}}">
+  <input type="hidden" name="action" value="{{$line.Action}}">
+  <input type="hidden" name="return" value="card">
+  <button class="add-button" type="submit">Planted ✓ <span class="quiet">take it off To plant</span></button>
+</form>{{end}}</li>
 {{end}}</ul>{{end}}
 {{with .Adds}}{{template "card-add" .Planned}}{{end}}
 {{end}}
@@ -97,7 +104,7 @@
 {{/* A list's "+ Add", for a signed-in steward only: see cardAdd. In English,
      as the steward screens are; a volunteer never sees it. The plant select
      leaves out what is already listed here. */}}
-{{define "card-add"}}{{if .Species}}<div class="card-add" lang="en">
+{{define "card-add"}}{{if or .Species .Growing}}<div class="card-add" lang="en">
 <button type="button" class="add-button" popovertarget="{{.ID}}">+ Add</button>
 <div id="{{.ID}}" class="add-popover" popover>
 <form class="form" method="post" action="{{.PostURL}}">
@@ -107,8 +114,11 @@
   {{if .Planned}}<input type="hidden" name="planned" value="yes">{{end}}
   <input type="hidden" name="return" value="card">
   <label for="{{.ID}}-species">Plant</label>
-  <select id="{{.ID}}-species" name="species" required><option value="">Choose a plant</option>{{range .Species}}<option value="{{.Value}}">{{.Label}}</option>{{end}}</select>
-  <label for="{{.ID}}-note_en">Note <span class="optional">optional</span></label>
+  <select id="{{.ID}}-species" name="species" required><option value="">Choose a plant</option>
+    {{if .Growing}}<optgroup label="Not here yet">{{end}}{{range .Species}}<option value="{{.Value}}">{{.Label}}</option>{{end}}{{if .Growing}}</optgroup>
+    <optgroup label="Already growing here: plant more">{{range .Growing}}<option value="{{.Value}}">{{.Label}}</option>{{end}}</optgroup>{{end}}
+  </select>
+  <label for="{{.ID}}-note_en">Note <span class="optional">optional{{if .Growing}}; left empty, a plant already here keeps its note{{end}}</span></label>
   <input id="{{.ID}}-note_en" name="note_en" type="text" maxlength="500">
   <label for="{{.ID}}-note_es">En español <span class="optional">optional</span></label>
   <input id="{{.ID}}-note_es" name="note_es" type="text" maxlength="500" lang="es">

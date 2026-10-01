@@ -555,3 +555,7 @@ code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap
 .add-popover::backdrop { background: rgba(35, 31, 32, .45); }
 .add-popover h2 { margin-top: 0; }
 .add-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+
+/* A To plant row's "Planted" button, under the row, for a steward. */
+.planted { margin: 6px 0 4px; }
+.planted .quiet { font-weight: 400; color: var(--muted); }

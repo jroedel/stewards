@@ -57,7 +57,7 @@ type SpeciesReader interface {
 }
 
 // PhotoReader is what the place card needs from the photo rules: a picture
-// beside each plant on its "Planned here" list.
+// beside each plant on its "To plant" list.
 type PhotoReader interface {
 	ForSpecies(ctx context.Context, speciesID types.ID) ([]photobus.Photo, error)
 }

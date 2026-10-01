@@ -51,7 +51,7 @@ func CardRoutes(mux *http.ServeMux, cfg Config) {
 type cardWording struct {
 	Back, PartOf, Inside, Conditions, PhotoPoint, PhotoPointHelp,
 	StationIntro, StationGo, NotListed, NotSure, Edit,
-	PlannedHere, Flowers, FlowersHelp,
+	PlannedHere, PlannedHelp, Flowers, FlowersHelp,
 	Protect, ProtectHelp, Pull, PullHelp, Careful, CarefulHelp, NothingHere types.Text
 }
 
@@ -67,11 +67,12 @@ var cardWords = cardWording{
 	NotListed:      types.Text{EN: "The plants for this place are not listed yet."},
 	NotSure:        types.Text{EN: "Not sure what something is? Leave it."},
 	Edit:           types.Text{EN: "Edit this place"},
-	PlannedHere:    types.Text{EN: "Planned here"},
+	PlannedHere:    types.Text{EN: "To plant"},
+	PlannedHelp:    types.Text{EN: "Plant these here. Some may be growing already; the note says how many more."},
 	Flowers:        types.Text{EN: "When it flowers"},
-	FlowersHelp:    types.Text{EN: "Each row is a plant planned here, coloured in the months it blooms."},
+	FlowersHelp:    types.Text{EN: "Each row is a plant growing here or going in, coloured in the months it blooms."},
 	Protect:        types.Text{EN: "Protect"},
-	ProtectHelp:    types.Text{EN: "Leave these. They belong here."},
+	ProtectHelp:    types.Text{EN: "Leave these. They grow here."},
 	Pull:           types.Text{EN: "Pull"},
 	PullHelp:       types.Text{EN: "Take these out, root and all."},
 	Careful:        types.Text{EN: "Careful"},
@@ -96,9 +97,11 @@ type cardRow struct {
 	Summary types.Text
 }
 
-// plantLine is one plant on a card: on the Planned list, in a panel, or a
+// plantLine is one plant on a card: on the To plant list, in a panel, or a
 // row of the flowering calendar.
 type plantLine struct {
+	SpeciesID  string
+	Action     listingbus.Action
 	Slug       string
 	Name       types.Text
 	Scientific string
@@ -109,7 +112,7 @@ type plantLine struct {
 	BloomWords string // "Mar–May", for a screen reader beside the cells
 
 	// Thumb is the id of the plant's flower photo, or its full-size one,
-	// for the Planned list: a planter imagining the bed needs to see what is
+	// for the To plant list: a planter imagining the bed needs to see what is
 	// going in. Empty when it has neither checked yet. Shown as a square,
 	// cropped by the stylesheet, so its own size is not needed.
 	Thumb string
@@ -130,6 +133,11 @@ type cardView struct {
 
 	// The plants listed here. Listed is false when there are none at all,
 	// and the card then says the plants are not listed yet.
+	//
+	// Planned is the "To plant" list: listings with planting still to do,
+	// whether none of the plant is in yet or more is going in beside what is
+	// growing. Calendar is everything protected here, planted or to plant,
+	// so a bed keeps its calendar the day its planting is done.
 	Listed                 bool
 	Planned, Calendar      []plantLine
 	Protect, Pull, Careful []plantLine
@@ -158,6 +166,11 @@ type cardAdd struct {
 	Planned bool
 	PostURL string
 	Species []option // the plants not yet listed here, by name
+
+	// Growing is, for the To plant form only, the plants protected here and
+	// not on To plant: "plant more" of something already growing. Choosing
+	// one keeps its note unless a new one is typed (setPlant).
+	Growing []option
 }
 
 type cardAdds struct {
@@ -175,8 +188,14 @@ type cardAdds struct {
 // it is now.
 func addsFor(p placebus.Place, species map[types.ID]speciesbus.Species, listed []listingbus.Listing) *cardAdds {
 	here := map[types.ID]bool{}
+	var growing []option
+
 	for _, l := range listed {
 		here[l.SpeciesID] = true
+
+		if sp, ok := species[l.SpeciesID]; ok && l.Action == listingbus.Protect && !l.Planned {
+			growing = append(growing, option{Value: l.SpeciesID.String(), Label: sp.Common.EN})
+		}
 	}
 
 	var opts []option
@@ -186,19 +205,24 @@ func addsFor(p placebus.Place, species map[types.ID]speciesbus.Species, listed [
 		}
 	}
 
-	slices.SortFunc(opts, func(x, y option) int { return cmp.Compare(strings.ToLower(x.Label), strings.ToLower(y.Label)) })
+	byName := func(x, y option) int { return cmp.Compare(strings.ToLower(x.Label), strings.ToLower(y.Label)) }
+	slices.SortFunc(opts, byName)
+	slices.SortFunc(growing, byName)
 
 	post := "/steward/places/" + p.ID.String() + "/plants"
 	add := func(id, title, help string, act listingbus.Action, planned bool) cardAdd {
 		return cardAdd{ID: id, Title: title, Help: help, Action: act, Planned: planned, PostURL: post, Species: opts}
 	}
 
+	toPlant := add("add-planned", "Add to To plant", "Not in the ground yet, or more are going in: it goes on To plant and Protect until a steward marks it planted. Say how many in the note.", listingbus.Protect, true)
+	toPlant.Growing = growing
+
 	return &cardAdds{
-		Planned: add("add-planned", "Add to Planned here", "Part of the planting: it goes on the Planned list, the bloom calendar and Protect.", listingbus.Protect, true),
+		Planned: toPlant,
 		Protect: add("add-protect", "Add to Protect", "Found growing here, and to be left alone.", listingbus.Protect, false),
 		Pull:    add("add-pull", "Add to Pull", "Volunteers see it under Pull straight away, so list only what you are sure of.", listingbus.Pull, false),
 		Careful: add("add-careful", "Add to Careful", "It stays or goes as the note says, and volunteers handle it with gloves on.", listingbus.Careful, false),
-		None:    len(opts) == 0,
+		None:    len(opts) == 0 && len(growing) == 0,
 	}
 }
 
@@ -283,7 +307,7 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 		line := lineOf(sp, l)
 
 		// A planned plant is always protected (listingbus.Set), so it is in
-		// the Protect panel as well as on the Planned list: the panel is
+		// the Protect panel as well as on the To plant list: the panel is
 		// what a weeder reads a month later, and "leave this" has to include
 		// everything that was put in on purpose.
 		switch l.Action {
@@ -303,10 +327,10 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 			}
 
 			v.Planned = append(v.Planned, line)
+		}
 
-			if !sp.Bloom.Zero() {
-				v.Calendar = append(v.Calendar, line)
-			}
+		if l.Action == listingbus.Protect && !sp.Bloom.Zero() {
+			v.Calendar = append(v.Calendar, line)
 		}
 	}
 
@@ -347,6 +371,7 @@ func (a app) speciesByID(r *http.Request) (map[types.ID]speciesbus.Species, erro
 
 func lineOf(sp speciesbus.Species, l listingbus.Listing) plantLine {
 	line := plantLine{
+		SpeciesID: sp.ID.String(), Action: l.Action,
 		Slug: sp.Slug, Name: sp.Common, Scientific: sp.Scientific, Note: l.Note,
 		Bloom: make([]bool, 12), BloomWords: sp.Bloom.String(),
 	}
