@@ -211,6 +211,7 @@ h2 {
 
 .form input[type="email"],
 .form input[type="password"],
+.form input[type="url"],
 .form input[type="text"] {
   min-height: 48px;
   padding: 10px 12px;
@@ -298,7 +299,9 @@ h2 {
   font-weight: 500;
 }
 
-.form fieldset { margin: 8px 0 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px; }
+/* min-width 0, because a fieldset's default minimum is its content's width,
+   which lets a two-column row push past the edge of a phone. */
+.form fieldset { margin: 8px 0 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .form legend { padding: 0; margin-bottom: 4px; font: 700 18px var(--font-display); color: var(--sf-blue); }
 .form fieldset label { margin-top: 0; font-weight: 500; }
 
@@ -389,3 +392,42 @@ main > h1:first-child { margin-top: 20px; }
 .station { margin-top: 20px; }
 .station-name { display: block; font-size: 18px; }
 .station-go { display: block; font-weight: 500; font-size: 15px; color: var(--muted); }
+
+/* ---------------------------------------------------------------- species screens */
+
+/* For a label a screen reader needs and a sighted steward does not: the web
+   address beside a source's name. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+.label-like { margin: 8px 0 0; font-weight: 500; }
+
+.source-row { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-top: 1px solid var(--rule); }
+.source-row label { font-weight: 500; }
+
+/* The bloom months: twelve targets of 48px or more, six to a row, a filled
+   cell for a month in bloom -- the same picture as the volunteer's strip. */
+.months { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.month { position: relative; }
+.month input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.month span {
+  display: flex; align-items: center; justify-content: center; min-height: 48px;
+  border: 1.5px solid var(--muted); border-radius: 8px; background: var(--sf-white);
+  font-weight: 700; font-size: 15px;
+}
+.month abbr { text-decoration: none; }
+.month input:checked + span { background: var(--sf-blue); border-color: var(--sf-blue); color: var(--sf-white); }
+.month input:focus-visible + span { outline: 3px solid var(--sf-blue); outline-offset: 2px; }
+
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pair > div { display: flex; flex-direction: column; gap: 6px; }
+.pair label { font-weight: 500; }
+.pair input[type="number"] { max-width: none; width: 100%; }
+
+.swatch { display: inline-block; vertical-align: -2px; }
+.row-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.row-tags .tag { margin-left: 0; }
+.tag-ok { color: var(--tos-protect); background: var(--tos-protect-tint); }
+.tag-open { color: var(--tos-sun); background: var(--tos-sun-tint); }

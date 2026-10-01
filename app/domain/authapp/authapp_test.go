@@ -14,6 +14,8 @@ import (
 	"github.com/jroedel/stewards/app/sdk/muxer"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
+	"github.com/jroedel/stewards/business/domain/species/speciesbus"
+	"github.com/jroedel/stewards/business/domain/species/stores/speciesdb"
 	"github.com/jroedel/stewards/business/domain/user/stores/userdb"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
 	"github.com/jroedel/stewards/business/types"
@@ -47,6 +49,7 @@ func serve(t *testing.T, bootstrap, baseURL string) site {
 	for _, init := range []func() error{
 		func() error { return sqldb.Init(t.Context(), db) },
 		func() error { return placedb.Init(t.Context(), db) },
+		func() error { return speciesdb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
@@ -62,6 +65,7 @@ func serve(t *testing.T, bootstrap, baseURL string) site {
 		DB:        db,
 		Expected:  sqldb.Infrastructure,
 		Places:    placebus.NewBusiness(placedb.NewStore(db), nil),
+		Species:   speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
 		Users:     s.users,
 		BaseURL:   baseURL,
 		Mail:      s.mail,

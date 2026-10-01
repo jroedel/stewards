@@ -1,0 +1,445 @@
+// Package speciesapp is the stewards' screens for species: the list of every
+// plant, and the form that adds, edits and removes one.
+//
+// Behind sign-in, under /steward/species, and addressed by ID for the same
+// reason as the place screens: the species' own addresses, /plants/<slug>,
+// are the volunteers', and come with the species card.
+//
+// The rules are speciesbus's. This turns a form into speciesbus.Fields and a
+// speciesbus.Invalid into a sentence beside its input.
+package speciesapp
+
+import (
+	"context"
+	"embed"
+	"errors"
+	"log/slog"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/jroedel/stewards/app/sdk/page"
+	"github.com/jroedel/stewards/business/domain/species/speciesbus"
+	"github.com/jroedel/stewards/business/types"
+	"github.com/jroedel/stewards/foundation/web"
+)
+
+// Templates are this app's pages, for the renderer.
+//
+//go:embed templates
+var Templates embed.FS
+
+const path = "/steward/species"
+
+// Species is what this app needs from the species rules.
+type Species interface {
+	All(ctx context.Context) ([]speciesbus.Species, error)
+	ByID(ctx context.Context, id types.ID) (speciesbus.Species, error)
+	Create(ctx context.Context, f speciesbus.Fields) (speciesbus.Species, error)
+	Update(ctx context.Context, id types.ID, f speciesbus.Fields) (speciesbus.Species, error)
+	Delete(ctx context.Context, id types.ID) error
+}
+
+type app struct {
+	log     *slog.Logger
+	render  *page.Renderer
+	species Species
+}
+
+// Routes mounts the app, every route behind guard.
+func Routes(mux *http.ServeMux, log *slog.Logger, render *page.Renderer, species Species, guard web.Middleware) {
+	a := app{log: log, render: render, species: species}
+
+	for pattern, h := range map[string]http.HandlerFunc{
+		"GET " + path:                   a.list,
+		"GET " + path + "/new":          a.newForm,
+		"POST " + path:                  a.create,
+		"GET " + path + "/{id}/edit":    a.editForm,
+		"POST " + path + "/{id}":        a.update,
+		"POST " + path + "/{id}/delete": a.remove,
+	} {
+		mux.Handle(pattern, guard(h))
+	}
+}
+
+// ------------------------------------------------------------------ the list
+
+type listRow struct {
+	ID, Slug, Common, Scientific, Status, Bloom string
+	Confirmed                                   bool
+	Swatches                                    []string
+}
+
+type listView struct {
+	Species []listRow
+	Done    string
+}
+
+func (a app) list(w http.ResponseWriter, r *http.Request) {
+	all, err := a.species.All(r.Context())
+	if err != nil {
+		a.fail(w, r, "listing species for the stewards", err)
+
+		return
+	}
+
+	v := listView{}
+	for _, sp := range all {
+		v.Species = append(v.Species, listRow{
+			ID: sp.ID.String(), Slug: sp.Slug, Common: sp.Common.EN, Scientific: sp.Scientific,
+			Status: sp.Status.Label(), Bloom: sp.Bloom.String(), Confirmed: sp.Confirmed, Swatches: sp.Swatches,
+		})
+	}
+
+	// A fixed sentence chosen by a word, never the query echoed.
+	switch r.URL.Query().Get("done") {
+	case "added":
+		v.Done = "Plant added."
+	case "saved":
+		v.Done = "Changes saved."
+	case "removed":
+		v.Done = "Plant removed."
+	}
+
+	a.render.Render(w, r, http.StatusOK, "steward-species", v)
+}
+
+// ------------------------------------------------------------------ the form
+
+type option struct {
+	Value, Label string
+	Selected     bool
+}
+
+type month struct {
+	Number, Short, Long string
+	On                  bool
+}
+
+type source struct {
+	N          int // counted from 1, for the label
+	Label, URL string
+}
+
+// formView holds every value as typed, so a refusal gives back what was sent.
+type formView struct {
+	ID, Title, Slug, Name string
+
+	CommonEN, CommonES, Scientific string
+	Statuses                       []option
+	Confirmed                      bool
+	FlowerEN, FlowerES, Swatches   string
+	Months                         []month
+	HeightMin, HeightMax           string
+	WidthMin, WidthMax             string
+	Light, Water                   []option
+	NoteEN, NoteES                 string
+	Sources                        []source
+
+	Problems      map[string]string
+	DeleteProblem string
+}
+
+// spareSources is how many empty source rows the form offers beyond those
+// filled: there is no script to add a row, so the rows are there already.
+const spareSources = 2
+
+func (a app) newForm(w http.ResponseWriter, r *http.Request) {
+	a.render.Render(w, r, http.StatusOK, "species-form", fill(formView{Title: "Add a plant"}, speciesbus.Fields{}))
+}
+
+func (a app) editForm(w http.ResponseWriter, r *http.Request) {
+	sp, ok := a.load(w, r)
+	if !ok {
+		return
+	}
+
+	a.render.Render(w, r, http.StatusOK, "species-form", viewOf(sp))
+}
+
+func (a app) create(w http.ResponseWriter, r *http.Request) {
+	f, v, ok := read(w, r)
+	if !ok {
+		return
+	}
+
+	v.Title = "Add a plant"
+
+	if len(v.Problems) == 0 {
+		if _, err := a.species.Create(r.Context(), f); err != nil {
+			a.refuse(w, r, v, f, err)
+
+			return
+		}
+
+		http.Redirect(w, r, path+"?done=added", http.StatusSeeOther)
+
+		return
+	}
+
+	a.render.Render(w, r, http.StatusUnprocessableEntity, "species-form", fill(v, f))
+}
+
+func (a app) update(w http.ResponseWriter, r *http.Request) {
+	sp, ok := a.load(w, r)
+	if !ok {
+		return
+	}
+
+	f, v, ok := read(w, r)
+	if !ok {
+		return
+	}
+
+	v.ID, v.Slug, v.Name, v.Title = sp.ID.String(), sp.Slug, sp.Common.EN, "Edit "+sp.Common.EN
+
+	if len(v.Problems) == 0 {
+		if _, err := a.species.Update(r.Context(), sp.ID, f); err != nil {
+			a.refuse(w, r, v, f, err)
+
+			return
+		}
+
+		http.Redirect(w, r, path+"?done=saved", http.StatusSeeOther)
+
+		return
+	}
+
+	a.render.Render(w, r, http.StatusUnprocessableEntity, "species-form", fill(v, f))
+}
+
+// remove deletes a species, only with the box ticked, as for places.
+func (a app) remove(w http.ResponseWriter, r *http.Request) {
+	sp, ok := a.load(w, r)
+	if !ok {
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "We could not read that. Open the page again and try once more.", http.StatusBadRequest)
+
+		return
+	}
+
+	v := viewOf(sp)
+	v.DeleteProblem = "Tick the box to confirm, then press Remove again."
+
+	if r.PostFormValue("confirm") == "yes" {
+		err := a.species.Delete(r.Context(), sp.ID)
+
+		invalid, isInvalid := errors.AsType[speciesbus.Invalid](err)
+
+		switch {
+		case err == nil:
+			http.Redirect(w, r, path+"?done=removed", http.StatusSeeOther)
+
+			return
+		case isInvalid:
+			v.DeleteProblem = page.Sentence(invalid.Problem)
+		default:
+			a.fail(w, r, "removing a species", err)
+
+			return
+		}
+	}
+
+	a.render.Render(w, r, http.StatusUnprocessableEntity, "species-form", v)
+}
+
+// ------------------------------------------------------------------ the parts
+
+func (a app) load(w http.ResponseWriter, r *http.Request) (speciesbus.Species, bool) {
+	id, err := types.ParseID(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+
+		return speciesbus.Species{}, false
+	}
+
+	sp, err := a.species.ByID(r.Context(), id)
+	switch {
+	case errors.Is(err, speciesbus.ErrNotFound):
+		http.Error(w, "That plant is not here any more. It may have been removed. Go back to the list of plants.", http.StatusNotFound)
+
+		return speciesbus.Species{}, false
+	case err != nil:
+		a.fail(w, r, "reading a species", err)
+
+		return speciesbus.Species{}, false
+	}
+
+	return sp, true
+}
+
+// read turns the posted form into Fields and a view of what was typed. It
+// refuses only the shape of an input -- a size that is not a number -- and
+// leaves every rule about a species to speciesbus.
+func read(w http.ResponseWriter, r *http.Request) (speciesbus.Fields, formView, bool) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "We could not read that. Open the page again and try once more.", http.StatusBadRequest)
+
+		return speciesbus.Fields{}, formView{}, false
+	}
+
+	get := r.PostFormValue
+
+	v := formView{
+		Slug:     get("slug"),
+		CommonEN: get("common_en"), CommonES: get("common_es"), Scientific: get("scientific"),
+		Confirmed: get("confirmed") == "yes",
+		FlowerEN:  get("flower_en"), FlowerES: get("flower_es"), Swatches: get("swatches"),
+		HeightMin: get("height_min"), HeightMax: get("height_max"),
+		WidthMin: get("width_min"), WidthMax: get("width_max"),
+		NoteEN: get("note_en"), NoteES: get("note_es"),
+		Problems: map[string]string{},
+	}
+
+	f := speciesbus.Fields{
+		Slug:        v.Slug,
+		Common:      types.Text{EN: v.CommonEN, ES: v.CommonES},
+		Scientific:  v.Scientific,
+		Status:      speciesbus.Status(get("status")),
+		Confirmed:   v.Confirmed,
+		FlowerColor: types.Text{EN: v.FlowerEN, ES: v.FlowerES},
+		Swatches:    strings.FieldsFunc(v.Swatches, func(r rune) bool { return r == ',' || r == ' ' }),
+		Note:        types.Text{EN: v.NoteEN, ES: v.NoteES},
+	}
+
+	for _, raw := range r.PostForm["bloom"] {
+		if n, err := strconv.Atoi(raw); err == nil {
+			f.Bloom = f.Bloom.With(time.Month(n))
+		}
+	}
+
+	for _, raw := range r.PostForm["light"] {
+		n, _ := strconv.Atoi(raw)
+		f.Light |= speciesbus.Light(n)
+	}
+
+	for _, raw := range r.PostForm["water"] {
+		n, _ := strconv.Atoi(raw)
+		f.Water |= speciesbus.Water(n)
+	}
+
+	inches := func(field, raw string) int {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return 0
+		}
+
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			v.Problems[field] = "Write sizes as whole inches, such as 18. A foot is 12."
+		}
+
+		return n
+	}
+
+	f.Height = speciesbus.Size{Min: inches("height", v.HeightMin), Max: inches("height", v.HeightMax)}
+	f.Width = speciesbus.Size{Min: inches("width", v.WidthMin), Max: inches("width", v.WidthMax)}
+
+	labels, urls := r.PostForm["source_label"], r.PostForm["source_url"]
+	for i := range labels {
+		src := speciesbus.Source{Label: labels[i]}
+		if i < len(urls) {
+			src.URL = urls[i]
+		}
+
+		f.Sources = append(f.Sources, src)
+		v.Sources = append(v.Sources, source{Label: src.Label, URL: src.URL})
+	}
+
+	return f, v, true
+}
+
+func (a app) refuse(w http.ResponseWriter, r *http.Request, v formView, f speciesbus.Fields, err error) {
+	invalid, ok := errors.AsType[speciesbus.Invalid](err)
+	if !ok {
+		a.fail(w, r, "saving a species", err)
+
+		return
+	}
+
+	v.Problems[invalid.Field] = page.Sentence(invalid.Problem)
+	a.render.Render(w, r, http.StatusUnprocessableEntity, "species-form", fill(v, f))
+}
+
+// fill sets the choices -- status, months, light, water -- from f, and pads
+// the source rows with spares.
+func fill(v formView, f speciesbus.Fields) formView {
+	v.Statuses = []option{{Value: "", Label: "Not set yet", Selected: f.Status == ""}}
+	for _, s := range speciesbus.Statuses {
+		v.Statuses = append(v.Statuses, option{Value: string(s), Label: s.Label(), Selected: f.Status == s})
+	}
+
+	v.Months = nil
+	for m := time.January; m <= time.December; m++ {
+		v.Months = append(v.Months, month{
+			Number: strconv.Itoa(int(m)), Short: m.String()[:3], Long: m.String(), On: f.Bloom.Has(m),
+		})
+	}
+
+	v.Light = []option{
+		{Value: strconv.Itoa(int(speciesbus.FullSun)), Label: "Full sun", Selected: f.Light&speciesbus.FullSun != 0},
+		{Value: strconv.Itoa(int(speciesbus.PartShade)), Label: "Part shade", Selected: f.Light&speciesbus.PartShade != 0},
+		{Value: strconv.Itoa(int(speciesbus.Shade)), Label: "Shade", Selected: f.Light&speciesbus.Shade != 0},
+	}
+
+	v.Water = []option{
+		{Value: strconv.Itoa(int(speciesbus.Dry)), Label: "Dry", Selected: f.Water&speciesbus.Dry != 0},
+		{Value: strconv.Itoa(int(speciesbus.Moist)), Label: "Moist", Selected: f.Water&speciesbus.Moist != 0},
+		{Value: strconv.Itoa(int(speciesbus.Wet)), Label: "Wet", Selected: f.Water&speciesbus.Wet != 0},
+	}
+
+	// Drop rows typed blank before padding, so a refused form does not grow
+	// two more empty rows every time it comes back.
+	kept := v.Sources[:0:0]
+	for _, s := range v.Sources {
+		if strings.TrimSpace(s.Label) != "" || strings.TrimSpace(s.URL) != "" {
+			kept = append(kept, s)
+		}
+	}
+
+	v.Sources = kept
+	for range spareSources {
+		v.Sources = append(v.Sources, source{})
+	}
+
+	for i := range v.Sources {
+		v.Sources[i].N = i + 1
+	}
+
+	return v
+}
+
+func viewOf(sp speciesbus.Species) formView {
+	size := func(n int) string {
+		if n == 0 {
+			return ""
+		}
+
+		return strconv.Itoa(n)
+	}
+
+	v := formView{
+		ID: sp.ID.String(), Title: "Edit " + sp.Common.EN, Slug: sp.Slug, Name: sp.Common.EN,
+		CommonEN: sp.Common.EN, CommonES: sp.Common.ES, Scientific: sp.Scientific,
+		Confirmed: sp.Confirmed,
+		FlowerEN:  sp.FlowerColor.EN, FlowerES: sp.FlowerColor.ES, Swatches: strings.Join(sp.Swatches, " "),
+		HeightMin: size(sp.Height.Min), HeightMax: size(sp.Height.Max),
+		WidthMin: size(sp.Width.Min), WidthMax: size(sp.Width.Max),
+		NoteEN: sp.Note.EN, NoteES: sp.Note.ES,
+	}
+
+	for _, src := range sp.Sources {
+		v.Sources = append(v.Sources, source{Label: src.Label, URL: src.URL})
+	}
+
+	return fill(v, speciesbus.Fields{Status: sp.Status, Bloom: sp.Bloom, Light: sp.Light, Water: sp.Water})
+}
+
+func (a app) fail(w http.ResponseWriter, r *http.Request, what string, err error) {
+	a.log.ErrorContext(r.Context(), what, "request_id", web.RequestIDFrom(r.Context()), "error", err)
+	http.Error(w, "Something went wrong on our end. Try again in a few minutes.", http.StatusInternalServerError)
+}
