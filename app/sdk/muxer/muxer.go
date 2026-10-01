@@ -16,6 +16,7 @@ import (
 	"github.com/jroedel/stewards/app/domain/homeapp"
 	"github.com/jroedel/stewards/app/domain/photoapp"
 	"github.com/jroedel/stewards/app/domain/placeapp"
+	"github.com/jroedel/stewards/app/domain/signupapp"
 	"github.com/jroedel/stewards/app/domain/speciesapp"
 	"github.com/jroedel/stewards/app/domain/stewardapp"
 	"github.com/jroedel/stewards/app/domain/workdayapp"
@@ -26,6 +27,7 @@ import (
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
+	"github.com/jroedel/stewards/business/domain/subscriber/subscriberbus"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
 	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
 	"github.com/jroedel/stewards/foundation/mail"
@@ -44,6 +46,10 @@ type Config struct {
 	Photos   *photobus.Business
 	Users    *userbus.Business
 	Workdays *workdaybus.Business
+
+	// Subscribers may be nil, and with no Mail or no BaseURL it is unused:
+	// the email sign-up is mounted only when it can send its confirmation.
+	Subscribers *subscriberbus.Business
 
 	// BaseURL is the public origin. Empty means sign-in is off: its routes
 	// are not mounted, and with no other write in the app, the origin check
@@ -76,7 +82,7 @@ func New(cfg Config) (http.Handler, error) {
 
 	// One renderer holding every app's pages: the stylesheet has one hashed
 	// path, and net/http panics on a pattern registered twice.
-	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, stewardapp.Templates, workdayapp.Templates)
+	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, stewardapp.Templates, workdayapp.Templates, signupapp.Templates)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +95,8 @@ func New(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("GET /static/fonts/{file}", render.Files("fonts"))
 	mux.HandleFunc("GET /static/img/{file}", render.Files("img"))
 
-	homeapp.New(cfg.Log, render, cfg.Places, cfg.Workdays).Routes(mux)
+	signUp := cfg.BaseURL != "" && cfg.Mail != nil && cfg.Subscribers != nil
+	homeapp.New(cfg.Log, render, cfg.Places, cfg.Workdays, signUp).Routes(mux)
 	places := placeapp.Config{Log: cfg.Log, Render: render, Places: cfg.Places, Species: cfg.Species, Listings: cfg.Listings, Photos: cfg.Photos}
 	species := speciesapp.Config{Log: cfg.Log, Render: render, Species: cfg.Species, Places: cfg.Places, Listings: cfg.Listings, Photos: cfg.Photos}
 	photos := photoapp.Config{Log: cfg.Log, Render: render, Photos: cfg.Photos, Species: cfg.Species, Places: cfg.Places}
@@ -117,6 +124,14 @@ func New(cfg Config) (http.Handler, error) {
 		speciesapp.Routes(mux, species, guard)
 		photoapp.Routes(mux, photos, guard)
 		workdayapp.Routes(mux, workdayapp.Config{Log: cfg.Log, Render: render, Days: cfg.Workdays}, guard)
+
+		if signUp {
+			signupapp.Routes(mux, signupapp.Config{
+				Log: cfg.Log, Render: render, List: cfg.Subscribers, Mail: cfg.Mail, BaseURL: cfg.BaseURL,
+			}, guard)
+		} else {
+			cfg.Log.Warn("the email sign-up is off: there is no [mail] relay")
+		}
 		stewardapp.Routes(mux, stewardapp.Config{
 			Log:     cfg.Log,
 			Render:  render,

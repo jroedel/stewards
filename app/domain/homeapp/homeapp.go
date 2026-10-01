@@ -6,7 +6,8 @@
 // wondering whether they could help. It says they are welcome without any
 // skills, lists the stewardship days coming up, and offers the trail itself
 // to explore. The days are workdaybus's; the stewards schedule them on their
-// own screen (workdayapp).
+// own screen (workdayapp), and the email sign-up near the top posts to
+// signupapp.
 //
 // The list of places at /places is what the home page was before it: the Map
 // screen's accessible twin, "Where are you working?" (design.md, section 6),
@@ -56,11 +57,15 @@ type App struct {
 	render *page.Renderer
 	places Places
 	days   Days
+	signUp bool
 }
 
-// New constructs one.
-func New(log *slog.Logger, render *page.Renderer, places Places, days Days) *App {
-	return &App{log: log, render: render, places: places, days: days}
+// New constructs one. signUp says whether to show the email sign-up form,
+// which signupapp answers; it is off when that app is not mounted -- no
+// relay, or sign-in off -- because a form that can never send its
+// confirmation is worse than no form.
+func New(log *slog.Logger, render *page.Renderer, places Places, days Days, signUp bool) *App {
+	return &App{log: log, render: render, places: places, days: days, signUp: signUp}
 }
 
 // Routes mounts the app.
@@ -81,6 +86,10 @@ type wording struct {
 
 	Days, NoDays, Today, Now types.Text
 
+	// The sign-up form's words, the same as signupapp's own copy of the
+	// form; see the template.
+	FormTitle, FormHelp, FormLabel, FormButton types.Text
+
 	Explore, ExploreWhat types.Text
 	TrailAsk, TrailGo    types.Text
 
@@ -97,6 +106,11 @@ var words = wording{
 	NoDays: types.Text{EN: "No days are scheduled just now. Check back soon."},
 	Today:  types.Text{EN: "Today"},
 	Now:    types.Text{EN: "Happening now"},
+
+	FormTitle:  types.Text{EN: "Hear about the next day"},
+	FormHelp:   types.Text{EN: "Leave your email and we'll write when a stewardship day is scheduled. Nothing else, and you can stop any time."},
+	FormLabel:  types.Text{EN: "Your email"},
+	FormButton: types.Text{EN: "Keep me posted"},
 
 	Explore:     types.Text{EN: "Explore the trail"},
 	ExploreWhat: types.Text{EN: "the places along it, and what grows in each"},
@@ -124,8 +138,9 @@ type day struct {
 }
 
 type homeView struct {
-	Copy wording
-	Days []day
+	Copy   wording
+	Days   []day
+	SignUp bool
 }
 
 func (a *App) home(w http.ResponseWriter, r *http.Request) {
@@ -139,7 +154,7 @@ func (a *App) home(w http.ResponseWriter, r *http.Request) {
 	now := a.days.Now()
 	today := now.In(types.Garden).Format(time.DateOnly)
 
-	v := homeView{Copy: words}
+	v := homeView{Copy: words, SignUp: a.signUp}
 	for _, d := range up {
 		v.Days = append(v.Days, day{
 			Date: page.Date(d.Starts), Hours: page.Hours(d.Starts, d.Ends),

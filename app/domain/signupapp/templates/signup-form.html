@@ -1,0 +1,6 @@
+{{define "title"}}Stewardship days · Garden stewards{{end}}
+{{define "content"}}{{$l := .Lang}}
+<p class="eyebrow">{{say $l .Data.Copy.Eyebrow}}</p>
+{{template "signup-fields" .}}
+<a class="onward" href="/"><span>{{say $l .Data.Copy.SeeDays}}</span><span aria-hidden="true">›</span></a>
+{{end}}

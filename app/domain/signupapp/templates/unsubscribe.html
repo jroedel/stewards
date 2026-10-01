@@ -1,0 +1,16 @@
+{{define "title"}}Stewardship days · Garden stewards{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow">{{say $l .Copy.Eyebrow}}</p>
+{{if .Done}}
+<h1>{{say $l .Copy.OffTitle}}</h1>
+<p class="lead">{{say $l .Copy.OffLead}}</p>
+{{else}}
+<h1>{{say $l .Copy.LeaveTitle}}</h1>
+<p class="lead">{{say $l .Copy.LeaveLead}}</p>
+<form class="card form" method="post" action="/unsubscribe">
+  <input type="hidden" name="t" value="{{.Token}}">
+  <button class="button" type="submit">{{say $l .Copy.LeaveButton}}</button>
+</form>
+{{end}}
+<a class="onward" href="/"><span>{{say $l .Copy.SeeDays}}</span><span aria-hidden="true">›</span></a>
+{{end}}{{end}}
