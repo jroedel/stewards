@@ -3,10 +3,28 @@
 <h1>{{say $l .Copy.PlacesTitle}}</h1>
 <p class="lead">{{say $l .Copy.PlacesLead}}</p>
 
+{{if .Pins}}{{/* The markers are the public map's station style: blue, numbered, in
+     walking order there and in list order here. Each has a wider ring that
+     cannot be seen, so a thumb that lands near the dot still opens the
+     place; the drawn dot alone is about 24 px across on a phone. */}}
+<figure class="placemap">
+<svg viewBox="0 0 800 520" role="group" aria-label="{{.Copy.MapLabel.In $l}}" xmlns="http://www.w3.org/2000/svg">
+{{template "trailmap-drawing"}}
+<g font-family="Ubuntu, system-ui, sans-serif" font-size="30" font-weight="700" text-anchor="middle">
+{{range .Pins}}<a href="/places/{{.Slug}}" aria-label="{{.Number}}. {{.Name.In $l}}">
+  <circle cx="{{.At.X}}" cy="{{.At.Y}}" r="44" fill="transparent"/>
+  <circle cx="{{.At.X}}" cy="{{.At.Y}}" r="27" fill="#293896" stroke="#FFFFFF" stroke-width="4"/>
+  <text x="{{.At.X}}" y="{{.At.Y}}" dy="11" fill="#FFFFFF">{{.Number}}</text>
+</a>
+{{end}}</g>
+</svg>
+</figure>
+{{end}}
+
 <h2>{{say $l .Copy.Places}}</h2>
 {{if .Places}}
 <ul class="rows">
-{{range .Places}}<li><a class="row" href="/places/{{.Slug}}"><div><div class="row-name">{{say $l .Name}}</div>{{if .Purpose.EN}}<div class="row-note">{{say $l .Purpose}}</div>{{end}}</div><span class="row-go" aria-hidden="true">›</span></a></li>
+{{range .Places}}<li><a class="row" href="/places/{{.Slug}}">{{if .Number}}<span class="row-pin" aria-hidden="true">{{.Number}}</span>{{end}}<div><div class="row-name">{{say $l .Name}}</div>{{if .Purpose.EN}}<div class="row-note">{{say $l .Purpose}}</div>{{end}}</div><span class="row-go" aria-hidden="true">›</span></a></li>
 {{end}}</ul>
 {{else}}
 <div class="card empty"><p>{{say $l .Copy.Empty}}</p></div>

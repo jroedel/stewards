@@ -253,3 +253,55 @@ func TestTheListIsInTheOrderChosen(t *testing.T) {
 		t.Errorf("order = %v", got)
 	}
 }
+
+// A place goes on the map, moves, and comes off; a band never goes on it, and
+// a place that becomes a band leaves it.
+func TestAPlaceIsPutOnTheMapAndTakenOff(t *testing.T) {
+	b := business(t)
+
+	garden := mustCreate(t, b, named("rain-garden", "Rain garden"))
+	if garden.Spot != nil {
+		t.Fatalf("a new place is at %v, want off the map", *garden.Spot)
+	}
+
+	p, err := b.SetSpot(t.Context(), garden.ID, &placebus.Spot{X: 470, Y: 446})
+	if err != nil {
+		t.Fatalf("SetSpot: %v", err)
+	}
+	if got, err := b.ByID(t.Context(), p.ID); err != nil || got.Spot == nil || *got.Spot != (placebus.Spot{X: 470, Y: 446}) {
+		t.Fatalf("read back %v, %v; want 470,446", got.Spot, err)
+	}
+
+	// Saving the names and notes leaves the spot where it was.
+	if p, err = b.Update(t.Context(), garden.ID, named("", "Rain garden, by the fire pit")); err != nil || p.Spot == nil {
+		t.Fatalf("Update: %v, spot %v; want the spot kept", err, p.Spot)
+	}
+
+	for _, off := range []placebus.Spot{{X: -1, Y: 10}, {X: 10, Y: placebus.MapHeight + 1}, {X: placebus.MapWidth + 1, Y: 0}} {
+		_, err := b.SetSpot(t.Context(), garden.ID, &off)
+		invalid(t, err, "spot")
+	}
+
+	band := named("rain-garden-inflow", "Inflow")
+	band.ParentID = garden.ID
+	inflow := mustCreate(t, b, band)
+	_, err = b.SetSpot(t.Context(), inflow.ID, &placebus.Spot{X: 10, Y: 10})
+	invalid(t, err, "spot")
+
+	firePit := mustCreate(t, b, named("fire-pit", "Fire pit"))
+	if _, err := b.SetSpot(t.Context(), firePit.ID, &placebus.Spot{X: 600, Y: 420}); err != nil {
+		t.Fatal(err)
+	}
+	moved := named("", "Fire pit")
+	moved.ParentID = garden.ID
+	if p, err := b.Update(t.Context(), firePit.ID, moved); err != nil || p.Spot != nil {
+		t.Errorf("a place moved inside another: %v, spot %v; want it off the map", err, p.Spot)
+	}
+
+	if p, err = b.SetSpot(t.Context(), garden.ID, nil); err != nil || p.Spot != nil {
+		t.Errorf("taking it off the map: %v, spot %v", err, p.Spot)
+	}
+	if got, _ := b.ByID(t.Context(), garden.ID); got.Spot != nil {
+		t.Errorf("read back at %v, want off the map", *got.Spot)
+	}
+}

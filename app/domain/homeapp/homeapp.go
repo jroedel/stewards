@@ -9,12 +9,15 @@
 // own screen (workdayapp), and the email sign-up near the top posts to
 // signupapp.
 //
-// The list of places at /places is what the home page was before it: the Map
-// screen's accessible twin, "Where are you working?" (design.md, section 6),
-// without the drawn map above it. The map is a schematic drawn over the
-// public trail map's geometry, and it comes with the place pages it links
-// to; the list is the half that works for everybody from the first day,
-// which is why design.md insists the map always has one.
+// The list of places at /places is the Map screen, "Where are you working?"
+// (design.md, section 6): the schematic map, drawn over the public trail
+// map's geometry (page's "trailmap-drawing"), with a numbered marker for each
+// place a steward has put on it, and the list of places below as its
+// accessible twin. The numbers are the same in both, so somebody who finds
+// the picture easier can tap it, and somebody who does not can read the list
+// and still see which dot is which. A place not on the map yet is in the
+// list without a number, which is also how it is for every place on the day
+// the map arrives, before a steward has set any.
 package homeapp
 
 import (
@@ -94,6 +97,7 @@ type wording struct {
 	TrailAsk, TrailGo    types.Text
 
 	PlacesEyebrow, PlacesTitle, PlacesLead, Places, Empty types.Text
+	MapLabel                                              types.Text
 }
 
 var words = wording{
@@ -122,6 +126,7 @@ var words = wording{
 	PlacesLead:    types.Text{EN: "Pick the place you are standing in."},
 	Places:        types.Text{EN: "Places"},
 	Empty:         types.Text{EN: "No places have been added yet."},
+	MapLabel:      types.Text{EN: "Map of the garden. North is up; the road is along the bottom."},
 }
 
 // ------------------------------------------------------------------ home
@@ -175,11 +180,21 @@ type row struct {
 	Slug    string
 	Name    types.Text
 	Purpose types.Text
+
+	// Number is the place's marker on the map, counting in list order from
+	// 1, or 0 for a place not on the map. At is where the marker goes.
+	Number int
+	At     placebus.Spot
 }
 
 type placesView struct {
 	Copy   wording
 	Places []row
+
+	// Pins are the rows that are on the map, which is drawn only when
+	// there is at least one: a map with nothing on it answers "where are
+	// you working?" with a picture of the woods.
+	Pins []row
 }
 
 func (a *App) list(w http.ResponseWriter, r *http.Request) {
@@ -192,9 +207,17 @@ func (a *App) list(w http.ResponseWriter, r *http.Request) {
 
 	v := placesView{Copy: words}
 	for _, p := range all {
-		if p.TopLevel() {
-			v.Places = append(v.Places, row{Slug: p.Slug, Name: p.Name, Purpose: p.Purpose})
+		if !p.TopLevel() {
+			continue
 		}
+
+		r := row{Slug: p.Slug, Name: p.Name, Purpose: p.Purpose}
+		if p.Spot != nil {
+			r.Number, r.At = len(v.Pins)+1, *p.Spot
+			v.Pins = append(v.Pins, r)
+		}
+
+		v.Places = append(v.Places, r)
 	}
 
 	a.render.Render(w, r, http.StatusOK, "places", v)

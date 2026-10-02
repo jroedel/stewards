@@ -47,6 +47,7 @@ type Places interface {
 	Children(ctx context.Context, id types.ID) ([]placebus.Place, error)
 	Create(ctx context.Context, f placebus.Fields) (placebus.Place, error)
 	Update(ctx context.Context, id types.ID, f placebus.Fields) (placebus.Place, error)
+	SetSpot(ctx context.Context, id types.ID, spot *placebus.Spot) (placebus.Place, error)
 	Delete(ctx context.Context, id types.ID) error
 }
 
@@ -103,6 +104,7 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 		"GET /steward/places/{id}/edit":    a.editForm,
 		"POST /steward/places/{id}":        a.update,
 		"POST /steward/places/{id}/delete": a.remove,
+		"POST /steward/places/{id}/spot":   a.setSpot,
 
 		// What grows at the place; plants.go.
 		"GET /steward/places/{id}/plants":                   a.plants,
@@ -162,6 +164,10 @@ func (a app) index(w http.ResponseWriter, r *http.Request) {
 		v.Done = "Changes saved."
 	case "removed":
 		v.Done = "Place removed."
+	case "mapped":
+		v.Done = "Its spot on the map is saved."
+	case "unmapped":
+		v.Done = "It is off the map."
 	}
 
 	a.render.Render(w, r, http.StatusOK, "steward-places", v)
@@ -192,6 +198,13 @@ type formView struct {
 	Problems                   map[string]string
 	DeleteProblem              string
 	PlaceName                  string
+
+	// The map, for a place that is saved and stands on its own: where it
+	// is now, if anywhere, and the other places on the map as landmarks.
+	OnMap       bool
+	Spot        *placebus.Spot
+	Others      []placebus.Spot
+	SpotProblem string
 }
 
 func (a app) newForm(w http.ResponseWriter, r *http.Request) {
@@ -217,6 +230,7 @@ func (a app) editForm(w http.ResponseWriter, r *http.Request) {
 	v := viewOf(p)
 	v.CanHaveParent = !hasBands(all, p.ID)
 	v.options(all, p.ID, p.ParentID.String(), p.TrailAnchor)
+	v.mapOf(p, all)
 
 	a.render.Render(w, r, http.StatusOK, "place-form", v)
 }
@@ -311,9 +325,105 @@ func (a app) remove(w http.ResponseWriter, r *http.Request) {
 	v := viewOf(p)
 	v.CanHaveParent = !hasBands(all, p.ID)
 	v.options(all, p.ID, p.ParentID.String(), p.TrailAnchor)
+	v.mapOf(p, all)
 	v.DeleteProblem = problem
 
 	a.render.Render(w, r, http.StatusUnprocessableEntity, "place-form", v)
+}
+
+// ------------------------------------------------------------------ the map
+
+// The picker is drawn at a fixed size, so that a tap's position in it, which
+// is what the browser sends, can be turned into the drawing's units. Without
+// script that is the only way to know where on a picture somebody tapped:
+// an <input type="image"> sends the tap as at.x and at.y in CSS pixels from
+// its top-left corner, and nothing about how wide it was drawn. A map that
+// stretched to fit would send a different number for the same spot on every
+// screen. 280 is what fits inside a card on a 360-pixel phone; the box
+// scrolls sideways on anything narrower rather than squash the drawing.
+//
+// app.css draws .map-pick at this size, and the template's width and height
+// attributes are these numbers too; the three move together.
+const (
+	pickWidth  = 280
+	pickHeight = pickWidth * placebus.MapHeight / placebus.MapWidth
+)
+
+// setSpot puts the place where the steward tapped, or takes it off the map.
+//
+// A tap at exactly 0,0 is refused rather than saved. It is what a browser
+// sends when the picture is pressed from the keyboard, with no tap at all,
+// and saving it would put the place in the north-west corner of the woods.
+func (a app) setSpot(w http.ResponseWriter, r *http.Request) {
+	p, all, ok := a.load(w, r)
+	if !ok {
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "We could not read that. Open the page again and try once more.", http.StatusBadRequest)
+
+		return
+	}
+
+	var spot *placebus.Spot
+	done := "unmapped"
+
+	if r.PostFormValue("off") != "yes" {
+		x, errX := strconv.Atoi(r.PostFormValue("at.x"))
+		y, errY := strconv.Atoi(r.PostFormValue("at.y"))
+
+		if errX != nil || errY != nil || (x == 0 && y == 0) {
+			a.spotAgain(w, r, p, all, "Tap the map where the place is. The spot is saved as soon as you tap.")
+
+			return
+		}
+
+		spot = &placebus.Spot{
+			X: (x*placebus.MapWidth + pickWidth/2) / pickWidth,
+			Y: (y*placebus.MapHeight + pickHeight/2) / pickHeight,
+		}
+		done = "mapped"
+	}
+
+	_, err := a.places.SetSpot(r.Context(), p.ID, spot)
+
+	invalid, isInvalid := errors.AsType[placebus.Invalid](err)
+
+	switch {
+	case err == nil:
+		http.Redirect(w, r, IndexPath+"?done="+done, http.StatusSeeOther)
+	case isInvalid:
+		a.spotAgain(w, r, p, all, page.Sentence(invalid.Problem))
+	default:
+		a.fail(w, r, "setting a place's spot on the map", err)
+	}
+}
+
+// spotAgain shows the form once more with a problem at the map.
+func (a app) spotAgain(w http.ResponseWriter, r *http.Request, p placebus.Place, all []placebus.Place, problem string) {
+	v := viewOf(p)
+	v.CanHaveParent = !hasBands(all, p.ID)
+	v.options(all, p.ID, p.ParentID.String(), p.TrailAnchor)
+	v.mapOf(p, all)
+	v.SpotProblem = problem
+
+	a.render.Render(w, r, http.StatusUnprocessableEntity, "place-form", v)
+}
+
+// mapOf fills in the map for a place that can be on it.
+func (v *formView) mapOf(p placebus.Place, all []placebus.Place) {
+	if !p.TopLevel() {
+		return
+	}
+
+	v.OnMap, v.Spot = true, p.Spot
+
+	for _, o := range all {
+		if o.ID != p.ID && o.TopLevel() && o.Spot != nil {
+			v.Others = append(v.Others, *o.Spot)
+		}
+	}
 }
 
 // ------------------------------------------------------------------ the parts
@@ -429,6 +539,14 @@ func (a app) again(w http.ResponseWriter, r *http.Request, v formView, self type
 
 	v.CanHaveParent = self.Zero() || !hasBands(all, self)
 	v.options(all, self, f.ParentID.String(), f.TrailAnchor)
+
+	// The map is the place as saved, not as typed: the spot is its own
+	// form, and this refusal did not touch it.
+	for _, p := range all {
+		if p.ID == self && !self.Zero() {
+			v.mapOf(p, all)
+		}
+	}
 
 	a.render.Render(w, r, http.StatusUnprocessableEntity, "place-form", v)
 }

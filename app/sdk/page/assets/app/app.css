@@ -581,3 +581,33 @@ code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap
 .signup { margin-top: 20px; }
 .signup h2 { margin-top: 0; }
 .honeypot { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+
+/* The map on "Where are you working?", above its list twin. The drawing has
+   its own ground colour, so it sits on a white card to keep its edge. */
+.placemap { margin: 20px 0 0; padding: 8px; border: 1px solid var(--rule); border-radius: 14px; background: var(--sf-white); }
+.placemap svg { display: block; width: 100%; height: auto; }
+.placemap a:focus-visible { outline: none; }
+.placemap a:focus-visible circle:nth-of-type(2) { stroke: var(--sf-yellow); stroke-width: 8px; }
+
+/* A place's number on the map, beside its name in the list: the same blue
+   disc and white figure as its marker, so the two read as one. */
+.row-pin {
+  flex: 0 0 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--sf-blue);
+  color: var(--sf-white);
+  font: 700 16px var(--font-display);
+}
+
+/* The steward's picker. A fixed size, never stretched: the tap's position is
+   read in pixels, and placeapp turns it into the map's units knowing it is
+   280 by 182 (pickWidth, pickHeight). The box around it scrolls sideways on
+   a screen too narrow for it rather than letting the page do so. */
+.map-pick-box { overflow-x: auto; }
+.map-pick { position: relative; width: 280px; height: 182px; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
+.map-pick svg, .map-pick input { position: absolute; top: 0; left: 0; width: 280px; height: 182px; margin: 0; padding: 0; border: 0; }
+.map-pick input { cursor: crosshair; }

@@ -158,6 +158,52 @@ func TestTheListShowsPlacesWithoutTheirBands(t *testing.T) {
 	}
 }
 
+// The map has a numbered marker for each place on it, in list order, and the
+// list carries the same numbers; a place not on the map yet is listed with
+// none, and with no place on it the map is not drawn at all.
+func TestTheMapNumbersThePlacesOnItAsTheListDoes(t *testing.T) {
+	h, places := server(t)
+
+	var made []placebus.Place
+	for i, slug := range []string{"fire-pit", "st-joseph", "rain-garden"} {
+		p, err := places.Create(t.Context(), placebus.Fields{Slug: slug, Name: types.Text{EN: slug}, Sort: i})
+		if err != nil {
+			t.Fatalf("Create %s: %v", slug, err)
+		}
+		made = append(made, p)
+	}
+
+	if _, body := get(t, h, "/places", ""); strings.Contains(body, "<svg") || strings.Contains(body, "row-pin") {
+		t.Error("with nothing on the map, the map is drawn anyway")
+	}
+
+	// The fire pit and the rain garden on the map; St. Joseph not yet.
+	for _, p := range []placebus.Place{made[0], made[2]} {
+		if _, err := places.SetSpot(t.Context(), p.ID, &placebus.Spot{X: 600 - p.Sort, Y: 420}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, body := get(t, h, "/places", "")
+
+	for _, want := range []string{
+		`<a href="/places/fire-pit" aria-label="1. fire-pit">`,
+		`<a href="/places/rain-garden" aria-label="2. rain-garden">`,
+		`<circle cx="598" cy="420" r="27"`,
+		`href="/places/fire-pit"><span class="row-pin" aria-hidden="true">1</span>`,
+		`href="/places/rain-garden"><span class="row-pin" aria-hidden="true">2</span>`,
+		`href="/places/st-joseph"><div>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the map and its list have no %s", want)
+		}
+	}
+
+	if strings.Contains(body, `aria-label="3.`) || strings.Contains(body, `<a href="/places/st-joseph" aria-label`) {
+		t.Error("a place that is not on the map has a marker")
+	}
+}
+
 // What the QR code on the trail's signs leads to, before any day is on the
 // calendar: the welcome, the way to the places, and the way to the prayers
 // for a pilgrim who scanned the wrong sign.
