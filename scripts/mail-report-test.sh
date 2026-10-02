@@ -24,7 +24,7 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 export HOME="$TMP/home"
-mkdir -p "$HOME/stewards" "$HOME/public_html/other-app" "$TMP/bin"
+mkdir -p "$HOME/stewards" "$HOME/public_html/other-app" "$HOME/public_html/club" "$HOME/public_html/site/public" "$TMP/bin"
 
 # The crontab as a shared account might have it: our watchdog, a job that
 # discards its output, and three ways people paste credentials into cron.
@@ -38,6 +38,8 @@ MAILTO=steward@example.org
 0 6 * * * curl -s https://app:FAKEurlpass@backup.example.invalid/ >/dev/null
 0 7 * * * API_KEY=FAKEapikey2 ./sync.sh
 0 8 * * * ./job --secret FAKEsecretflag3 --id FAKEabcdefghijklmnopqrstuvwxyz
+*/5 * * * * public_html/club/supervise.sh start  # club
+*/15 * * * * cd -P ~/public_html/site/public && cd .. && php bin/console sitemap:build >/dev/null
 CRON
 cat > "$TMP/bin/crontab" <<FAKE
 #!/usr/bin/env bash
@@ -72,6 +74,46 @@ ENV
 
 printf 'person@example.com\n' > "$HOME/.forward"
 
+# An app started by its supervise.sh's path, with no cd.
+printf '[mail]\nfrom = "club@example.net"\npassword = "FAKEclubpass"\n' > "$HOME/public_html/club/config.toml"
+
+# A Symfony site: reached through public/, its settings in the directory
+# above, and its relay as a DSN with the password inside it.
+printf 'APP_SECRET=FAKEappsecret\nMAILER_DSN=smtp://site%%40example.net:FAKEdsnpass@relay.example.invalid:587\n' > "$HOME/public_html/site/.env.local"
+
+# The server's cron: Debian's, at a version that honours MAILFROM.
+cat > "$TMP/bin/dpkg-query" <<'FAKE'
+#!/usr/bin/env bash
+case "$*" in
+*Version*) printf '3.0pl1-162' ;;
+"-W cron") echo "cron	3.0pl1-162" ;;
+*) exit 1 ;;
+esac
+FAKE
+chmod +x "$TMP/bin/dpkg-query"
+
+# exim as the server answers: transports that sign with the From domain's
+# key from the panel's database, and plenty that do not sign at all.
+cat > "$TMP/bin/exim" <<'FAKE'
+#!/usr/bin/env bash
+case "$*" in
+-bV) echo "Exim version 4.96.2 #2" ;;
+"-bP qualify_domain") echo "qualify_domain = host.example.org" ;;
+"-bP primary_hostname") echo "primary_hostname = host.example.org" ;;
+"-bP transports") cat <<'T'
+remote_smtp_dkim transport:
+dkim_domain = ${domain:${address:$rh_from:}}
+dkim_private_key = ${lookup sqlite {SELECT key FROM dkimkey}{FAKEkeymaterial}}
+dkim_selector = ${lookup sqlite {SELECT selector FROM dkimkey}{$value}{default}}
+local_delivery transport:
+dkim_domain =
+dkim_selector =
+T
+;;
+esac
+FAKE
+chmod +x "$TMP/bin/exim"
+
 out="$(bash "$REPORT" stewards 2>&1)"
 has() { grep -qF -- "$1" <<<"$out"; }
 lacks() { ! grep -qF -- "$1" <<<"$out"; }
@@ -90,6 +132,15 @@ check "that its password is set, and no more" has "config.toml [mail] password i
 check "the other app, found from the crontab" has "~/public_html/other-app"
 check "its mail host" has ".env MAIL_HOST=relay.example.invalid"
 check "that its password is set" has ".env MAIL_PASSWORD is set (not shown)"
+check "that this cron honours MAILFROM" has "Debian cron 3.0pl1-162: MAILFROM is honoured"
+check "an app started by its supervise.sh's path" has "~/public_html/club"
+check "a PHP site, from the directory above public/" has "~/public_html/site"
+check "its DSN, with the password blanked" has ".env.local MAILER_DSN=smtp://site%40example.net:[redacted]@relay.example.invalid:587"
+check "and not the home directory's parent, from a cd .." \
+	bash -c '! grep -qxF "   $0" <<<"$1"' "$TMP" "$out"
+check "that exim signs with the From domain's key" has "with the key the hosting panel holds"
+check "each DKIM setting once, not every empty one" \
+	test "$(grep -c 'dkim_domain = ' <<<"$out")" -eq 1
 check "every domain it met, for DNS" \
 	grep -qE '^DOMAINS .*example\.com .*example\.net .*example\.org' <<<"$out"
 
@@ -124,7 +175,7 @@ for ((i = 0; i + 1 < ${#args[@]}; i += 2)); do
 	case "$type $name" in
 	"TXT example.org")                        v='"v=spf1 +a +mx ?all"' ;;
 	"TXT _dmarc.example.org")                 v='"v=DMARC1; p=quarantine"' ;;
-	"TXT default2503._domainkey.example.org") v='"v=DKIM1; k=rsa; p=MIIB"' ;;
+	"TXT default1810._domainkey.example.org") v='"v=DKIM1; k=rsa; p=MIIB"' ;;
 	"A example.org"|"A host.example.org")     v=192.0.2.10 ;;
 	*) continue ;;
 	esac
@@ -139,7 +190,7 @@ check "a host name is looked up with its domain" dns_has "   example.org"
 check "the domain's SPF" dns_has 'SPF:   "v=spf1 +a +mx ?all"'
 check "its DMARC" dns_has 'DMARC: "v=DMARC1; p=quarantine"'
 check "a DKIM key under a dated selector, named once" \
-	grep -qxF '      DKIM:  a key under: default2503' <<<"$dns"
+	grep -qxF '      DKIM:  a key under: default1810' <<<"$dns"
 check "a domain with none says so" dns_has "DKIM:  no key under any common selector"
 sed -i 's/^\t\*) continue ;;$/\t"TXT custom1._domainkey.example.net") v=p=MIIB ;;\n\t*) continue ;;/' "$TMP/bin/dig"
 check "SELECTOR= is tried as well" \

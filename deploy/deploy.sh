@@ -580,7 +580,9 @@ dns_report() {
 
 	local selectors=(default dkim mail k1 k2 s1 s2 selector1 selector2 key1 google)
 	[ -z "${SELECTOR:-}" ] || selectors+=("$SELECTOR")
-	for y in 20 21 22 23 24 25 26; do
+	# From 2010: schoenstatt.link's key is default1810, made in October
+	# 2018, which a sweep starting at 2020 reported as no key at all.
+	for y in 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26; do
 		for m in 01 02 03 04 05 06 07 08 09 10 11 12; do selectors+=("default$y$m"); done
 	done
 
