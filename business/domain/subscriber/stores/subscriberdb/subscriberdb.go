@@ -116,7 +116,7 @@ WHERE (SELECT count(*) FROM subscriber_mails WHERE email = ? AND sent_at > ?) < 
 // confirmation and keeps everything else -- its ID, its first sign-up time,
 // and its unsubscribe token. The WHERE on the upsert is what leaves a
 // confirmed row alone, in the same statement.
-func (s *Store) SetPending(ctx context.Context, sub subscriberbus.Subscriber, confirmHash []byte, expires time.Time) (types.ID, bool, error) {
+func (s *Store) SetPending(ctx context.Context, sub subscriberbus.Subscriber, confirmHash []byte, expires time.Time) (subscriberbus.Subscriber, bool, error) {
 	res, err := s.db.ExecContext(ctx, `
 INSERT INTO subscribers (id, email, lang, unsubscribe, confirm_hash, confirm_expires_at, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -128,20 +128,20 @@ WHERE confirmed_at IS NULL`,
 		sub.ID.String(), sub.Email.String(), string(sub.Lang), sub.Unsubscribe,
 		confirmHash, expires.UnixMilli(), sub.CreatedAt.UnixMilli())
 	if err != nil {
-		return types.ID{}, false, fmt.Errorf("saving the sign-up: %w", err)
+		return subscriberbus.Subscriber{}, false, fmt.Errorf("saving the sign-up: %w", err)
 	}
 
 	n, err := res.RowsAffected()
 	if err != nil {
-		return types.ID{}, false, fmt.Errorf("counting the rows changed: %w", err)
+		return subscriberbus.Subscriber{}, false, fmt.Errorf("counting the rows changed: %w", err)
 	}
 
 	got, err := s.ByEmail(ctx, sub.Email)
 	if err != nil {
-		return types.ID{}, false, err
+		return subscriberbus.Subscriber{}, false, err
 	}
 
-	return got.ID, n == 1, nil
+	return got, n == 1, nil
 }
 
 // Confirm is one UPDATE … RETURNING: the check and the use of the link are

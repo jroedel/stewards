@@ -114,6 +114,12 @@ type Request struct {
 	// Confirm is the credential for the confirmation link, when Outcome is
 	// Sent. It is not kept anywhere but the email.
 	Confirm string
+
+	// Unsubscribe is the address's unsubscribe token, when Outcome is Sent,
+	// for the confirmation email's "if you did not sign up" link. Using it
+	// deletes the pending row at once, rather than leaving the address on
+	// file until the confirmation expires a week later.
+	Unsubscribe string
 }
 
 // ErrDenied is every failed confirmation: unknown, used, expired or garbled.
@@ -135,9 +141,10 @@ type Storer interface {
 
 	// SetPending adds s as pending with the given confirmation, or gives an
 	// existing pending row the new confirmation in place of the old. It
-	// reports the row's ID and false when the address is confirmed already,
-	// and then changes nothing.
-	SetPending(ctx context.Context, s Subscriber, confirmHash []byte, expires time.Time) (types.ID, bool, error)
+	// returns the row as it now stands -- an existing row keeps its own ID
+	// and unsubscribe token -- and false when the address is confirmed
+	// already, and then changes nothing.
+	SetPending(ctx context.Context, s Subscriber, confirmHash []byte, expires time.Time) (Subscriber, bool, error)
 
 	// Confirm marks the pending row id confirmed at now, as one statement,
 	// if confirmHash is its confirmation and it has not expired, and
@@ -201,7 +208,7 @@ func (b *Business) Request(ctx context.Context, email types.Email, lang types.La
 	}
 
 	secret := newSecret()
-	id, pending, err := b.store.SetPending(ctx, Subscriber{
+	row, pending, err := b.store.SetPending(ctx, Subscriber{
 		ID: types.NewID(), Email: email, Lang: lang, CreatedAt: now, Unsubscribe: newSecret(),
 	}, hash(secret), now.Add(ConfirmLife))
 	if err != nil {
@@ -211,10 +218,10 @@ func (b *Business) Request(ctx context.Context, email types.Email, lang types.La
 	// Confirmed between the lookup and here, from another tab: nothing to
 	// send. The claimed mail is not given back; it is one of three.
 	if !pending {
-		return Request{Outcome: AlreadyOn, SubscriberID: id}, nil
+		return Request{Outcome: AlreadyOn, SubscriberID: row.ID}, nil
 	}
 
-	return Request{Outcome: Sent, SubscriberID: id, Confirm: id.String() + "." + secret}, nil
+	return Request{Outcome: Sent, SubscriberID: row.ID, Confirm: row.ID.String() + "." + secret, Unsubscribe: row.Unsubscribe}, nil
 }
 
 // Confirm puts the holder of a confirmation link on the list.

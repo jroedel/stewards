@@ -280,3 +280,36 @@ func photos(t *testing.T, db *sql.DB) *photobus.Business {
 
 	return photobus.NewBusiness(photodb.NewStore(db), files, nil)
 }
+
+// Somebody signed up by a stranger removes their address from the
+// confirmation itself, and it is gone at once rather than in a week.
+func TestTheConfirmationLetsAStrangerRemoveTheirAddress(t *testing.T) {
+	s := serve(t)
+
+	s.do(http.MethodPost, "/subscribe", url.Values{"email": {"walker@example.org"}}, false)
+
+	m, _ := s.mail.Last()
+	if !strings.HasPrefix(m.Text, "Thank you for signing up") || !strings.Contains(m.Text, "If you did not sign up for this") {
+		t.Errorf("the confirmation reads:\n%s", m.Text)
+	}
+
+	confirm := s.link("https://stewards.example.invalid/subscribe/confirm?t=")
+	leave := s.link("https://stewards.example.invalid/unsubscribe?t=")
+
+	if n, _ := s.list.PendingCount(t.Context()); n != 1 {
+		t.Fatalf("pending %d before removing", n)
+	}
+
+	if w := s.do(http.MethodPost, "/unsubscribe", url.Values{"t": {token(t, leave)}}, false); !strings.Contains(w.Body.String(), "off the list") {
+		t.Errorf("removing: %d", w.Code)
+	}
+
+	if n, _ := s.list.PendingCount(t.Context()); n != 0 {
+		t.Errorf("pending %d after removing, want 0", n)
+	}
+
+	// And the confirm link no longer has anything to confirm.
+	if w := s.do(http.MethodPost, "/subscribe/confirm", url.Values{"t": {token(t, confirm)}}, false); !strings.Contains(w.Body.String(), "expired or has already been used") {
+		t.Errorf("confirming a removed address: %d", w.Code)
+	}
+}

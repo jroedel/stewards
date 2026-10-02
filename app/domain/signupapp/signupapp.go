@@ -194,7 +194,7 @@ func (a app) request(w http.ResponseWriter, r *http.Request) {
 		"outcome", req.Outcome, "subscriber_id", idOrNone(req.SubscriberID))
 
 	if req.Outcome == subscriberbus.Sent {
-		if err := a.cfg.Mail.Send(r.Context(), confirmation(email, a.cfg.BaseURL+confirmPath+"?t="+url.QueryEscape(req.Confirm))); err != nil {
+		if err := a.cfg.Mail.Send(r.Context(), confirmation(email, a.cfg.BaseURL+confirmPath+"?t="+url.QueryEscape(req.Confirm), a.leaveURL(req.Unsubscribe))); err != nil {
 			a.cfg.Log.ErrorContext(r.Context(), "a confirmation could not be sent", "request_id", web.RequestIDFrom(r.Context()),
 				"subscriber_id", req.SubscriberID.String(), "error", err)
 			a.cfg.Render.Render(w, r, http.StatusServiceUnavailable, "signup-form", formView{Copy: words, Email: typed, Problem: words.CannotSend})
@@ -291,16 +291,21 @@ func (a app) leaveURL(token string) string {
 
 // ------------------------------------------------------------------ the emails
 
-// confirmation is the one email a stranger can cause, so it says plainly
-// what happens if it was not wanted: nothing.
-func confirmation(to types.Email, link string) mail.Message {
+// confirmation is the one email a stranger can cause, so it ends with a way
+// out for anybody who did not ask for it: the same unsubscribe link every
+// later email carries, which deletes the address at once. Ignoring it works
+// too -- nobody is on the list without pressing the confirm button -- but a
+// person who did not sign up should not have to know that.
+func confirmation(to types.Email, link, leave string) mail.Message {
 	return mail.Message{
 		To:      to.String(),
 		Subject: "Confirm your email for stewardship days",
-		Text: "Someone, we hope you, asked to hear about stewardship days on the Schoenstatt Fathers' Trail of the Saints.\r\n\r\n" +
-			"To confirm, open this link and tap the button:\r\n\r\n" +
+		Text: "Thank you for signing up to receive notifications about future stewardship days on the Schoenstatt Fathers' Trail of the Saints.\r\n\r\n" +
+			"To confirm your email address, open this link and tap the button:\r\n\r\n" +
 			link + "\r\n\r\n" +
-			"The link works for seven days. If you didn't ask, ignore this email and you won't hear from us.\r\n\r\n" +
+			"The link works for seven days.\r\n\r\n" +
+			"If you did not sign up for this, you can remove your address here:\r\n" +
+			leave + "\r\n\r\n" +
 			"-- The garden stewards\r\n",
 	}
 }
@@ -309,7 +314,7 @@ func welcome(to types.Email, base, leave string) mail.Message {
 	return mail.Message{
 		To:      to.String(),
 		Subject: "You're on the list for stewardship days",
-		Text: "Thank you for signing up. We'll email you when a stewardship day is scheduled on the Schoenstatt Fathers' Trail of the Saints.\r\n\r\n" +
+		Text: "Your address is confirmed. We'll email you when a stewardship day is scheduled on the Schoenstatt Fathers' Trail of the Saints.\r\n\r\n" +
 			"You don't need any experience or special skills. We'll show you what to do.\r\n\r\n" +
 			"The days already scheduled are here:\r\n" + base + "/\r\n\r\n" +
 			"To stop these emails at any time:\r\n" + leave + "\r\n\r\n" +
