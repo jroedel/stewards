@@ -1,8 +1,7 @@
-{{define "title"}}On the list · Garden stewards{{end}}
+{{define "title"}}Stewardship days · Garden stewards{{end}}
 {{define "content"}}{{$l := .Lang}}{{with .Data}}
 <p class="eyebrow">{{say $l .Copy.Eyebrow}}</p>
-<h1>{{say $l .Copy.SentTitle}}</h1>
-<p class="lead">{{say $l .Copy.SentLead}}</p>
-<p class="aside">{{say $l .Copy.SentSpam}}</p>
+<h1>{{say $l .Copy.OldLinkTitle}}</h1>
+<p class="lead">{{say $l .Copy.OldLinkLead}}</p>
 <a class="onward" href="/"><span>{{say $l .Copy.SeeDays}}</span><span aria-hidden="true">›</span></a>
 {{end}}{{end}}

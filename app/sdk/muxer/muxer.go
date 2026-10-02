@@ -48,7 +48,7 @@ type Config struct {
 	Workdays *workdaybus.Business
 
 	// Subscribers may be nil, and with no Mail or no BaseURL it is unused:
-	// the email sign-up is mounted only when it can send its confirmation.
+	// the email sign-up is mounted only when it can send its welcome.
 	Subscribers *subscriberbus.Business
 
 	// BaseURL is the public origin. Empty means sign-in is off: its routes

@@ -215,7 +215,7 @@ func expectedSchema() sqldb.Expected {
 }
 
 // prune clears expired sign-in links and sessions, and sign-ups to the email
-// list that were never confirmed, at startup and then every six hours.
+// list left unconfirmed by its first version, at startup and then every six hours.
 // Housekeeping: nothing depends on it for correctness, since every check
 // reads the expiry, so a failure is logged and the next round tries again.
 func prune(ctx context.Context, log *slog.Logger, users *userbus.Business, subscribers *subscriberbus.Business) {
@@ -228,7 +228,7 @@ func prune(ctx context.Context, log *slog.Logger, users *userbus.Business, subsc
 		}
 
 		if err := subscribers.Prune(ctx); err != nil && ctx.Err() == nil {
-			log.Warn("unconfirmed sign-ups could not be pruned", "error", err)
+			log.Warn("the email list could not be pruned", "error", err)
 		}
 
 		select {
