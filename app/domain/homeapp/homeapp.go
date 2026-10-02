@@ -63,7 +63,7 @@ type App struct {
 // New constructs one. signUp says whether to show the email sign-up form,
 // which signupapp answers; it is off when that app is not mounted -- no
 // relay, or sign-in off -- because a form that can never send its
-// confirmation is worse than no form.
+// welcome is worse than no form.
 func New(log *slog.Logger, render *page.Renderer, places Places, days Days, signUp bool) *App {
 	return &App{log: log, render: render, places: places, days: days, signUp: signUp}
 }

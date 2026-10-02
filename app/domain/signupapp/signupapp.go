@@ -2,9 +2,9 @@
 // home page posts here, the confirmation and unsubscribe links land here, and
 // the stewards see who is on the list here.
 //
-// The rules -- double opt-in, the caps, a page that says the same thing
-// whoever is asking -- are subscriberbus's; see there for why each one is.
-// What this package adds is the two emails and the pages around them.
+// The rules -- one step to sign up, the caps, a page that says the same
+// thing whoever is asking -- are subscriberbus's; see there for why each one
+// is. What this package adds is the welcome email and the pages around it.
 //
 // # The honeypot
 //
@@ -19,13 +19,20 @@
 // A subscriber is logged by their row's ID. The address is on the steward
 // screen, behind sign-in, and in the mail itself, and nowhere else.
 //
-// # Why every link lands on a button
+// # Why the unsubscribe link lands on a button
 //
 // Mail apps open the links in a message to check them before the reader
-// does, which is why the sign-in link does the same (authapp). A
-// confirmation used up by a scanner would put on the list somebody who never
-// pressed anything; an unsubscribe link opened by one would take somebody off
-// who never asked.
+// does, which is why the sign-in link does the same (authapp). An
+// unsubscribe link that acted on being opened would take people off the
+// list who never asked.
+//
+// # The confirm address
+//
+// /subscribe/confirm is where the links in the first version's confirmation
+// emails led, before sign-up became one step. It is kept as a page saying
+// to sign up again from the home page, which now puts them straight on the
+// list, so that a link in an inbox from those few days lands somewhere
+// rather than on a 404.
 package signupapp
 
 import (
@@ -65,16 +72,14 @@ const Honeypot = "website"
 // List is what this app needs from the subscriber rules.
 type List interface {
 	Request(ctx context.Context, email types.Email, lang types.Lang) (subscriberbus.Request, error)
-	Confirm(ctx context.Context, presented string) (subscriberbus.Subscriber, error)
 	Unsubscribe(ctx context.Context, token string) error
 	Remove(ctx context.Context, id types.ID) error
-	Confirmed(ctx context.Context) ([]subscriberbus.Subscriber, error)
-	PendingCount(ctx context.Context) (int, error)
+	All(ctx context.Context) ([]subscriberbus.Subscriber, error)
 }
 
-// Config is what this app needs. Mail is required: a sign-up that cannot send
-// its confirmation is one that can never finish, so main mounts this app only
-// when a relay is configured.
+// Config is what this app needs. Mail is required: the welcome is what tells
+// a person they are on the list and how to leave it, so main mounts this app
+// only when a relay is configured.
 type Config struct {
 	Log     *slog.Logger
 	Render  *page.Renderer
@@ -91,8 +96,7 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 
 	mux.HandleFunc("POST "+FormPath, a.request)
 	mux.HandleFunc("GET "+sentPath, a.sent)
-	mux.HandleFunc("GET "+confirmPath, a.confirmForm)
-	mux.HandleFunc("POST "+confirmPath, a.confirm)
+	mux.HandleFunc("GET "+confirmPath, a.confirmGone)
 	mux.HandleFunc("GET "+leavePath, a.leaveForm)
 	mux.HandleFunc("POST "+leavePath, a.leave)
 
@@ -109,12 +113,11 @@ type wording struct {
 
 	SentTitle, SentLead, SentSpam types.Text
 
-	ConfirmTitle, ConfirmLead, ConfirmButton, WhyButton types.Text
-	OnTitle, OnLead, LinkFailed, SignUpAgain            types.Text
+	OldLinkTitle, OldLinkLead types.Text
 
 	LeaveTitle, LeaveLead, LeaveButton, OffTitle, OffLead types.Text
 
-	SeeDays, CannotSend types.Text
+	SeeDays types.Text
 }
 
 var words = wording{
@@ -126,18 +129,12 @@ var words = wording{
 	FormButton: types.Text{EN: "Keep me posted"},
 	NotAnEmail: types.Text{EN: "That doesn't look like an email address. Check it for a typo."},
 
-	SentTitle: types.Text{EN: "Check your email"},
-	SentLead:  types.Text{EN: "We've sent you a link. Open it and tap the button to finish signing up."},
-	SentSpam:  types.Text{EN: "If it isn't there in a few minutes, look in your spam folder."},
+	SentTitle: types.Text{EN: "You're on the list"},
+	SentLead:  types.Text{EN: "Thank you. We'll email you when a stewardship day is scheduled, and we've sent you a welcome now with a link to stop the emails any time."},
+	SentSpam:  types.Text{EN: "If the welcome isn't there in a few minutes, look in your spam folder, or check the address for a typo and sign up again."},
 
-	ConfirmTitle:  types.Text{EN: "One more tap"},
-	ConfirmLead:   types.Text{EN: "Press the button to finish signing up for news of stewardship days."},
-	ConfirmButton: types.Text{EN: "Yes, keep me posted"},
-	WhyButton:     types.Text{EN: "Why a button? Mail apps open the links in a message to check them. If opening the link were enough, a mail app could sign you up without you."},
-	OnTitle:       types.Text{EN: "You're on the list"},
-	OnLead:        types.Text{EN: "Thank you. We'll email you when a stewardship day is scheduled. Every email has a link to stop them."},
-	LinkFailed:    types.Text{EN: "That link has expired or has already been used. If you're not on the list yet, sign up again from the home page."},
-	SignUpAgain:   types.Text{EN: "Back to the home page"},
+	OldLinkTitle: types.Text{EN: "No need to confirm any more"},
+	OldLinkLead:  types.Text{EN: "Signing up is one step now. If you're not on the list yet, sign up from the home page and you'll be on it straight away."},
 
 	LeaveTitle:  types.Text{EN: "Stop these emails?"},
 	LeaveLead:   types.Text{EN: "Press the button and we won't email you about stewardship days any more."},
@@ -145,8 +142,7 @@ var words = wording{
 	OffTitle:    types.Text{EN: "You're off the list"},
 	OffLead:     types.Text{EN: "We won't email you about stewardship days any more. You're welcome on the trail any time."},
 
-	SeeDays:    types.Text{EN: "See the days scheduled"},
-	CannotSend: types.Text{EN: "We couldn't send the email just now. Try again in a few minutes."},
+	SeeDays: types.Text{EN: "See the days scheduled"},
 }
 
 // ------------------------------------------------------------------ signing up
@@ -191,15 +187,15 @@ func (a app) request(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.cfg.Log.InfoContext(r.Context(), "sign-up", "request_id", web.RequestIDFrom(r.Context()),
-		"outcome", req.Outcome, "subscriber_id", idOrNone(req.SubscriberID))
+		"outcome", req.Outcome, "subscriber_id", idOrNone(req.Subscriber.ID))
 
-	if req.Outcome == subscriberbus.Sent {
-		if err := a.cfg.Mail.Send(r.Context(), confirmation(email, a.cfg.BaseURL+confirmPath+"?t="+url.QueryEscape(req.Confirm))); err != nil {
-			a.cfg.Log.ErrorContext(r.Context(), "a confirmation could not be sent", "request_id", web.RequestIDFrom(r.Context()),
-				"subscriber_id", req.SubscriberID.String(), "error", err)
-			a.cfg.Render.Render(w, r, http.StatusServiceUnavailable, "signup-form", formView{Copy: words, Email: typed, Problem: words.CannotSend})
-
-			return
+	// They are on the list whether or not the welcome goes; a failure is
+	// logged for a steward to see, and not shown, since signing up again
+	// would only find them on the list already and send nothing.
+	if req.Outcome == subscriberbus.Added {
+		if err := a.cfg.Mail.Send(r.Context(), welcome(req.Subscriber.Email, a.cfg.BaseURL, a.leaveURL(req.Subscriber.Unsubscribe))); err != nil {
+			a.cfg.Log.ErrorContext(r.Context(), "a welcome could not be sent", "request_id", web.RequestIDFrom(r.Context()),
+				"subscriber_id", req.Subscriber.ID.String(), "error", err)
 		}
 	}
 
@@ -210,56 +206,16 @@ func (a app) sent(w http.ResponseWriter, r *http.Request) {
 	a.cfg.Render.Render(w, r, http.StatusOK, "signup-sent", formView{Copy: words})
 }
 
-// ------------------------------------------------------------------ confirming
+// ------------------------------------------------------------------ old confirm links
 
 type linkView struct {
-	Copy    wording
-	Token   string
-	Done    bool
-	Problem types.Text
+	Copy  wording
+	Token string
+	Done  bool
 }
 
-func (a app) confirmForm(w http.ResponseWriter, r *http.Request) {
-	v := linkView{Copy: words, Token: r.URL.Query().Get("t")}
-	if v.Token == "" {
-		v.Problem = words.LinkFailed
-	}
-
-	a.cfg.Render.Render(w, r, http.StatusOK, "signup-confirm", v)
-}
-
-func (a app) confirm(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "We could not read that. Open the link again and try once more.", http.StatusBadRequest)
-
-		return
-	}
-
-	s, err := a.cfg.List.Confirm(r.Context(), r.PostFormValue("t"))
-
-	switch {
-	case errors.Is(err, subscriberbus.ErrDenied):
-		a.cfg.Render.Render(w, r, http.StatusUnprocessableEntity, "signup-confirm", linkView{Copy: words, Problem: words.LinkFailed})
-
-		return
-	case err != nil:
-		a.fail(w, r, "confirming a sign-up", err)
-
-		return
-	}
-
-	a.cfg.Log.InfoContext(r.Context(), "sign-up confirmed", "request_id", web.RequestIDFrom(r.Context()), "subscriber_id", s.ID.String())
-
-	// The welcome carries their unsubscribe link, so that from the first
-	// day they hold a way off the list -- including off the emails a steward
-	// writes by hand, which carry none. Not being sent is logged and not
-	// shown: they are on the list either way.
-	if err := a.cfg.Mail.Send(r.Context(), welcome(s.Email, a.cfg.BaseURL, a.leaveURL(s.Unsubscribe))); err != nil {
-		a.cfg.Log.WarnContext(r.Context(), "a welcome could not be sent", "request_id", web.RequestIDFrom(r.Context()),
-			"subscriber_id", s.ID.String(), "error", err)
-	}
-
-	a.cfg.Render.Render(w, r, http.StatusOK, "signup-confirm", linkView{Copy: words, Done: true})
+func (a app) confirmGone(w http.ResponseWriter, r *http.Request) {
+	a.cfg.Render.Render(w, r, http.StatusOK, "signup-old-link", linkView{Copy: words})
 }
 
 // ------------------------------------------------------------------ leaving
@@ -291,28 +247,19 @@ func (a app) leaveURL(token string) string {
 
 // ------------------------------------------------------------------ the emails
 
-// confirmation is the one email a stranger can cause, so it says plainly
-// what happens if it was not wanted: nothing.
-func confirmation(to types.Email, link string) mail.Message {
-	return mail.Message{
-		To:      to.String(),
-		Subject: "Confirm your email for stewardship days",
-		Text: "Someone, we hope you, asked to hear about stewardship days on the Schoenstatt Fathers' Trail of the Saints.\r\n\r\n" +
-			"To confirm, open this link and tap the button:\r\n\r\n" +
-			link + "\r\n\r\n" +
-			"The link works for seven days. If you didn't ask, ignore this email and you won't hear from us.\r\n\r\n" +
-			"-- The garden stewards\r\n",
-	}
-}
-
+// welcome is the one email a stranger can cause -- anybody can type
+// anybody's address -- so besides the thanks it says plainly what to do if
+// it was not wanted, and the link off the list is in it from the first day.
+// The emails a steward writes by hand carry no such link, which is another
+// reason this one must.
 func welcome(to types.Email, base, leave string) mail.Message {
 	return mail.Message{
 		To:      to.String(),
-		Subject: "You're on the list for stewardship days",
-		Text: "Thank you for signing up. We'll email you when a stewardship day is scheduled on the Schoenstatt Fathers' Trail of the Saints.\r\n\r\n" +
-			"You don't need any experience or special skills. We'll show you what to do.\r\n\r\n" +
+		Subject: "Thank you for signing up for stewardship days",
+		Text: "Thank you for signing up to receive notifications about future stewardship days on the Schoenstatt Fathers' Trail of the Saints.\r\n\r\n" +
+			"You don't need any experience or special skills.\r\n\r\n" +
 			"The days already scheduled are here:\r\n" + base + "/\r\n\r\n" +
-			"To stop these emails at any time:\r\n" + leave + "\r\n\r\n" +
+			"If you did not sign up for this, or want to stop these emails at any time, unsubscribe here:\r\n" + leave + "\r\n\r\n" +
 			"-- The garden stewards\r\n",
 	}
 }
@@ -324,28 +271,20 @@ type stewardRow struct {
 }
 
 type stewardView struct {
-	Rows    []stewardRow
-	All     string // every address, for the Bcc line
-	Pending int
-	Done    string
+	Rows []stewardRow
+	All  string // every address, for the Bcc line
+	Done string
 }
 
 func (a app) list(w http.ResponseWriter, r *http.Request) {
-	on, err := a.cfg.List.Confirmed(r.Context())
+	on, err := a.cfg.List.All(r.Context())
 	if err != nil {
 		a.fail(w, r, "reading the list", err)
 
 		return
 	}
 
-	pending, err := a.cfg.List.PendingCount(r.Context())
-	if err != nil {
-		a.fail(w, r, "counting pending sign-ups", err)
-
-		return
-	}
-
-	v := stewardView{Pending: pending}
+	var v stewardView
 
 	var all []string
 
@@ -357,7 +296,7 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 
 		v.Rows = append(v.Rows, stewardRow{
 			ID: s.ID.String(), Email: s.Email.String(), Lang: lang,
-			Since: page.Date(s.ConfirmedAt).EN,
+			Since: page.Date(s.CreatedAt).EN,
 		})
 		all = append(all, s.Email.String())
 	}

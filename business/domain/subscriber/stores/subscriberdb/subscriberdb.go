@@ -1,25 +1,40 @@
 // Package subscriberdb stores the people who want to hear about stewardship
-// days, and a record of the confirmation mail sent to them.
+// days, and a record of the welcome mail sent to them.
 //
 // # Two tables
 //
-// subscribers is one row per address, unique, pending or confirmed.
-// subscriber_mails is one row per confirmation email sent, kept a day, and is
-// what the caps count. It holds the address rather than a subscriber's ID so
-// that the cap can be claimed before any subscriber row exists; see
-// subscriberbus.Business.Request for why that order matters.
+// subscribers is one row per address, unique. subscriber_mails is one row per
+// welcome sent, kept a day, and is what the caps count. It holds the address
+// rather than a subscriber's ID so that the cap can be claimed before any
+// subscriber row exists; see subscriberbus.Business.Request for why that
+// order matters.
 //
-// # What is kept in the clear
+// # What is left of the double opt-in
 //
-// A confirmation secret is kept only as its hash, as a sign-in link's is:
-// it adds an address to the list, and mail is archived and forwarded.
+// The first version of the list asked people to confirm from an email before
+// they were on it, and kept a pending row with the confirmation's hash until
+// they did. That was dropped (subscriberbus says why), and three things
+// remain of it here, each on purpose:
 //
-// The unsubscribe token is kept as it is. Every email the stewards send must
-// carry it, long after the subscriber signed up, so it has to be readable
-// when the mail is written; and all it can do is take one address off the
-// list, which is what its holder may do anyway. Hashing it would mean a new
-// token in every email and every older link dead, which is the wrong way
-// round for a link whose whole job is to work whenever it is clicked.
+//   - confirm_hash and confirm_expires_at stay in the CREATE, unwritten.
+//     Every database made by that version has them and SQLite cannot drop a
+//     column cheaply, so a fresh database gets them too, rather than two
+//     shapes of the same table in the wild.
+//   - confirmed_at is when the address went on the list; NULL is a pending
+//     row from that version, and only such a row can be NULL. A pending
+//     address that signs up again goes on the list then (Add), and one that
+//     never does is deleted by Prune once its old link has expired.
+//   - All reads only rows with confirmed_at set, so a pending row is never
+//     on the list without its owner having asked a second time.
+//
+// # The unsubscribe token is kept as it is
+//
+// Every email the stewards send must carry it, long after the subscriber
+// signed up, so it has to be readable when the mail is written; and all it
+// can do is take one address off the list, which is what its holder may do
+// anyway. Hashing it would mean a new token in every email and every older
+// link dead, which is the wrong way round for a link whose whole job is to
+// work whenever it is clicked.
 package subscriberdb
 
 import (
@@ -46,7 +61,7 @@ var _ subscriberbus.Storer = (*Store)(nil)
 
 // Expected is what CheckSchema verifies at startup and on every /healthz.
 var Expected = sqldb.Expected{
-	"subscribers":      {"id", "email", "lang", "unsubscribe", "confirm_hash", "confirm_expires_at", "confirmed_at", "created_at"},
+	"subscribers":      {"id", "email", "lang", "unsubscribe", "confirmed_at", "created_at"},
 	"subscriber_mails": {"email", "sent_at"},
 }
 
@@ -59,11 +74,12 @@ CREATE TABLE IF NOT EXISTS subscribers (
     lang                TEXT    NOT NULL,
     unsubscribe         TEXT    NOT NULL UNIQUE,
 
-    -- The pending confirmation, cleared when it is used.
+    -- Left from the double opt-in, and no longer written; see above.
     confirm_hash        BLOB,
     confirm_expires_at  INTEGER,
 
-    -- NULL while pending.
+    -- When the address went on the list. NULL only on a pending row left
+    -- from the double opt-in.
     confirmed_at        INTEGER,
     created_at          INTEGER NOT NULL
 ) STRICT;
@@ -84,9 +100,11 @@ CREATE INDEX IF NOT EXISTS subscriber_mails_sent ON subscriber_mails (sent_at);
 	return nil
 }
 
-// ByEmail is the row for an address.
+// ByEmail is the row for an address on the list. A pending row left from
+// the double opt-in is not found, so that signing up again reaches Add,
+// which puts it on the list.
 func (s *Store) ByEmail(ctx context.Context, email types.Email) (subscriberbus.Subscriber, error) {
-	return s.one(ctx, `WHERE email = ?`, email.String())
+	return s.one(ctx, `WHERE email = ? AND confirmed_at IS NOT NULL`, email.String())
 }
 
 // ClaimMail is one INSERT … SELECT … WHERE, so two requests at the same
@@ -112,57 +130,37 @@ WHERE (SELECT count(*) FROM subscriber_mails WHERE email = ? AND sent_at > ?) < 
 	return n == 1, nil
 }
 
-// SetPending inserts the row, or on an existing pending address replaces its
-// confirmation and keeps everything else -- its ID, its first sign-up time,
-// and its unsubscribe token. The WHERE on the upsert is what leaves a
-// confirmed row alone, in the same statement.
-func (s *Store) SetPending(ctx context.Context, sub subscriberbus.Subscriber, confirmHash []byte, expires time.Time) (types.ID, bool, error) {
+// Add inserts the row, already on the list. On an existing address it
+// changes nothing -- unless the row is pending from the double opt-in, which
+// it puts on the list then, keeping its ID and unsubscribe token: they asked
+// twice. The WHERE on the upsert is what leaves a row on the list alone, in
+// the same statement.
+func (s *Store) Add(ctx context.Context, sub subscriberbus.Subscriber) (subscriberbus.Subscriber, bool, error) {
 	res, err := s.db.ExecContext(ctx, `
-INSERT INTO subscribers (id, email, lang, unsubscribe, confirm_hash, confirm_expires_at, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO subscribers (id, email, lang, unsubscribe, confirmed_at, created_at)
+VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT (email) DO UPDATE SET
-    confirm_hash = excluded.confirm_hash,
-    confirm_expires_at = excluded.confirm_expires_at,
+    confirmed_at = excluded.confirmed_at,
+    confirm_hash = NULL, confirm_expires_at = NULL,
     lang = excluded.lang
 WHERE confirmed_at IS NULL`,
 		sub.ID.String(), sub.Email.String(), string(sub.Lang), sub.Unsubscribe,
-		confirmHash, expires.UnixMilli(), sub.CreatedAt.UnixMilli())
+		sub.CreatedAt.UnixMilli(), sub.CreatedAt.UnixMilli())
 	if err != nil {
-		return types.ID{}, false, fmt.Errorf("saving the sign-up: %w", err)
+		return subscriberbus.Subscriber{}, false, fmt.Errorf("adding the address: %w", err)
 	}
 
 	n, err := res.RowsAffected()
 	if err != nil {
-		return types.ID{}, false, fmt.Errorf("counting the rows changed: %w", err)
+		return subscriberbus.Subscriber{}, false, fmt.Errorf("counting the rows changed: %w", err)
 	}
 
 	got, err := s.ByEmail(ctx, sub.Email)
 	if err != nil {
-		return types.ID{}, false, err
+		return subscriberbus.Subscriber{}, false, err
 	}
 
-	return got.ID, n == 1, nil
-}
-
-// Confirm is one UPDATE … RETURNING: the check and the use of the link are
-// the same statement, so it works once.
-func (s *Store) Confirm(ctx context.Context, id types.ID, confirmHash []byte, now time.Time) (subscriberbus.Subscriber, bool, error) {
-	row := s.db.QueryRowContext(ctx, `
-UPDATE subscribers SET confirmed_at = ?, confirm_hash = NULL, confirm_expires_at = NULL
-WHERE id = ? AND confirmed_at IS NULL AND confirm_hash = ? AND confirm_expires_at > ?
-RETURNING `+columns,
-		now.UnixMilli(), id.String(), confirmHash, now.UnixMilli())
-
-	sub, err := scan(row)
-
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return subscriberbus.Subscriber{}, false, nil
-	case err != nil:
-		return subscriberbus.Subscriber{}, false, fmt.Errorf("confirming: %w", err)
-	}
-
-	return sub, true, nil
+	return got, n == 1, nil
 }
 
 // Unsubscribe deletes the row with the token.
@@ -199,8 +197,9 @@ func (s *Store) Remove(ctx context.Context, id types.ID) error {
 	return nil
 }
 
-// Confirmed is every confirmed row, earliest first.
-func (s *Store) Confirmed(ctx context.Context) ([]subscriberbus.Subscriber, error) {
+// All is every row on the list, earliest first; a pending row left from the
+// double opt-in is not on it.
+func (s *Store) All(ctx context.Context) ([]subscriberbus.Subscriber, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+columns+` FROM subscribers WHERE confirmed_at IS NOT NULL ORDER BY confirmed_at, id`)
 	if err != nil {
 		return nil, fmt.Errorf("reading the list: %w", err)
@@ -225,17 +224,8 @@ func (s *Store) Confirmed(ctx context.Context) ([]subscriberbus.Subscriber, erro
 	return out, nil
 }
 
-// PendingCount is the pending rows whose link still works.
-func (s *Store) PendingCount(ctx context.Context, now time.Time) (int, error) {
-	var n int
-	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM subscribers WHERE confirmed_at IS NULL AND confirm_expires_at > ?`, now.UnixMilli()).Scan(&n); err != nil {
-		return 0, fmt.Errorf("counting pending sign-ups: %w", err)
-	}
-
-	return n, nil
-}
-
-// Prune deletes expired pending rows and old mail records.
+// Prune deletes old mail records, and pending rows from the double opt-in
+// whose link has expired.
 func (s *Store) Prune(ctx context.Context, now, mailsBefore time.Time) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM subscribers WHERE confirmed_at IS NULL AND confirm_expires_at <= ?`, now.UnixMilli()); err != nil {
 		return fmt.Errorf("pruning expired sign-ups: %w", err)
@@ -248,7 +238,7 @@ func (s *Store) Prune(ctx context.Context, now, mailsBefore time.Time) error {
 	return nil
 }
 
-const columns = `id, email, lang, unsubscribe, confirmed_at, created_at`
+const columns = `id, email, lang, unsubscribe, created_at`
 
 func (s *Store) one(ctx context.Context, where string, args ...any) (subscriberbus.Subscriber, error) {
 	sub, err := scan(s.db.QueryRowContext(ctx, `SELECT `+columns+` FROM subscribers `+where, args...))
@@ -263,11 +253,10 @@ func scan(row interface{ Scan(...any) error }) (subscriberbus.Subscriber, error)
 	var (
 		sub             subscriberbus.Subscriber
 		id, email, lang string
-		confirmed       sql.NullInt64
 		created         int64
 	)
 
-	if err := row.Scan(&id, &email, &lang, &sub.Unsubscribe, &confirmed, &created); err != nil {
+	if err := row.Scan(&id, &email, &lang, &sub.Unsubscribe, &created); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return sub, err
 		}
@@ -286,10 +275,6 @@ func scan(row interface{ Scan(...any) error }) (subscriberbus.Subscriber, error)
 
 	if sub.Lang, err = types.ParseLang(lang); err != nil {
 		sub.Lang = types.English
-	}
-
-	if confirmed.Valid {
-		sub.ConfirmedAt = time.UnixMilli(confirmed.Int64).UTC()
 	}
 
 	sub.CreatedAt = time.UnixMilli(created).UTC()
