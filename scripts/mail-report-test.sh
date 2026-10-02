@@ -175,7 +175,7 @@ for ((i = 0; i + 1 < ${#args[@]}; i += 2)); do
 	case "$type $name" in
 	"TXT example.org")                        v='"v=spf1 +a +mx ?all"' ;;
 	"TXT _dmarc.example.org")                 v='"v=DMARC1; p=quarantine"' ;;
-	"TXT default2503._domainkey.example.org") v='"v=DKIM1; k=rsa; p=MIIB"' ;;
+	"TXT default1810._domainkey.example.org") v='"v=DKIM1; k=rsa; p=MIIB"' ;;
 	"A example.org"|"A host.example.org")     v=192.0.2.10 ;;
 	*) continue ;;
 	esac
@@ -190,7 +190,7 @@ check "a host name is looked up with its domain" dns_has "   example.org"
 check "the domain's SPF" dns_has 'SPF:   "v=spf1 +a +mx ?all"'
 check "its DMARC" dns_has 'DMARC: "v=DMARC1; p=quarantine"'
 check "a DKIM key under a dated selector, named once" \
-	grep -qxF '      DKIM:  a key under: default2503' <<<"$dns"
+	grep -qxF '      DKIM:  a key under: default1810' <<<"$dns"
 check "a domain with none says so" dns_has "DKIM:  no key under any common selector"
 sed -i 's/^\t\*) continue ;;$/\t"TXT custom1._domainkey.example.net") v=p=MIIB ;;\n\t*) continue ;;/' "$TMP/bin/dig"
 check "SELECTOR= is tried as well" \
