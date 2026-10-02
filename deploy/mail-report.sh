@@ -91,17 +91,27 @@ else
 	printf '   MAILFROM: not set, so the From is the default (root or the user, at the host)\n'
 fi
 
-# Which cron this is decides whether MAILFROM is even honoured: cronie reads
-# it, Debian's cron does not.
+# Which cron this is decides whether MAILFROM is honoured. cronie reads it,
+# and so does Debian's cron from 3.0pl1-137 (its changelog: "Add patch
+# Add-MAILFROM-environment-variable.patch"); older Debian cron ignores it.
+# The first version of this report said Debian's never did, which was wrong
+# for the server, and is why the version is compared rather than assumed.
 CRON_IS="unknown"
 for c in /usr/sbin/crond /usr/sbin/cron; do
 	[ -e "$c" ] || continue
 	CRON_IS="$c -> $(readlink -f "$c")"
 done
 if command -v rpm >/dev/null 2>&1 && rpm -q cronie >/dev/null 2>&1; then
-	CRON_IS="$CRON_IS (cronie: MAILFROM works)"
+	CRON_IS="$CRON_IS (cronie: MAILFROM is honoured)"
 elif command -v dpkg-query >/dev/null 2>&1 && dpkg-query -W cron >/dev/null 2>&1; then
-	CRON_IS="$CRON_IS (Debian cron $(dpkg-query -W -f '${Version}' cron 2>/dev/null): MAILFROM is ignored)"
+	v="$(dpkg-query -W -f '${Version}' cron 2>/dev/null)"
+	if ! command -v dpkg >/dev/null 2>&1; then
+		CRON_IS="$CRON_IS (Debian cron $v: MAILFROM is honoured from 3.0pl1-137)"
+	elif dpkg --compare-versions "$v" ge 3.0pl1-137; then
+		CRON_IS="$CRON_IS (Debian cron $v: MAILFROM is honoured)"
+	else
+		CRON_IS="$CRON_IS (Debian cron $v: MAILFROM is ignored before 3.0pl1-137)"
+	fi
 fi
 printf '   cron:     %s\n' "$CRON_IS"
 
@@ -154,14 +164,19 @@ if command -v exim >/dev/null 2>&1 || [ -x /usr/sbin/exim ]; then
 	for opt in primary_hostname qualify_domain; do
 		v="$("$EXIM" -bP "$opt" 2>/dev/null)" && printf '   %s\n' "$v"
 	done
-	# Whether exim signs with DKIM, and as which domain and selector. The
-	# private key's location is blanked with the rest by redact.
-	dkim="$("$EXIM" -bP transports 2>/dev/null | grep -i dkim | redact)"
+	# Whether exim signs with DKIM, and as which domain and selector: the
+	# distinct expressions its transports use, not every transport's every
+	# option, most of which are empty. A key's location is blanked by redact.
+	dkim="$("$EXIM" -bP transports 2>/dev/null | grep -E '^[[:space:]]*dkim_(domain|selector)[[:space:]]*=[[:space:]]*[^[:space:]]' | sed 's/^[[:space:]]*//' | sort -u | redact)"
 	if [ -n "$dkim" ]; then
-		printf '   DKIM in its transports:\n'
+		printf '   DKIM: exim signs outgoing mail as follows (each distinct setting once):\n'
 		printf '%s\n' "$dkim" | sed 's/^/      /'
+		if grep -q 'rh_from' <<<"$dkim"; then
+			printf '   That is: with the key the hosting panel holds for the domain of the\n'
+			printf '   From address. Mail From a domain with no key goes out unsigned.\n'
+		fi
 	else
-		printf '   DKIM in its transports: none that this account can see\n'
+		printf '   DKIM: none that this account can see\n'
 	fi
 fi
 
@@ -187,17 +202,30 @@ section "each application's own mail settings"
 # The apps are found from the crontab -- every `cd <dir>` in it -- plus this
 # one's own directory, so the report covers every app on the account without
 # a list here to keep up to date.
+#
+# Three shapes are in the crontab this was written against: `cd <dir> &&`,
+# `cd -P ~/<site>/public && cd .. &&` (a PHP app, whose settings are in the
+# directory above public/), and `<dir>/supervise.sh start` with no cd at
+# all. A `cd ..` names no app and is skipped, or the home directory's parent
+# is reported as one.
 APP_DIRS=()
 [ -z "$APP_DIR" ] || APP_DIRS+=("$APP_DIR")
+JOBS="$(printf '%s\n' "$CRONTAB" | grep -vE '^[[:space:]]*#')"
 while IFS= read -r d; do
-	APP_DIRS+=("$d")
-done < <(printf '%s\n' "$CRONTAB" | grep -oE 'cd [^ ;&|]+' | cut -c4- | sort -u)
+	[ -n "$d" ] && [ "$d" != ".." ] && APP_DIRS+=("$d")
+done < <(printf '%s\n' "$JOBS" | grep -oE 'cd( -[LP])? [^ ;&|]+' | sed -E 's/^cd( -[LP])? //' | sort -u)
+while IFS= read -r d; do
+	APP_DIRS+=("$(dirname "$d")")
+done < <(printf '%s\n' "$JOBS" | grep -oE '[^ ;&|"]+/supervise\.sh' | sort -u)
 
 seen=" "
 for d in "${APP_DIRS[@]}"; do
 	dir="${d/#\~/$HOME}"
 	[[ "$dir" == /* ]] || dir="$HOME/$dir"
 	dir="$(cd "$dir" 2>/dev/null && pwd)" || continue
+	if [ "$(basename "$dir")" = public ] && [ ! -e "$dir/config.toml" ] && [ ! -e "$dir/.env" ]; then
+		dir="$(dirname "$dir")"
+	fi
 	[[ "$seen" == *" $dir "* ]] && continue
 	seen="$seen$dir "
 
@@ -226,24 +254,31 @@ for d in "${APP_DIRS[@]}"; do
 		while read -r a; do domain_of "$a"; done < <(awk '/^\[/{m=($0~/^\[mail\]/)} m' "$dir/config.toml" | grep -Eo '[[:alnum:]._%+-]+@[[:alnum:].-]+')
 	fi
 
-	# A PHP or Node app's .env: the mail keys by name, the password as set
-	# or not.
-	if [ -r "$dir/.env" ]; then
+	# A PHP or Node app's .env, and Symfony's .env.local over it: the mail
+	# keys by name, a password as set or not, and a DSN with its password
+	# blanked.
+	for envfile in .env .env.local; do
+		[ -r "$dir/$envfile" ] || continue
 		while IFS= read -r line; do
 			key="${line%%=*}"
 			case "$key" in
 			MAIL_PASSWORD|SMTP_PASSWORD|SMTP_PASS)
 				val="${line#*=}"; val="${val//\"/}"
-				printf '      .env %s is %s\n' "$key" "$([ -n "$val" ] && echo 'set (not shown)' || echo 'empty')" ;;
-			MAIL_MAILER|MAIL_DRIVER|MAIL_HOST|MAIL_PORT|MAIL_ENCRYPTION|MAIL_USERNAME|MAIL_FROM_ADDRESS|MAIL_FROM_NAME|SMTP_HOST|SMTP_PORT|SMTP_USER|SMTP_FROM)
-				printf '      .env %s\n' "$line" | redact
+				printf '      %s %s is %s\n' "$envfile" "$key" "$([ -n "$val" ] && echo 'set (not shown)' || echo 'empty')" ;;
+			MAILER_DSN|MAILER_URL)
+				# A URL with the password in it: redact blanks it, and the
+				# scheme and host are what matter here.
+				printf '      %s %s\n' "$envfile" "$line" | redact ;;
+			MAIL_MAILER|MAIL_DRIVER|MAIL_HOST|MAIL_PORT|MAIL_ENCRYPTION|MAIL_USERNAME|MAIL_FROM_ADDRESS|MAIL_FROM_NAME|SMTP_HOST|SMTP_PORT|SMTP_USER|SMTP_FROM|MAILER_FROM|MAILER_SENDER)
+				printf '      %s %s\n' "$envfile" "$line" | redact
 				domain_of "${line#*=}" ;;
+			*) continue ;;
 			esac
 			any=1
-		done < <(grep -E '^(MAIL|SMTP)_[A-Z_]+=' "$dir/.env")
-	fi
+		done < <(grep -E '^(MAIL|SMTP|MAILER)_[A-Z_]+=' "$dir/$envfile")
+	done
 
-	[ "$any" -eq 1 ] || printf '      (no [mail] in config.toml and no MAIL_ settings in .env)\n'
+	[ "$any" -eq 1 ] || printf '      (no [mail] in config.toml and no mail settings in .env)\n'
 done
 
 # ------------------------------------------------------------------ for deploy.sh
