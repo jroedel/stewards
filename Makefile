@@ -157,6 +157,10 @@ prod-logs: ## The tail of the server's log (make prod-logs N=200)
 prod-backup: ## Back up the live database now (stops the app for a moment)
 	@deploy/deploy.sh backup
 
+.PHONY: prod-mail-report
+prod-mail-report: ## How cron and mail are set up on the server, and the domains' SPF, DKIM and DMARC. No secrets (SELECTOR= to try a DKIM selector)
+	@SELECTOR=$(SELECTOR) deploy/deploy.sh mail-report
+
 .PHONY: prod-restart
 prod-restart: ## Restart the live app
 	@deploy/deploy.sh restart

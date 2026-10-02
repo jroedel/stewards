@@ -522,6 +522,91 @@ $(backup_script)"
 	remote_in_app "./supervise.sh start"
 }
 
+# ------------------------------------------------------------------ mail
+
+# cmd_mail_report is how cron and mail are set up on the account, and what the
+# domains it uses publish in DNS: everything needed to decide why cron's
+# emails are filed as spam, with no secret in it.
+#
+# Two halves, on two machines. The server's half is deploy/mail-report.sh,
+# piped to `bash -s` so that nothing is installed there; it reads and prints,
+# redacted. The DNS half runs here, on the domains the server's half named,
+# because public DNS needs no ssh and is answered the same from anywhere.
+#
+# DKIM is the one record DNS cannot list: a key lives at
+# <selector>._domainkey.<domain>, and there is no asking which selectors
+# exist. So the common ones are tried, along with konsoleH's habit of
+# "default" and a year and month, and SELECTOR=<s> adds one read from a
+# message's DKIM-Signature (s=...).
+cmd_mail_report() {
+	load_config; need_app_dir; ssh_setup
+	require dig
+
+	local out
+	out="$(remote "bash -s -- $Q_DIR" < "$REPO_DIR/deploy/mail-report.sh")" \
+		|| warn "the server's half did not finish; what it printed is below"
+
+	printf '%s\n' "$out" | grep -v '^DOMAINS '
+
+	# shellcheck disable=SC2046 # one domain per word, on purpose
+	dns_report $(printf '%s\n' "$out" | sed -n 's/^DOMAINS //p')
+
+	cat <<-'READ'
+
+		== reading it
+		   An email passes DMARC when SPF or DKIM passes FOR THE DOMAIN IN ITS FROM.
+		   SPF is checked against the envelope sender ("Mailed by" in Gmail), and
+		   DKIM against the signing domain ("Signed by"). A From at the host name
+		   with neither aligned is what Gmail learns to file as spam.
+
+		   The definitive answer is in one message: in Gmail on a computer, open
+		   a cron email, More (three dots), Show original. The SPF, DKIM and
+		   DMARC lines at the top say pass or fail, and for which domain.
+	READ
+}
+
+# dns_report prints what each domain publishes for mail, and for a host name
+# the domain it belongs to as well: DMARC is looked up at the organisational
+# domain when a host has none of its own. Two labels is a guess at that
+# domain which is right for every name here and wrong for a .co.uk.
+dns_report() {
+	local d org sel found y m all=() queries
+
+	for d in "$@"; do
+		all+=("$d")
+		org="$(printf '%s' "$d" | awk -F. 'NF > 2 { print $(NF-1) "." $NF }')"
+		[ -z "$org" ] || all+=("$org")
+	done
+
+	local selectors=(default dkim mail k1 k2 s1 s2 selector1 selector2 key1 google)
+	[ -z "${SELECTOR:-}" ] || selectors+=("$SELECTOR")
+	for y in 20 21 22 23 24 25 26; do
+		for m in 01 02 03 04 05 06 07 08 09 10 11 12; do selectors+=("default$y$m"); done
+	done
+
+	printf '\n== what the domains publish (looked up from this machine)\n'
+	for d in $(printf '%s\n' "${all[@]}" | sort -u); do
+		printf '   %s\n' "$d"
+		printf '      A:     %s\n' "$(dig +short +time=3 +tries=1 A "$d" | tr '\n' ' ')"
+		printf '      MX:    %s\n' "$(dig +short +time=3 +tries=1 MX "$d" | tr '\n' ' ')"
+		printf '      SPF:   %s\n' "$(dig +short +time=3 +tries=1 TXT "$d" | grep -i 'v=spf1' || echo '(none)')"
+		printf '      DMARC: %s\n' "$(dig +short +time=3 +tries=1 TXT "_dmarc.$d" | grep -i 'v=dmarc1' || echo '(none)')"
+
+		# Every selector in one dig, which takes many queries at once: one
+		# at a time was two and a half minutes for five domains. The answer
+		# section names each record, so the selector is read back from it.
+		local queries=()
+		for sel in "${selectors[@]}"; do queries+=("$sel._domainkey.$d" TXT); done
+		found="$(dig +noall +answer +time=3 +tries=1 "${queries[@]}" \
+			| awk -v d="._domainkey.$d." 'tolower($0) ~ /p=/ { n = $1; sub(d, "", n); printf " %s", n }')"
+		if [ -n "$found" ]; then
+			printf '      DKIM:  a key under:%s\n' "$found"
+		else
+			printf '      DKIM:  no key under any common selector\n'
+		fi
+	done
+}
+
 # ------------------------------------------------------------------ dispatch
 
 usage() {
@@ -533,6 +618,7 @@ usage() {
 		  logs [n]         the last n lines of the server's log (80)
 		  backup           back up the database now (stops the app for a moment)
 		  restart          restart the app
+		  mail-report      how cron and mail are set up, and what the domains publish; no secrets
 		  htaccess         install the Apache front end only, then check it from outside
 		  render-htaccess  print the .htaccess that would be installed, touch nothing
 	USAGE
@@ -544,6 +630,7 @@ status)          shift; cmd_status "$@" ;;
 logs)            shift; cmd_logs "$@" ;;
 backup)          shift; cmd_backup "$@" ;;
 restart)         shift; cmd_restart "$@" ;;
+mail-report)     shift; cmd_mail_report "$@" ;;
 htaccess)        shift; cmd_htaccess "$@" ;;
 render-htaccess) shift; load_config; render_htaccess ;;
 *)               usage; exit 2 ;;
