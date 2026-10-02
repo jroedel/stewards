@@ -64,9 +64,35 @@ type Place struct {
 	// accessible twin, so the order is chosen rather than alphabetical.
 	Sort int
 
+	// Spot is where the place sits on the map, or nil for a place that is
+	// not on it yet. Only a place that stands on its own has one: a band is
+	// shown on its place's card, and a dot for each band of the rain garden
+	// would be three dots on top of each other at the map's scale.
+	Spot *Spot
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
+
+// Spot is a point on the map, in the drawing's own units: X across from the
+// west edge, Y down from the north edge, inside MapWidth by MapHeight.
+//
+// The map is a schematic over the public trail map's geometry, not a survey
+// (design.md, section 1), so a spot is where a steward tapped on the drawing
+// and not a coordinate on the ground. GPS is a different thing, kept for
+// Phase 2 and never shown as fact; keeping the two apart is why this is not
+// a latitude and longitude.
+type Spot struct {
+	X, Y int
+}
+
+// The map's size in its own units: the public trail map's viewBox, which
+// the drawing is copied from. They change only if the drawing is redrawn,
+// and every spot already set would move with it.
+const (
+	MapWidth  = 800
+	MapHeight = 520
+)
 
 // TopLevel reports whether the place stands on its own.
 func (p Place) TopLevel() bool { return p.ParentID.Zero() }
@@ -193,8 +219,52 @@ func (b *Business) Update(ctx context.Context, id types.ID, f Fields) (Place, er
 	p.apply(f)
 	p.UpdatedAt = b.now()
 
+	// A place that has just gone inside another comes off the map, rather
+	// than keep a spot that nothing draws and that would come back,
+	// unchosen, the day it stands on its own again.
+	if !p.TopLevel() {
+		p.Spot = nil
+	}
+
 	if err := b.store.Update(ctx, p); err != nil {
 		return Place{}, fmt.Errorf("saving the place %q: %w", p.Slug, err)
+	}
+
+	return p, nil
+}
+
+// SetSpot puts a place on the map, moves it, or takes it off with a nil
+// spot.
+//
+// It is its own operation rather than another of the Fields, because it is
+// its own form: a steward taps the map, and the tap is the whole of what
+// they sent. Folding it into Update would have every Save of the names and
+// notes carry a spot along too, and the one form that can lose a spot is the
+// one that never meant to touch it.
+func (b *Business) SetSpot(ctx context.Context, id types.ID, spot *Spot) (Place, error) {
+	p, err := b.store.ByID(ctx, id)
+	if err != nil {
+		return Place{}, err
+	}
+
+	if spot != nil {
+		if !p.TopLevel() {
+			return Place{}, Invalid{Field: "spot", Problem: fmt.Sprintf("%s is inside another place, so it is shown on that place's card rather than on the map", p.Name.EN)}
+		}
+
+		if spot.X < 0 || spot.X > MapWidth || spot.Y < 0 || spot.Y > MapHeight {
+			return Place{}, Invalid{Field: "spot", Problem: "that is off the edge of the map. Tap inside the drawing"}
+		}
+
+		s := *spot
+		spot = &s
+	}
+
+	p.Spot = spot
+	p.UpdatedAt = b.now()
+
+	if err := b.store.Update(ctx, p); err != nil {
+		return Place{}, fmt.Errorf("saving where %q is on the map: %w", p.Slug, err)
 	}
 
 	return p, nil

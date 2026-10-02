@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -75,6 +76,7 @@ func TestAPlaceRoundTrips(t *testing.T) {
 		PhotoPoint:  types.Text{EN: "From the fire-pit bench"},
 		TrailAnchor: "joseph",
 		Sort:        3,
+		Spot:        &placebus.Spot{X: 470, Y: 446},
 		CreatedAt:   now,
 		UpdatedAt:   now.Add(1500 * time.Millisecond),
 	}
@@ -88,12 +90,13 @@ func TestAPlaceRoundTrips(t *testing.T) {
 		t.Fatalf("BySlug: %v", err)
 	}
 
-	if got != want {
+	// DeepEqual rather than ==, which would compare the Spot pointers.
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("read back\n %+v\nwant\n %+v", got, want)
 	}
 
 	byID, err := store.ByID(t.Context(), want.ID)
-	if err != nil || byID != want {
+	if err != nil || !reflect.DeepEqual(byID, want) {
 		t.Errorf("ByID = %+v, %v", byID, err)
 	}
 }
@@ -165,5 +168,75 @@ func TestMissingIsNotFound(t *testing.T) {
 
 	if err := store.Delete(t.Context(), p.ID); !errors.Is(err, placebus.ErrNotFound) {
 		t.Errorf("Delete = %v", err)
+	}
+}
+
+// The places table as PR #10 deployed it, written out literally rather than
+// derived from Init: the database on the server has exactly this, and Init
+// has to bring it forward (CLAUDE.md, "A store with a later column owns a
+// test that runs Init over the schema as it stood before").
+const before = `
+CREATE TABLE places (
+    id              TEXT    PRIMARY KEY,
+    slug            TEXT    NOT NULL UNIQUE,
+    name_en         TEXT    NOT NULL,
+    name_es         TEXT    NOT NULL DEFAULT '',
+    parent_id       TEXT    REFERENCES places (id),
+    purpose_en      TEXT    NOT NULL DEFAULT '',
+    purpose_es      TEXT    NOT NULL DEFAULT '',
+    conditions_en   TEXT    NOT NULL DEFAULT '',
+    conditions_es   TEXT    NOT NULL DEFAULT '',
+    photo_point_en  TEXT    NOT NULL DEFAULT '',
+    photo_point_es  TEXT    NOT NULL DEFAULT '',
+    trail_anchor    TEXT    NOT NULL DEFAULT '',
+    sort            INTEGER NOT NULL DEFAULT 0,
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX places_parent ON places (parent_id);
+
+INSERT INTO places (id, slug, name_en, created_at, updated_at)
+VALUES ('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'fire-pit', 'Fire pit', 1, 1);
+`
+
+func TestInitBringsTheFirstPlacesTableForward(t *testing.T) {
+	db, err := sqldb.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if _, err := db.ExecContext(t.Context(), before); err != nil {
+		t.Fatalf("the old schema: %v", err)
+	}
+
+	// Twice: every startup runs it.
+	for range 2 {
+		if err := placedb.Init(t.Context(), db); err != nil {
+			t.Fatalf("Init over the old table: %v", err)
+		}
+	}
+
+	if err := sqldb.CheckSchema(t.Context(), db, placedb.Expected); err != nil {
+		t.Fatal(err)
+	}
+
+	// The place from before is off the map, not in its north-west corner,
+	// and it can be put on it.
+	store := placedb.NewStore(db)
+
+	p, err := store.BySlug(t.Context(), "fire-pit")
+	if err != nil || p.Spot != nil {
+		t.Fatalf("the old place read back: %+v, %v; want it off the map", p.Spot, err)
+	}
+
+	p.Spot = &placebus.Spot{X: 600, Y: 420}
+	if err := store.Update(t.Context(), p); err != nil {
+		t.Fatal(err)
+	}
+
+	if p, err = store.BySlug(t.Context(), "fire-pit"); err != nil || p.Spot == nil || *p.Spot != (placebus.Spot{X: 600, Y: 420}) {
+		t.Errorf("after putting it on the map: %+v, %v", p.Spot, err)
 	}
 }

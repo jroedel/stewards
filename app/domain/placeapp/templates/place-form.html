@@ -83,6 +83,30 @@
   <button class="button" type="submit">Save</button>
 </form>
 
+{{if .OnMap}}{{/* Its own form: a tap on the picture is the whole of what it sends, as
+     at.x and at.y. The drawing underneath is the same one volunteers see;
+     the picture on top is a transparent image the size of it, so the tap
+     lands on the input. pickWidth and pickHeight in placeapp.go, and
+     .map-pick in app.css, are the same 280 by 182. */}}
+<form class="card form" method="post" action="/steward/places/{{.ID}}/spot">
+  <h2>Where it is on the map</h2>
+  {{with .SpotProblem}}<p class="problem" role="alert">{{.}}</p>{{end}}
+  <p class="help">{{if .Spot}}The yellow ring is where it is now. Tap the map to move it.{{else}}It is not on the map yet. Tap where it is.{{end}} The white dots on the trail are the stations, and the grey ones are the other places.</p>
+  <div class="map-pick-box">
+    <div class="map-pick">
+      <svg viewBox="0 0 800 520" width="280" height="182" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+        {{template "trailmap-drawing"}}
+        {{range .Others}}<circle cx="{{.X}}" cy="{{.Y}}" r="16" fill="#6A6A6A" stroke="#FFFFFF" stroke-width="4"/>{{end}}
+        {{with .Spot}}<circle cx="{{.X}}" cy="{{.Y}}" r="26" fill="none" stroke="#FFCB00" stroke-width="10"/><circle cx="{{.X}}" cy="{{.Y}}" r="26" fill="none" stroke="#1E2A73" stroke-width="3"/>{{end}}
+      </svg>
+      <input type="image" name="at" alt="Put {{.PlaceName}} where you tap on the map" width="280" height="182"
+             src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+    </div>
+  </div>
+  {{if .Spot}}<button class="button button-quiet" type="submit" name="off" value="yes">Take it off the map</button>{{end}}
+</form>
+{{end}}
+
 {{if .ID}}
 <form class="card form danger" method="post" action="/steward/places/{{.ID}}/delete">
   <h2>Remove this place</h2>

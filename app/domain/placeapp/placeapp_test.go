@@ -363,6 +363,71 @@ func TestTheConfirmationIsNotAnEcho(t *testing.T) {
 
 // photos is the photo rules over this test's database and a directory of its
 // own.
+// A tap on the picker, in its pixels, is saved in the map's units; pressing
+// the picture with no tap is refused; and the place comes off the map again.
+// A band is not offered the map at all.
+func TestAStewardPutsAPlaceOnTheMap(t *testing.T) {
+	s := serve(t)
+
+	s.post("/steward/places", rainGarden())
+	garden := s.place("rain-garden")
+	spot := "/steward/places/" + garden.ID.String() + "/spot"
+
+	if body := s.get("/steward/places/" + garden.ID.String() + "/edit").Body.String(); !strings.Contains(body, "It is not on the map yet.") || !strings.Contains(body, `action="`+spot+`"`) {
+		t.Fatalf("the edit screen has no map to tap:\n%s", body)
+	}
+
+	// The picker is 280 by 182; the middle of it is the middle of the map.
+	w := s.post(spot, url.Values{"at.x": {"140"}, "at.y": {"91"}})
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/steward?done=mapped" {
+		t.Fatalf("tapping the map: %d %q\n%s", w.Code, w.Header().Get("Location"), w.Body)
+	}
+	if got := s.place("rain-garden").Spot; got == nil || *got != (placebus.Spot{X: 400, Y: 260}) {
+		t.Errorf("saved at %v, want 400,260", got)
+	}
+
+	// The far corner is the far corner.
+	s.post(spot, url.Values{"at.x": {"280"}, "at.y": {"182"}})
+	if got := s.place("rain-garden").Spot; got == nil || *got != (placebus.Spot{X: placebus.MapWidth, Y: placebus.MapHeight}) {
+		t.Errorf("saved at %v, want the south-east corner", got)
+	}
+
+	// Pressed from the keyboard, or sent with nothing: refused, and the
+	// spot stays where it was.
+	for _, form := range []url.Values{{"at.x": {"0"}, "at.y": {"0"}}, {}} {
+		if w := s.post(spot, form); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "Tap the map where the place is.") {
+			t.Errorf("a press with no tap: %d", w.Code)
+		}
+	}
+	if got := s.place("rain-garden").Spot; got == nil || got.X != placebus.MapWidth {
+		t.Errorf("a refused press moved the place to %v", got)
+	}
+
+	if body := s.get("/steward/places/" + garden.ID.String() + "/edit").Body.String(); !strings.Contains(body, "The yellow ring is where it is now.") || !strings.Contains(body, "Take it off the map") {
+		t.Error("the edit screen does not show where the place is now")
+	}
+
+	if w := s.post(spot, url.Values{"off": {"yes"}}); w.Header().Get("Location") != "/steward?done=unmapped" || s.place("rain-garden").Spot != nil {
+		t.Errorf("taking it off the map: %d %q, spot %v", w.Code, w.Header().Get("Location"), s.place("rain-garden").Spot)
+	}
+
+	// A band has no map on its screen, and a tap sent anyway is refused.
+	band := url.Values{"slug": {"rain-garden-inflow"}, "name_en": {"Inflow"}, "parent": {garden.ID.String()}}
+	s.post("/steward/places", band)
+	inflow := s.place("rain-garden-inflow")
+
+	if body := s.get("/steward/places/" + inflow.ID.String() + "/edit").Body.String(); strings.Contains(body, "Where it is on the map") {
+		t.Error("a band is offered the map")
+	}
+	if w := s.post("/steward/places/"+inflow.ID.String()+"/spot", url.Values{"at.x": {"10"}, "at.y": {"10"}}); w.Code != http.StatusUnprocessableEntity || s.place("rain-garden-inflow").Spot != nil {
+		t.Errorf("a band put on the map: %d", w.Code)
+	}
+
+	if w := s.do(http.MethodPost, spot, url.Values{"at.x": {"10"}, "at.y": {"10"}}, false); w.Code != http.StatusForbidden {
+		t.Errorf("a signed-out tap: %d, want 403", w.Code)
+	}
+}
+
 func photos(t *testing.T, db *sql.DB) *photobus.Business {
 	t.Helper()
 

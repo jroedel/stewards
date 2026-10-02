@@ -35,7 +35,7 @@ var Expected = sqldb.Expected{
 		"id", "slug", "name_en", "name_es", "parent_id",
 		"purpose_en", "purpose_es", "conditions_en", "conditions_es",
 		"photo_point_en", "photo_point_es", "trail_anchor", "sort",
-		"created_at", "updated_at",
+		"created_at", "updated_at", "map_x", "map_y",
 	},
 }
 
@@ -79,21 +79,38 @@ CREATE INDEX IF NOT EXISTS places_parent ON places (parent_id);
 		return fmt.Errorf("creating the places table: %w", err)
 	}
 
+	// Later columns. Each arrives as an ALTER beside the CREATE above, so a
+	// fresh database and one from before the column end the same; and
+	// nothing that mentions one may sit in the CREATE block, because on a
+	// database from before it the CREATE is skipped and the column is not
+	// there yet (CLAUDE.md, and mass-intentions' four failed deploys).
+
+	// map_x and map_y are the place's spot on the map, in the drawing's
+	// units (placebus.Spot). NULL, both of them, for a place not on the
+	// map, which is every place from before them: a default of 0 would put
+	// each one in the north-west corner, in the woods, as if a steward had
+	// put it there.
+	for _, column := range []string{"map_x", "map_y"} {
+		if err := sqldb.AddColumn(ctx, db, "places", column, "INTEGER"); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 const columns = `id, slug, name_en, name_es, parent_id, purpose_en, purpose_es,
 conditions_en, conditions_es, photo_point_en, photo_point_es, trail_anchor, sort,
-created_at, updated_at`
+created_at, updated_at, map_x, map_y`
 
 // Create inserts a place.
 func (s *Store) Create(ctx context.Context, p placebus.Place) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO places (`+columns+`)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ID.String(), p.Slug, p.Name.EN, p.Name.ES, parentOf(p),
 		p.Purpose.EN, p.Purpose.ES, p.Conditions.EN, p.Conditions.ES,
 		p.PhotoPoint.EN, p.PhotoPoint.ES, p.TrailAnchor, p.Sort,
-		p.CreatedAt.UnixMilli(), p.UpdatedAt.UnixMilli())
+		p.CreatedAt.UnixMilli(), p.UpdatedAt.UnixMilli(), mapX(p), mapY(p))
 
 	switch {
 	case err == nil:
@@ -112,12 +129,12 @@ func (s *Store) Update(ctx context.Context, p placebus.Place) error {
     name_en = ?, name_es = ?, parent_id = ?,
     purpose_en = ?, purpose_es = ?, conditions_en = ?, conditions_es = ?,
     photo_point_en = ?, photo_point_es = ?, trail_anchor = ?, sort = ?,
-    updated_at = ?
+    updated_at = ?, map_x = ?, map_y = ?
 WHERE id = ?`,
 		p.Name.EN, p.Name.ES, parentOf(p),
 		p.Purpose.EN, p.Purpose.ES, p.Conditions.EN, p.Conditions.ES,
 		p.PhotoPoint.EN, p.PhotoPoint.ES, p.TrailAnchor, p.Sort,
-		p.UpdatedAt.UnixMilli(), p.ID.String())
+		p.UpdatedAt.UnixMilli(), mapX(p), mapY(p), p.ID.String())
 	if err != nil {
 		return fmt.Errorf("updating the place: %w", err)
 	}
@@ -193,12 +210,13 @@ func scan(row scanner) (placebus.Place, error) {
 		id               string
 		parent           sql.NullString
 		created, updated int64
+		x, y             sql.NullInt64
 	)
 
 	err := row.Scan(&id, &p.Slug, &p.Name.EN, &p.Name.ES, &parent,
 		&p.Purpose.EN, &p.Purpose.ES, &p.Conditions.EN, &p.Conditions.ES,
 		&p.PhotoPoint.EN, &p.PhotoPoint.ES, &p.TrailAnchor, &p.Sort,
-		&created, &updated)
+		&created, &updated, &x, &y)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return placebus.Place{}, err
@@ -220,6 +238,13 @@ func scan(row scanner) (placebus.Place, error) {
 		}
 	}
 
+	// Both or neither: the store writes them together, and half a spot is
+	// a row this binary did not write, read as off the map rather than put
+	// on an edge of it.
+	if x.Valid && y.Valid {
+		p.Spot = &placebus.Spot{X: int(x.Int64), Y: int(y.Int64)}
+	}
+
 	p.CreatedAt = time.UnixMilli(created).UTC()
 	p.UpdatedAt = time.UnixMilli(updated).UTC()
 
@@ -234,6 +259,23 @@ func parentOf(p placebus.Place) any {
 	}
 
 	return p.ParentID.String()
+}
+
+// mapX and mapY are NULL for a place not on the map.
+func mapX(p placebus.Place) any {
+	if p.Spot == nil {
+		return nil
+	}
+
+	return p.Spot.X
+}
+
+func mapY(p placebus.Place) any {
+	if p.Spot == nil {
+		return nil
+	}
+
+	return p.Spot.Y
 }
 
 func oneRow(res sql.Result) error {

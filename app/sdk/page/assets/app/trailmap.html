@@ -1,0 +1,53 @@
+{{/*
+  trailmap-drawing is the map's ground: everything on it except the places.
+  A page draws it inside its own <svg viewBox="0 0 800 520">, and puts the
+  places' markers after it, so they sit on top.
+
+  Copied on 2026-10-02 from the public trail map,
+  personal-tasks/trail-of-the-saints/web/map.html, which is traced from the
+  aerial photograph and is north up (design.md, section 1). The viewBox is
+  the same, so it is placebus.MapWidth by placebus.MapHeight, and a spot a
+  steward sets is a point in it. Redrawing this moves every spot already
+  set, which is the reason to change it only as a whole and on purpose.
+
+  What is different from the public map, and why:
+
+  - The stations are small dots on the line rather than numbered links.
+    Here a station's space is a place like any other, with a marker of its
+    own once a steward has put it on the map; a second, numbered circle
+    under it would be two numbers for one spot. The dots stay as landmarks,
+    which is what a steward needs when tapping where a place is.
+  - No START label. On this map the rain garden and St. Joseph are places,
+    and they say where the trail begins better than a word does.
+  - The labels are marked as English. They are the public map's, and
+    Spanish for them waits for a native speaker, like every other word here.
+
+  Text follows the public map's rule: at least 24 units, or it renders below
+  about 11 px on a phone.
+*/}}{{define "trailmap-drawing"}}<g class="trailmap-ground" lang="en">
+  <path d="M70 40 Q 20 240 60 452 L 700 470 Q 770 250 720 46 Z" fill="#F2F2F2"/>
+  <rect x="0" y="486" width="800" height="34" fill="#DCDCDC"/>
+  <text x="24" y="509" font-size="24" font-weight="600" fill="#6A6A6A" font-family="Ubuntu, system-ui, sans-serif" letter-spacing="1.5">ADDIE ROY RD</text>
+  <rect x="596" y="436" width="118" height="42" rx="3" fill="#C4C4C4"/>
+  <text x="596" y="428" font-size="24" font-weight="500" fill="#6A6A6A" font-family="Ubuntu, system-ui, sans-serif">House</text>
+  <g transform="translate(140 286)">
+    <rect x="0" y="14" width="46" height="34" rx="2" fill="#C4C4C4"/>
+    <path d="M-5 16 L23 -6 L51 16 Z" fill="#C4C4C4"/>
+  </g>
+  <text x="92" y="366" font-size="24" font-weight="500" fill="#6A6A6A" font-family="Ubuntu, system-ui, sans-serif">Shrine</text>
+  <g stroke="#6A6A6A" fill="#6A6A6A">
+    <path d="M754 98 L754 50" stroke-width="5" stroke-linecap="round"/>
+    <path d="M744 62 L754 44 L764 62 Z" stroke="none"/>
+    <text x="754" y="134" font-size="26" font-weight="700" text-anchor="middle" stroke="none" font-family="Ubuntu, system-ui, sans-serif">N</text>
+  </g>
+  <path d="M396 344 Q 300 318 200 306" fill="none" stroke="#38B54A" stroke-width="7" stroke-linecap="round" stroke-dasharray="2 20"/>
+  <path d="M492 486 L 470 452" stroke="#293896" stroke-width="9" stroke-linecap="round" fill="none"/>
+  <path d="M470 446 L 424 396 L 402 344 Q 500 366 586 366 L 640 358 Q 712 348 624 320 Q 712 292 624 264 Q 712 236 624 208 Q 706 188 632 172 L 450 186" fill="none" stroke="#293896" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <g fill="#FFFFFF" stroke="#293896" stroke-width="5">
+    <circle cx="470" cy="446" r="9"/>
+    <circle cx="424" cy="396" r="9"/>
+    <circle cx="402" cy="344" r="9"/>
+    <circle cx="586" cy="366" r="9"/>
+    <circle cx="450" cy="186" r="9"/>
+  </g>
+</g>{{end}}
