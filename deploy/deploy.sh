@@ -278,8 +278,10 @@ cmd_htaccess() {
 
 # ------------------------------------------------------------------ cron
 
-# install_cron makes `supervise.sh start` both the boot launcher and a
-# five-minute watchdog. start is idempotent, so one line does both jobs.
+# install_cron makes `supervise.sh start` the boot launcher and `supervise.sh
+# watch` the five-minute watchdog. watch is start that prints nothing when the
+# app is already up, because cron emails whatever a job prints; see
+# supervise.sh for the 288 emails a day that cost.
 #
 # The crontab is shared with mass-intentions, which is the reason for both
 # rules below, and deploy-cron-test.sh holds each of them against the other
@@ -297,7 +299,7 @@ CRON_MARKER='# stewards'
 
 install_cron() {
 	local lines="@reboot cd $Q_DIR && ./supervise.sh start $CRON_MARKER
-*/5 * * * * cd $Q_DIR && ./supervise.sh start $CRON_MARKER"
+*/5 * * * * cd $Q_DIR && ./supervise.sh watch $CRON_MARKER"
 
 	remote "crontab -l 2>/dev/null | grep -v ' $CRON_MARKER\$' > /tmp/stewards-cron.\$\$ || true
 	        printf '%s\n' \"$lines\" >> /tmp/stewards-cron.\$\$
@@ -348,11 +350,12 @@ backup_script() {
 
 # locked runs a snippet on the server holding supervise.sh's own lock.
 #
-# The watchdog is cron running `supervise.sh start` every five minutes, and
-# start takes this lock. Without it, a watchdog firing between a deploy's stop
-# and its rename starts the OLD binary; the deploy's own start then finds it
-# "already running", the health check passes against the old code, and the
-# deploy reports success having shipped nothing. mass-intentions has that
+# The watchdog is cron running `supervise.sh watch` every five minutes, and
+# when the app is down it starts it, taking this lock. Without the lock, a
+# watchdog firing between a deploy's stop and its rename starts the OLD binary;
+# the deploy's own start then finds it "already running", the health check
+# passes against the old code, and the deploy reports success having shipped
+# nothing. mass-intentions has that
 # window. Here a watchdog in it waits for the lock, and finds the new binary.
 locked() {
 	remote_in_app "exec 9>$APP.lock && flock -w 60 9 || { echo 'could not take the lock' >&2; exit 1; }
