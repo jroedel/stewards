@@ -141,7 +141,9 @@ ours() { grep -c ' # stewards$' "$CRONFILE" || true; }
 
 check "three deploys leave exactly our two lines" test "$(ours)" -eq 2
 check "one of them is the watchdog, every five minutes" \
-	grep -q "^\*/5 \* \* \* \* cd $Q_DIR && ./supervise.sh start # stewards$" "$CRONFILE"
+	grep -q "^\*/5 \* \* \* \* cd $Q_DIR && ./supervise.sh watch # stewards$" "$CRONFILE"
+check "and the other starts it at boot" \
+	grep -q "^@reboot cd $Q_DIR && ./supervise.sh start # stewards$" "$CRONFILE"
 check "every mass-intentions line is left alone" test "$(count '# mass-intentions')" -eq 3
 check "and so is somebody else's" test "$(count 'backup.sh')" -eq 1
 
@@ -158,6 +160,12 @@ check "mass-intentions' next deploy leaves our watchdog in place" survives_their
 echo "*/5 * * * * cd /old/path && ./supervise.sh start # stewards" >> "$CRONFILE"
 install_cron
 check "a line of ours at an old path is removed" bash -c '! grep -q /old/path "$0"' "$CRONFILE"
+
+# The watchdog line as deploys before watch wrote it, which is what the
+# server has until the first deploy of this one: replaced, not kept beside.
+echo "*/5 * * * * cd $Q_DIR && ./supervise.sh start # stewards" >> "$CRONFILE"
+install_cron
+check "the old, talkative watchdog is replaced" test "$(count 'supervise.sh start # stewards$')" -eq 1
 
 # ------------------------------------------------------------------ supersession
 

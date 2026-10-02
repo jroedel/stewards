@@ -4,8 +4,15 @@
 #
 # The target is a konsoleH account with no root and no user D-Bus, so
 # `systemctl --user` cannot work. Supervision is cron plus this script: `start`
-# is idempotent and is installed both at @reboot and every five minutes, which
-# makes one command both the boot launcher and the watchdog.
+# is idempotent and is the @reboot line, and `watch` -- start, but silent when
+# there is nothing to do -- runs every five minutes as the watchdog.
+#
+# Why watch is silent. Cron emails whatever a job prints, so a watchdog that
+# says "already running as 86229" sends 288 identical emails a day, from root
+# at the host, unsigned. That buried the one email that matters -- the app was
+# down and has been started, or would not start -- and taught Gmail to file
+# every one of them as spam (2026-10-02). watch prints only when it acted or
+# failed, so an email from it is news.
 #
 # Taken from mass-intentions, less its rehearsal instance, and with one
 # difference that matters on a shared crontab: this script takes no instance
@@ -89,6 +96,14 @@ do_start() {
 	fi
 }
 
+# do_watch is do_start for cron: nothing at all when the app is already up,
+# and start's own words when it is not, which are worth an email.
+do_watch() {
+	running >/dev/null && return 0
+	echo "the app was not running"
+	do_start
+}
+
 do_stop() {
 	local pid
 	if ! pid="$(running)"; then
@@ -122,8 +137,9 @@ do_status() {
 
 case "${1:-}" in
 start)   do_start ;;
+watch)   do_watch ;;
 stop)    do_stop ;;
 restart) do_stop; do_start ;;
 status)  do_status ;;
-*) echo "usage: supervise.sh {start|stop|restart|status}" >&2; exit 2 ;;
+*) echo "usage: supervise.sh {start|watch|stop|restart|status}" >&2; exit 2 ;;
 esac

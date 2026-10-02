@@ -122,7 +122,11 @@ echo "a first deploy, onto an empty account"
 check "succeeds" deploys
 check "and the app answers" healthy
 check "the front end is installed" test -f "$HOME_DIR/$APP_DOCROOT/.htaccess"
-check "the watchdog is scheduled" grep -q 'supervise.sh start # stewards$' "$TMP/crontab.txt"
+check "the watchdog is scheduled" grep -q 'supervise.sh watch # stewards$' "$TMP/crontab.txt"
+# Cron emails whatever the watchdog prints, so with the app up it must print
+# nothing at all; see supervise.sh.
+watch_is_silent() { [ -z "$(cd "$APPDIR" && ./supervise.sh watch 2>&1)" ]; }
+check "the watchdog says nothing while the app is up" watch_is_silent
 check "the binary is recorded as known good" test -f "$APPDIR/stewards.last-good"
 check "the public checks passed" said "answered by the app"
 
