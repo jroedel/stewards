@@ -257,7 +257,7 @@ func welcome(to types.Email, base, leave string) mail.Message {
 		To:      to.String(),
 		Subject: "Thank you for signing up for stewardship days",
 		Text: "Thank you for signing up to receive notifications about future stewardship days on the Schoenstatt Fathers' Trail of the Saints.\r\n\r\n" +
-			"You don't need any experience or special skills. We'll show you what to do.\r\n\r\n" +
+			"You don't need any experience or special skills.\r\n\r\n" +
 			"The days already scheduled are here:\r\n" + base + "/\r\n\r\n" +
 			"If you did not sign up for this, or want to stop these emails at any time, unsubscribe here:\r\n" + leave + "\r\n\r\n" +
 			"-- The garden stewards\r\n",
