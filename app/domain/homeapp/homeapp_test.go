@@ -205,8 +205,9 @@ func TestTheMapNumbersThePlacesOnItAsTheListDoes(t *testing.T) {
 }
 
 // What the QR code on the trail's signs leads to, before any day is on the
-// calendar: the welcome, the way to the places, and the way to the prayers
-// for a pilgrim who scanned the wrong sign.
+// calendar: the welcome, the way to the places, the trail's foundation text
+// with its link to the Vatican, and the way to the prayers for a pilgrim who
+// scanned the wrong sign.
 func TestTheHomePageWelcomesANewcomer(t *testing.T) {
 	h, _ := server(t)
 
@@ -218,6 +219,7 @@ func TestTheHomePageWelcomesANewcomer(t *testing.T) {
 	for _, want := range []string{
 		"Come help in the garden", "special skills", "Upcoming stewardship days",
 		"No days are scheduled just now.", `href="/places"`, "https://schoenstatt-fathers.us/trail/",
+		"linked to particular places", "laudato-si.html#84",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the home page has no %q", want)
