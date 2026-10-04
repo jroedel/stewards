@@ -197,6 +197,15 @@ h2 {
 
 .onward .quiet { font-weight: 500; color: var(--muted); }
 
+/* The trail's foundation text on the home page. It sits at the foot, after
+   the sign-up and the days, because it says why the work matters and must
+   never stand between a volunteer and the form. The same passage opens the
+   public /trail/ page, so the two halves of the trail say it alike. */
+.epigraph { margin: 32px 0 0; padding: 2px 0 2px 16px; border-left: 3px solid var(--sf-blue); }
+.epigraph blockquote { margin: 0; }
+.epigraph p { margin: 0; font-size: 18px; line-height: 1.45; color: var(--sf-ink); }
+.epigraph figcaption { margin-top: 8px; font-size: 15px; color: var(--muted); }
+
 /* ---------------------------------------------------------------- forms */
 
 /* A steward's form, filled on a phone in the garden: labels above their

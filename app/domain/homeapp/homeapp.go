@@ -96,6 +96,11 @@ type wording struct {
 	Explore, ExploreWhat types.Text
 	TrailAsk, TrailGo    types.Text
 
+	// The trail's foundation text, Laudato Si' 84, quoted from the Vatican's
+	// own English. It is Francis's words, not ours, so its Spanish is the
+	// Vatican's Spanish when it comes, never one we write.
+	Quote, QuoteBy types.Text
+
 	PlacesEyebrow, PlacesTitle, PlacesLead, Places, Empty types.Text
 	MapLabel                                              types.Text
 }
@@ -120,6 +125,9 @@ var words = wording{
 	ExploreWhat: types.Text{EN: "the places along it, and what grows in each"},
 	TrailAsk:    types.Text{EN: "Walking the trail to pray?"},
 	TrailGo:     types.Text{EN: "Stations and prayers"},
+
+	Quote:   types.Text{EN: "The history of our friendship with God is always linked to particular places which take on an intensely personal meaning."},
+	QuoteBy: types.Text{EN: "Pope Francis"},
 
 	PlacesEyebrow: types.Text{EN: "Garden stewards"},
 	PlacesTitle:   types.Text{EN: "Where are you working?"},
