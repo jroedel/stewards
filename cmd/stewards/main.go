@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -166,9 +167,39 @@ func run() error {
 		return err
 	}
 
-	log.Info("starting", "addr", cfg.Server.Addr, "db", cfg.DB.Path, "photos", cfg.Photos.Dir)
+	log.Info("starting", "addr", cfg.Server.Addr, "db", cfg.DB.Path, "photos", cfg.Photos.Dir, "memory_limit_mb", setMemoryLimit(os.Getenv("GOMEMLIMIT"))>>20)
 
 	return web.Serve(ctx, log, cfg.Server.ShutdownGrace.Duration, cfg.Server.Addr, handler)
+}
+
+// memoryLimit is the heap size the garbage collector works to stay under: a
+// soft limit, which the runtime meets by collecting sooner, never by refusing
+// an allocation.
+//
+// The shared host kills the process, silently, at about 300 MB (2026-10-01).
+// Go's default is to let the heap grow to twice what was live at the last
+// collection, so between two photos of a batch the pixels of the one just
+// finished can still be held while the next is decoded. Measured on four
+// 48-megapixel photos in one inbox batch: a peak of 211 MB without a limit,
+// 170 MB with this one, which is what a single photo that size needs while it
+// is scaled; 12- and 24-megapixel batches are unchanged at 69 and 115 MB.
+//
+// Below that 170 it would only make the collector run continuously while
+// a large photo is worked on, for no saving: a limit cannot free memory that
+// is still in use.
+const memoryLimit = 150 << 20
+
+// setMemoryLimit applies memoryLimit and returns the limit in force. A
+// GOMEMLIMIT in the environment wins: the runtime has already applied it, and
+// somebody at a terminal set it on purpose.
+func setMemoryLimit(env string) int64 {
+	if env != "" {
+		return debug.SetMemoryLimit(-1) // -1 reads the limit without changing it
+	}
+
+	debug.SetMemoryLimit(memoryLimit)
+
+	return memoryLimit
 }
 
 // prepare runs every store's Init, in foreign-key order.
