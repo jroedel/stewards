@@ -263,3 +263,40 @@ func openTemp(t *testing.T) *sql.DB {
 
 	return db
 }
+
+// A path is a path, whatever is in it: the database is made exactly where it
+// was asked for, and two paths that differ only after a "#" or a "?" are two
+// databases. Before the path was escaped, both of these opened the file at
+// ".../a", one directory up.
+func TestADatabaseIsOpenedAtExactlyItsPath(t *testing.T) {
+	dir := t.TempDir()
+
+	for _, name := range []string{"a#1", "a?2", "a%41"} {
+		path := filepath.Join(dir, name, "test.db")
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		db, err := sqldb.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := db.ExecContext(t.Context(), `CREATE TABLE marker (name TEXT) STRICT; INSERT INTO marker VALUES (?)`, name); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+
+		db.Close()
+
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("%s: no database at %s: %v", name, path, err)
+		}
+	}
+
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if !e.IsDir() {
+			t.Errorf("a database was made at %s instead", e.Name())
+		}
+	}
+}

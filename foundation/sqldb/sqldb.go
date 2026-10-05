@@ -28,6 +28,14 @@ import (
 	"modernc.org/sqlite"
 )
 
+// uriPath escapes the three characters that would end or change a path in a
+// file: URI, which is how the driver hands the name to SQLite: a "?" starts
+// the parameters and a "#" a fragment, either cutting the path short, and a
+// "%" starts an escape. Found when a test named "PR #35" opened a database at
+// the truncated path, shared with every other test of that prefix. Nothing
+// else needs escaping: SQLite reads every other byte of the path as itself.
+var uriPath = strings.NewReplacer("%", "%25", "?", "%3F", "#", "%23")
+
 // Open returns the shared handle, with the pragmas this service needs set in
 // the DSN so that they apply to every connection rather than to whichever one
 // happened to run a SET statement.
@@ -38,7 +46,7 @@ import (
 // caller. One connection makes the queue explicit and the failure mode absent.
 // A handful of volunteers on a Saturday morning does not need more.
 func Open(path string) (*sql.DB, error) {
-	dsn := "file:" + path + "?" + strings.Join([]string{
+	dsn := "file:" + uriPath.Replace(path) + "?" + strings.Join([]string{
 		// Readers do not block the writer and the writer does not block
 		// readers. Also the reason a backup copies the database only while
 		// the app is stopped: a live copy can catch a torn page set mid
