@@ -250,6 +250,18 @@ h2 {
 
 .button:active { background: var(--sf-blue-dk); color: var(--sf-white); }
 
+/* A form at work, such as the inbox's while it sends a batch: everything in
+   it still, and the button saying so rather than waiting to be pressed
+   again. */
+.button:disabled { opacity: 0.6; cursor: progress; }
+.button:disabled:active { background: var(--sf-yellow); color: var(--sf-blue-dk); }
+.form input:disabled, .form select:disabled, .form textarea:disabled { opacity: 0.6; }
+
+.sending { margin-top: 4px; }
+.sending p { margin: 0; }
+.sending #sending-words { font-weight: 700; }
+.sending progress { width: 100%; height: 14px; margin: 8px 0; accent-color: var(--sf-blue); }
+
 /* A problem with what was just sent. The pull colour on its tint, and a
    word as well as the colour, since the colour alone says nothing to a
    phone in glare. */

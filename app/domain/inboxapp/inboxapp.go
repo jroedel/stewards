@@ -8,16 +8,32 @@
 // on its own, so a screenshot chosen by mistake costs that one and not the
 // other nine.
 //
-// One post rather than a script sending a photo at a time, which would show
-// "Sending 3 of 10" and survive a dropped signal better. The pages carry no
-// script, and the header policy says why adding the first one deserves a
-// rollout of its own (page.Policy). Until then a batch is all one request, and
-// its limits below are sized for that.
+// A batch reaches the server one of two ways, and both end in the same Add.
+//
+// The send screen's script (static/send.js) sends the photos one request at a
+// time, to SendPattern, and says "Sending 3 of 15" while it does. That is the
+// way a batch normally arrives. It was a single post at first, and the first
+// batch of fifteen from a phone showed what that costs: nothing on the screen
+// for the minutes it took, a form that could still be changed underneath it,
+// and an error page from Apache at the end although every photo had been kept
+// -- one request that long outlives somebody's timeout between the phone and
+// here. A photo at a time is seconds per request, so no timeout is near it, and
+// a dropped signal costs the photo on its way rather than the batch: sending
+// the same photos again is safe, because a photo already in the inbox is
+// recognised and not added twice.
+//
+// Without the script -- an old browser, or a header policy that blocks it --
+// the form posts the whole batch to UploadPattern as before, and its limits
+// below are sized for that. It is a fallback now, not the way a batch is meant
+// to arrive, and it is kept because a send screen that does nothing without
+// script is worse than a slow one.
 package inboxapp
 
 import (
 	"context"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -72,6 +88,40 @@ const uploadTime = 15 * time.Minute
 // each is decoded and scaled in turn, a second or two apiece on the shared
 // host, behind anybody else's.
 const keepTime = 5 * time.Minute
+
+// SendPattern is the route the send screen's script sends each photo of a
+// batch to, one per request, with the batch's where, place and note every time.
+// The muxer gives it a one-photo body limit, MaxSendBytes.
+const SendPattern = "POST " + IndexPath + "/send"
+
+// MaxSendBytes is the body limit on one photo sent by the script: the largest
+// photo the inbox keeps, and a megabyte for the text fields and the multipart
+// framing.
+const MaxSendBytes = inboxbus.MaxBytes + 1<<20
+
+// sendTime is how long one photo may take to arrive: the largest, 25 MB, at
+// a megabit a second is under four minutes. keepOneTime is the time to keep
+// it once it has, behind any other decode on the host.
+const (
+	sendTime    = 5 * time.Minute
+	keepOneTime = time.Minute
+)
+
+// sendJS is the send screen's script. It is served from this app rather than
+// with the shared stylesheet and fonts, because it is about the inbox and
+// nothing else, and behind the same sign-in as every inbox route.
+//
+//go:embed static/send.js
+var sendJS []byte
+
+// scriptPath is where the script is linked from, with its hash as the
+// version, so that a phone can keep it for a year and still fetch the new one
+// the first time a page names it after a deploy.
+var scriptPath = func() string {
+	sum := sha256.Sum256(sendJS)
+
+	return IndexPath + "/send.js?v=" + hex.EncodeToString(sum[:])[:12]
+}()
 
 // Inbox is what this app needs from the inbox rules.
 type Inbox interface {
@@ -134,6 +184,8 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 		"GET " + IndexPath:                  a.list,
 		"GET " + IndexPath + "/new":         a.newForm,
 		UploadPattern:                       a.upload,
+		SendPattern:                         a.sendOne,
+		"GET " + IndexPath + "/send.js":     a.script,
 		"GET " + IndexPath + "/{id}":        a.sortForm,
 		"POST " + IndexPath + "/{id}":       a.sort,
 		"GET " + IndexPath + "/{id}/{file}": a.file,
@@ -303,6 +355,10 @@ type newView struct {
 
 	MaxPhotos int
 	MaxMB     int
+
+	// Script is the send screen's script, and SendURL where it sends each
+	// photo.
+	Script, SendURL string
 }
 
 type refusal struct {
@@ -338,22 +394,7 @@ func (a app) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.MultipartForm.RemoveAll()
 
-	f := inboxbus.Fields{
-		At:   inboxbus.At(r.PostFormValue("at")),
-		Note: r.PostFormValue("note"),
-	}
-
-	if u, ok := mid.StewardFrom(r.Context()); ok {
-		f.FromID = u.ID
-	}
-
-	if s := r.PostFormValue("place"); s != "" {
-		id, err := types.ParseID(s)
-		if err != nil {
-			v.Problems["place"] = "Choose the place from the list, or leave it empty."
-		}
-		f.PlaceID = id
-	}
+	f := fieldsOf(r, v.Problems)
 
 	headers := r.MultipartForm.File["photo"]
 
@@ -438,15 +479,140 @@ func (a app) upload(w http.ResponseWriter, r *http.Request) {
 	a.showNew(w, r, status, v, f)
 }
 
+// fieldsOf is what a batch says about every photo in it, as the form sent it,
+// noting in problems a place that is not one from the list.
+func fieldsOf(r *http.Request, problems map[string]string) inboxbus.Fields {
+	f := inboxbus.Fields{
+		At:   inboxbus.At(r.PostFormValue("at")),
+		Note: r.PostFormValue("note"),
+	}
+
+	if u, ok := mid.StewardFrom(r.Context()); ok {
+		f.FromID = u.ID
+	}
+
+	if s := r.PostFormValue("place"); s != "" {
+		id, err := types.ParseID(s)
+		if err != nil {
+			problems["place"] = "Choose the place from the list, or leave it empty."
+		}
+		f.PlaceID = id
+	}
+
+	return f
+}
+
+// sent is the answer to the script for a photo that is in the inbox:
+// "kept" when it arrived now, "already" when it was there before.
+type sent struct {
+	Outcome string `json:"outcome"`
+}
+
+// sendOne keeps one photo of a batch the send screen's script is sending a
+// photo at a time, and answers in JSON, for the script to count.
+//
+// A refusal names its field, as the API's do, because the script does two
+// different things with one: a "photo" problem is about that photo alone, so
+// it is listed and the next is sent; any other field is the same for every
+// photo in the batch, so the script stops and shows it beside the form.
+func (a app) sendOne(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	_ = rc.SetReadDeadline(time.Now().Add(sendTime))
+	_ = rc.SetWriteDeadline(time.Now().Add(sendTime + keepOneTime))
+
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
+			web.WriteJSON(w, http.StatusRequestEntityTooLarge, web.Problem("photo", tooLarge))
+
+			return
+		}
+
+		web.WriteJSON(w, http.StatusBadRequest, web.Problem("photo", notWhole))
+
+		return
+	}
+	defer r.MultipartForm.RemoveAll()
+
+	problems := map[string]string{}
+	f := fieldsOf(r, problems)
+
+	if problem, ok := problems["place"]; ok {
+		web.WriteJSON(w, http.StatusUnprocessableEntity, web.Problem("place", problem))
+
+		return
+	}
+
+	headers := r.MultipartForm.File["photo"]
+	if len(headers) != 1 {
+		web.WriteJSON(w, http.StatusUnprocessableEntity, web.Problem("photo", "Send one photo at a time here."))
+
+		return
+	}
+
+	checked, err := a.inbox.Check(f)
+	if invalid, ok := errors.AsType[inboxbus.Invalid](err); ok {
+		web.WriteJSON(w, http.StatusUnprocessableEntity, web.Problem(invalid.Field, page.Sentence(invalid.Problem)))
+
+		return
+	} else if err != nil {
+		a.failJSON(w, r, "checking a photo for the inbox", err)
+
+		return
+	}
+
+	data, problem := readPhoto(headers[0])
+	if problem != "" {
+		web.WriteJSON(w, http.StatusUnprocessableEntity, web.Problem("photo", problem))
+
+		return
+	}
+
+	_, err = a.inbox.Add(r.Context(), checked, data)
+
+	invalid, isInvalid := errors.AsType[inboxbus.Invalid](err)
+	_, isDup := errors.AsType[inboxbus.Duplicate](err)
+
+	switch {
+	case err == nil:
+		web.WriteJSON(w, http.StatusCreated, sent{Outcome: "kept"})
+	case isDup:
+		web.WriteJSON(w, http.StatusOK, sent{Outcome: "already"})
+	case isInvalid:
+		web.WriteJSON(w, http.StatusUnprocessableEntity, web.Problem(invalid.Field, page.Sentence(invalid.Problem)))
+	case r.Context().Err() != nil:
+		// The phone has gone: nobody is left to answer. The script tries
+		// this photo again when it can, and Add knows it if it was kept.
+	default:
+		a.failJSON(w, r, "adding a photo to the inbox", err)
+	}
+}
+
+// script serves the send screen's script. Cacheable for a year, because the
+// page links it by its hash (scriptPath); that overrides the page policy's
+// no-store, as the stylesheet does.
+func (a app) script(w http.ResponseWriter, r *http.Request) {
+	h := w.Header()
+	h.Set("Content-Type", "text/javascript; charset=utf-8")
+	h.Set("Cache-Control", "private, max-age=31536000, immutable")
+
+	_, _ = w.Write(sendJS)
+}
+
+// The sentences a photo is refused with, where both ways of sending say them.
+var (
+	tooLarge = fmt.Sprintf("Larger than %d MB. Send it as the camera saved it, not a video.", inboxbus.MaxBytes>>20)
+	notWhole = "It did not arrive whole. Send it again."
+)
+
 // readPhoto is one uploaded file's bytes, or a sentence saying what to do.
 func readPhoto(h *multipart.FileHeader) ([]byte, string) {
 	if h.Size > inboxbus.MaxBytes {
-		return nil, fmt.Sprintf("Larger than %d MB. Send it as the camera saved it, not a video.", inboxbus.MaxBytes>>20)
+		return nil, tooLarge
 	}
 
 	file, err := h.Open()
 	if err != nil {
-		return nil, "It did not arrive whole. Send it again."
+		return nil, notWhole
 	}
 	defer file.Close()
 
@@ -454,9 +620,9 @@ func readPhoto(h *multipart.FileHeader) ([]byte, string) {
 
 	switch {
 	case err != nil:
-		return nil, "It did not arrive whole. Send it again."
+		return nil, notWhole
 	case len(data) > inboxbus.MaxBytes:
-		return nil, fmt.Sprintf("Larger than %d MB. Send it as the camera saved it, not a video.", inboxbus.MaxBytes>>20)
+		return nil, tooLarge
 	case len(data) == 0:
 		return nil, "It arrived empty. Send it again."
 	}
@@ -474,6 +640,7 @@ func (a app) showNew(w http.ResponseWriter, r *http.Request, status int, v newVi
 
 	v.Nursery, v.Note = f.At == inboxbus.Nursery, f.Note
 	v.MaxPhotos, v.MaxMB = MaxPhotos, MaxBytes>>20
+	v.Script, v.SendURL = scriptPath, strings.TrimPrefix(SendPattern, "POST ")
 
 	byID := map[types.ID]placebus.Place{}
 	for _, p := range places {
@@ -890,4 +1057,10 @@ func placeName(p placebus.Place, byID map[types.ID]placebus.Place) string {
 func (a app) fail(w http.ResponseWriter, r *http.Request, what string, err error) {
 	a.log.ErrorContext(r.Context(), what, "request_id", web.RequestIDFrom(r.Context()), "error", err)
 	http.Error(w, "Something went wrong on our end. Try again in a few minutes.", http.StatusInternalServerError)
+}
+
+// failJSON is fail for the script, which reads the sentence out of the JSON.
+func (a app) failJSON(w http.ResponseWriter, r *http.Request, what string, err error) {
+	a.log.ErrorContext(r.Context(), what, "request_id", web.RequestIDFrom(r.Context()), "error", err)
+	web.WriteJSON(w, http.StatusInternalServerError, web.Problem("", "Something went wrong on our end. Try again in a few minutes."))
 }

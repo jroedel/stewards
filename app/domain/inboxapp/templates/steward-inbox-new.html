@@ -11,8 +11,10 @@
   <ul>{{range .Refused}}<li><strong>{{.Name}}</strong>: {{.Problem}}</li>{{end}}</ul>
 </div>{{end}}
 {{if .Problems}}<p class="problem" role="alert">Nothing was sent yet. Fix what is marked below, choose the photos again, and press Send.</p>{{end}}
+{{/* Where the script says how a batch it sent went, when it stays on this page. */}}
+<div id="sent" hidden></div>
 
-<form class="card form" method="post" action="/steward/inbox" enctype="multipart/form-data">
+<form class="card form" method="post" action="/steward/inbox" enctype="multipart/form-data" data-send="{{.SendURL}}" data-done="/steward/inbox" data-max="{{.MaxPhotos}}">
   <label for="photo">Photos</label>
   <p class="help" id="photo-help">JPEG or PNG, as the camera saved them, up to {{.MaxMB}} MB in all.</p>
   {{with index .Problems "photo"}}<p class="field-problem">{{.}}</p>{{end}}
@@ -37,6 +39,12 @@
 
   {{with index .Problems "from"}}<p class="field-problem">{{.}}</p>{{end}}
   <button class="button" type="submit">Send</button>
+  <div class="sending" id="sending" role="status" hidden>
+    <p id="sending-words">Sending…</p>
+    <progress id="sending-bar" max="1" value="0"></progress>
+    <p class="help">Keep this page open until it is done.</p>
+  </div>
 </form>
 </div>
+<script src="{{.Script}}" defer></script>
 {{end}}{{end}}
