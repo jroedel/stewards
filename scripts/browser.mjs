@@ -8,6 +8,13 @@
 // names are looked for on PATH. A GitHub runner has google-chrome. A machine
 // without one skips the browser tests and says so, except in CI, where a
 // missing browser is a failure rather than a quiet pass.
+//
+// Nothing here waits without a limit. The first run in CI waited 42 minutes
+// in silence on a command Chrome never answered, because a command's promise
+// only settled when an answer came. Now every command has a time limit, a
+// page that crashes fails the commands waiting on it, Chrome going away fails
+// them all, and each of those failures carries the end of Chrome's own
+// output. A browser test that cannot finish says so in seconds.
 import { spawn } from "node:child_process";
 import { accessSync, constants, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -37,6 +44,12 @@ export function findChrome() {
 
 // skip is the reason to skip browser tests on this machine, or false to run
 // them: always run in CI, so that there they fail rather than vanish.
+// stage writes one line of progress to stderr: what a test's setup has got
+// to, so that a run that stops can be seen to have stopped somewhere.
+export function stage(what) {
+  process.stderr.write(`  [${new Date().toISOString().slice(11, 19)}] ${what}\n`);
+}
+
 export function skip() {
   if (process.env.CI || findChrome()) {
     return false;
@@ -79,30 +92,39 @@ export async function launch() {
 
   const proc = spawn(chrome, [...args, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
 
+  // The end of everything Chrome says, kept for the error that needs it.
+  let said = "";
+  proc.stderr.on("data", (d) => {
+    said = (said + d).slice(-6000);
+  });
+  const tail = () => (said.trim() ? `\nChrome said, at the end:\n${said.trim()}` : "\nChrome said nothing.");
+
   const url = await new Promise((done, fail) => {
-    let err = "";
-    const timer = setTimeout(() => fail(new Error(`Chrome did not start in 20 s:\n${err}`)), 20_000);
-    proc.stderr.on("data", (d) => {
-      err += d;
-      const m = /DevTools listening on (ws:\/\/\S+)/.exec(err);
+    const timer = setTimeout(() => fail(new Error(`Chrome did not start in 20 s${tail()}`)), 20_000);
+    const ready = () => {
+      const m = /DevTools listening on (ws:\/\/\S+)/.exec(said);
       if (m) {
         clearTimeout(timer);
+        proc.stderr.off("data", ready);
         done(m[1]);
       }
-    });
-    proc.on("exit", (code) => {
+    };
+    proc.stderr.on("data", ready);
+    proc.once("exit", (code) => {
       clearTimeout(timer);
-      fail(new Error(`Chrome exited (${code}) before it was ready:\n${err}`));
+      fail(new Error(`Chrome exited (${code}) before it was ready${tail()}`));
     });
   });
 
-  const cdp = await connect(url);
+  const cdp = await connect(url, tail);
+  proc.once("exit", (code, signal) => cdp.abort(`Chrome exited (${code ?? signal})`));
 
   return {
     page: () => openPage(cdp),
+    tail,
     async close() {
       try {
-        await cdp.send("Browser.close");
+        await cdp.send("Browser.close", {}, undefined, 5000);
       } catch {
         // already gone
       }
@@ -122,36 +144,76 @@ export async function launch() {
 
 // connect is one WebSocket to the browser, over which every tab is reached
 // by its session id.
-async function connect(url) {
+//
+// Every command waits limit ms for its answer, 30 s unless said otherwise,
+// and fails with tail() -- the end of Chrome's own output -- when it does not
+// get one, when its page crashes, or when Chrome goes away.
+async function connect(url, tail) {
   const ws = new WebSocket(url);
   await new Promise((done, fail) => {
     ws.addEventListener("open", done, { once: true });
-    ws.addEventListener("error", () => fail(new Error(`could not reach Chrome at ${url}`)), { once: true });
+    ws.addEventListener("error", () => fail(new Error(`could not reach Chrome at ${url}${tail()}`)), { once: true });
   });
 
   let next = 1;
+  let gone = "";
   const waiting = new Map();
   const listeners = new Set();
+
+  const settle = (id, fn) => {
+    const w = waiting.get(id);
+    if (!w) return;
+    waiting.delete(id);
+    clearTimeout(w.timer);
+    fn(w);
+  };
+
+  const abort = (why, sessionId) => {
+    for (const [id, w] of waiting) {
+      if (sessionId === undefined || w.sessionId === sessionId) {
+        settle(id, () => w.fail(new Error(`${w.method}: ${why}${tail()}`)));
+      }
+    }
+  };
 
   ws.addEventListener("message", (m) => {
     const msg = JSON.parse(m.data);
     if (msg.id && waiting.has(msg.id)) {
-      const { done, fail, method } = waiting.get(msg.id);
-      waiting.delete(msg.id);
-      msg.error ? fail(new Error(`${method}: ${msg.error.message}`)) : done(msg.result);
+      settle(msg.id, (w) => (msg.error ? w.fail(new Error(`${w.method}: ${msg.error.message}`)) : w.done(msg.result)));
+    } else if (msg.method === "Inspector.targetCrashed") {
+      abort("the page crashed", msg.sessionId);
     } else if (msg.method) {
       for (const fn of listeners) fn(msg);
     }
   });
 
+  ws.addEventListener("close", () => {
+    gone = gone || "the connection to Chrome closed";
+    abort(gone);
+  });
+
   return {
-    send(method, params = {}, sessionId) {
+    send(method, params = {}, sessionId, limit = 30_000) {
+      if (gone) {
+        return Promise.reject(new Error(`${method}: ${gone}${tail()}`));
+      }
+
       const id = next++;
-      ws.send(JSON.stringify({ id, method, params, sessionId }));
-      return new Promise((done, fail) => waiting.set(id, { done, fail, method }));
+      return new Promise((done, fail) => {
+        const timer = setTimeout(
+          () => settle(id, () => fail(new Error(`${method}: no answer from Chrome in ${limit / 1000} s${tail()}`))),
+          limit,
+        );
+        waiting.set(id, { done, fail, method, sessionId, timer });
+        ws.send(JSON.stringify({ id, method, params, sessionId }));
+      });
     },
     listen(fn) {
       listeners.add(fn);
+    },
+    abort(why) {
+      gone = why;
+      abort(why);
     },
     close() {
       ws.close();
@@ -166,7 +228,7 @@ async function connect(url) {
 async function openPage(cdp) {
   const { targetId } = await cdp.send("Target.createTarget", { url: "about:blank" });
   const { sessionId } = await cdp.send("Target.attachToTarget", { targetId, flatten: true });
-  const send = (method, params) => cdp.send(method, params, sessionId);
+  const send = (method, params, limit) => cdp.send(method, params, sessionId, limit);
 
   const errors = [];
   cdp.listen((msg) => {
@@ -180,6 +242,7 @@ async function openPage(cdp) {
     }
   });
 
+  await send("Inspector.enable"); // for Inspector.targetCrashed
   await send("Page.enable");
   await send("Runtime.enable");
   await send("Log.enable");
@@ -192,13 +255,14 @@ async function openPage(cdp) {
     errors,
 
     // evaluate runs expr in the page, awaiting it if it is a promise, and
-    // gives back its value as JSON would.
-    async evaluate(expr) {
-      const { result, exceptionDetails } = await send("Runtime.evaluate", {
-        expression: expr,
-        awaitPromise: true,
-        returnByValue: true,
-      });
+    // gives back its value as JSON would. Two minutes, for drawing and
+    // shrinking a 50 MP picture on a slow runner; never longer.
+    async evaluate(expr, limit = 120_000) {
+      const { result, exceptionDetails } = await send(
+        "Runtime.evaluate",
+        { expression: expr, awaitPromise: true, returnByValue: true },
+        limit,
+      );
       if (exceptionDetails) {
         throw new Error(`in the page: ${exceptionDetails.exception?.description || exceptionDetails.text}`);
       }
@@ -218,7 +282,7 @@ async function openPage(cdp) {
       let last;
       while (Date.now() < end) {
         try {
-          last = await page.evaluate(expr);
+          last = await page.evaluate(expr, 10_000);
           if (last) return last;
         } catch (err) {
           last = err.message; // mid-navigation: try again

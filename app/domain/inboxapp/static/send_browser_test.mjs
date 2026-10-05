@@ -24,7 +24,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { launch, skip } from "../../../../scripts/browser.mjs";
+import { launch, skip, stage } from "../../../../scripts/browser.mjs";
 import { exifSegment, jpegSize, orientationOf } from "./jpeg.mjs";
 import { has } from "./testjpeg.mjs";
 
@@ -50,7 +50,8 @@ before(async () => {
   tmp = mkdtempSync(join(tmpdir(), "stewards-send-"));
 
   // The server, as it ships.
-  execFileSync("go", ["build", "-o", join(tmp, "stewards"), "./cmd/stewards"], { cwd: repo, stdio: "inherit" });
+  stage("building the server");
+  execFileSync("go", ["build", "-o", join(tmp, "stewards"), "./cmd/stewards"], { cwd: repo, stdio: "inherit", timeout: 180_000 });
 
   const port = await freePort();
   base = `http://127.0.0.1:${port}`;
@@ -60,13 +61,14 @@ before(async () => {
     `[server]\naddr = "127.0.0.1:${port}"\nbase_url = "${base}"\n[db]\npath = "${join(tmp, "stewards.db")}"\n[auth]\nbootstrap_secret = "${secret}"\n`,
   );
 
+  stage("starting it");
   app = spawn(join(tmp, "stewards"), ["-config", join(tmp, "config.toml")], { stdio: ["ignore", "pipe", "pipe"] });
   app.stdout.on("data", (d) => (appLog += d));
   app.stderr.on("data", (d) => (appLog += d));
 
   for (let i = 0; ; i++) {
     try {
-      if ((await fetch(`${base}/healthz`)).ok) break;
+      if ((await fetch(`${base}/healthz`, { signal: AbortSignal.timeout(2000) })).ok) break;
     } catch {
       // not listening yet
     }
@@ -74,9 +76,11 @@ before(async () => {
     await new Promise((done) => setTimeout(done, 100));
   }
 
+  stage("signing in");
   const signIn = await fetch(`${base}/sign-in/first`, {
     method: "POST",
     redirect: "manual",
+    signal: AbortSignal.timeout(10_000),
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ email: "steward@example.org", secret }),
   });
@@ -92,11 +96,13 @@ before(async () => {
   });
   await new Promise((done) => statics.listen(0, "127.0.0.1", done));
 
+  stage("starting Chrome");
   browser = await launch();
   const drawing = await browser.page();
   await drawing.goto(`http://127.0.0.1:${statics.address().port}/`);
 
   const draw = async (name, width, height, orientation) => {
+    stage(`drawing ${name}, ${width} by ${height}`);
     const b64 = await drawing.evaluate(`(async () => {
       const TJ = await import("/testjpeg.mjs");
       const c = new OffscreenCanvas(${width}, ${height});
@@ -124,9 +130,11 @@ before(async () => {
 
   statics.close();
 
+  stage("opening the send screen's tab");
   page = await browser.page();
   await page.setCookie({ name: "__Host-session", value: cookie, url: `${base}/`, secure: true, httpOnly: true, path: "/" });
-});
+  stage("ready");
+}, { timeout: 300_000 });
 
 after(async () => {
   await browser?.close();
@@ -141,6 +149,7 @@ const posts = (path) => appLog.split("\n").filter((l) => l.includes("method=POST
 // sendBatch chooses files on the send screen, presses Send, and gives back
 // where the page went once it had finished.
 async function sendBatch(files) {
+  stage(`sending ${files.length} photos`);
   await page.goto(`${base}/steward/inbox/new`);
   await page.waitFor(`!!document.querySelector("form[data-send]")`);
   await page.setFiles("#photo", files);

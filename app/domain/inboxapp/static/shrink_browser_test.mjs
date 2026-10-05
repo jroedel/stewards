@@ -15,7 +15,7 @@ import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { launch, skip } from "../../../../scripts/browser.mjs";
+import { launch, skip, stage } from "../../../../scripts/browser.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -42,9 +42,11 @@ before(async () => {
   });
   await new Promise((done) => server.listen(0, "127.0.0.1", done));
 
+  stage("starting Chrome");
   browser = await launch();
   page = await browser.page();
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
+  stage("loading the modules into the page");
 
   // The helpers every test uses, in the page: T.photo draws one, T.look says
   // what a viewer would see of it and what its bytes say.
@@ -102,7 +104,8 @@ before(async () => {
       },
     };
   })()`);
-});
+  stage("ready");
+}, { timeout: 120_000 });
 
 after(async () => {
   await browser?.close();

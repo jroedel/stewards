@@ -72,6 +72,7 @@ jobs:
       # this step rather than skipping it.
       - name: browser tests
         if: hashFiles('cmd/stewards/*.go') != ''
+        timeout-minutes: 10
         run: make test-browser
 
       - name: vulnerability scan

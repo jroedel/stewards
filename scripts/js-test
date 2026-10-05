@@ -9,9 +9,14 @@
 # Found by name, so a new test is run without being listed anywhere:
 # *_test.mjs is a unit test and *_browser_test.mjs a browser test.
 #
-# The dot reporter, for the reason scripts/go-test gives: a line per passing
-# test is a page that says one thing, and the failures are printed in full at
-# the end. A browser test skipped for want of Chrome says so on its own line.
+# The unit tests use the dot reporter, for the reason scripts/go-test gives: a
+# line per passing test is a page that says one thing, and the failures are
+# printed in full at the end. The browser tests use spec, which also shows
+# each setup's stage lines (scripts/browser.mjs, stage): there are few of
+# them, and when one stops, where it stopped is the first thing to know.
+#
+# No test may take more than three minutes. A browser test that cannot
+# finish fails, rather than holding CI until GitHub gives up on it.
 #
 # Node 22 or later, for the WebSocket the browser tests drive Chrome with.
 # CI installs 24 (.github/workflows/ci.yml).
@@ -30,8 +35,14 @@ if [ "$major" -lt 22 ]; then
 fi
 
 case "${1:-}" in
-unit)    mapfile -t files < <(find app -name '*_test.mjs' ! -name '*_browser_test.mjs' | sort) ;;
-browser) mapfile -t files < <(find app -name '*_browser_test.mjs' | sort) ;;
+unit)
+	reporter=dot
+	mapfile -t files < <(find app -name '*_test.mjs' ! -name '*_browser_test.mjs' | sort)
+	;;
+browser)
+	reporter=spec
+	mapfile -t files < <(find app -name '*_browser_test.mjs' | sort)
+	;;
 *)       echo "usage: scripts/js-test unit|browser" >&2; exit 2 ;;
 esac
 
@@ -42,4 +53,4 @@ fi
 
 # One file at a time: each browser test starts a Chrome of its own, and one
 # of them a server too.
-exec node --test --test-concurrency=1 --test-reporter=dot "${files[@]}"
+exec node --test --test-concurrency=1 --test-timeout=180000 --test-reporter="$reporter" "${files[@]}"
