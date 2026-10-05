@@ -80,6 +80,7 @@ lines alone -- `scripts/deploy-test.sh` holds that.
 | `make prod-status` | the process, the public checks, what is live, backups, the photos and their snapshots, the log |
 | `make prod-logs N=200` | the tail of the log |
 | `make prod-backup` | a backup now, database and photos (stops the app for a second or two) |
+| `make prod-upload-check` | whether Apache passes a 26 MB photo and a 160 MB batch through to the app. A signed-out post of zeros for each size, which the app refuses, so nothing is stored. A 413 from Apache means the host's limit is lower |
 | `make prod-restart` | restart |
 | `make deploy` | deploy from your machine, from a clean `main` |
 | `make deploy-htaccess` | the front end only |

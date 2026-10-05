@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -456,6 +458,25 @@ func TestTheSendScreenLinksItsScript(t *testing.T) {
 
 	if !strings.Contains(js.Header().Get("Cache-Control"), "immutable") {
 		t.Errorf("the script is not kept by the phone: %q", js.Header().Get("Cache-Control"))
+	}
+}
+
+// make prod-upload-check asks Apache whether it passes the sizes this app
+// takes, and it can only ask about the numbers written into it: a limit
+// raised here and not there would be checked at the old size.
+func TestTheUploadCheckProbesTheseLimits(t *testing.T) {
+	script, err := os.ReadFile(filepath.Join("..", "..", "..", "deploy", "deploy.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{
+		strconv.Itoa(inboxapp.MaxSendBytes) + " " + inboxapp.IndexPath + "/send ",
+		strconv.Itoa(inboxapp.MaxBytes) + " " + inboxapp.IndexPath + " ",
+	} {
+		if !strings.Contains(string(script), want) {
+			t.Errorf("deploy.sh's upload check does not probe %q", want)
+		}
 	}
 }
 
