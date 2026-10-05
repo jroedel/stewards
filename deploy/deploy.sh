@@ -588,12 +588,22 @@ cmd_upload_check() {
 	log "the app is up"
 	health_public || die "the public check failed, so this would say nothing about uploads. Look at 'make prod-status' first"
 
-	local tmp failed=0 size path label before after code by_app saw
+	local tmp failed=0 probe size path label before after code by_app saw
 	tmp="$(mktemp -d)"
 	# shellcheck disable=SC2064 # $tmp is meant to be expanded now
 	trap "rm -rf '$tmp'" EXIT
 
-	while read -r size path label; do
+	# A list in an array, not lines read from a here-document: the loop asks
+	# the server's log over ssh, and ssh reads its stdin, which would be the
+	# rest of the list. The first run on the live site checked one size, said
+	# nothing of the second, and exited 0.
+	local probes=(
+		"27262976 /steward/inbox/send one photo, as the send screen sends it (26 MB)"
+		"167772160 /steward/inbox a whole batch, as the form sends it without its script (160 MB)"
+	)
+
+	for probe in "${probes[@]}"; do
+		read -r size path label <<<"$probe"
 		log "$label"
 
 		before="$(app_logged "$path")"
@@ -623,16 +633,14 @@ cmd_upload_check() {
 			bad "Apache answered ${code:-nothing}, and the app did not log it. Run this again; if it says the same, look at 'make prod-logs'"
 			failed=1 ;;
 		esac
-	done <<-SIZES
-		27262976 /steward/inbox/send one photo, as the send screen sends it (26 MB)
-		167772160 /steward/inbox a whole batch, as the form sends it without its script (160 MB)
-	SIZES
+	done
 
 	return "$failed"
 }
 
 # app_logged counts the app's log lines for posts to a path.
-app_logged() { remote_in_app "grep -c 'method=POST path=$1 status=' $APP.log 2>/dev/null || true"; }
+# Nothing on its stdin, so that it cannot take anybody else's.
+app_logged() { remote_in_app "grep -c 'method=POST path=$1 status=' $APP.log 2>/dev/null || true" </dev/null; }
 
 # upload_verdict is what one probe found, from Apache's status code, whether
 # the app answered, and whether the app logged it: passed, refused or unknown.
