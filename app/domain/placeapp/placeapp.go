@@ -70,6 +70,12 @@ type Listings interface {
 	ForPlace(ctx context.Context, placeID types.ID) ([]listingbus.Listing, error)
 }
 
+// InboxCounter is what the stewards' front page needs from the inbox rules:
+// how many photos are waiting, which is the inbox's only reminder.
+type InboxCounter interface {
+	Count(ctx context.Context) (int, error)
+}
+
 // Config is what this app needs.
 type Config struct {
 	Log      *slog.Logger
@@ -78,6 +84,10 @@ type Config struct {
 	Species  SpeciesReader
 	Listings Listings
 	Photos   PhotoReader
+
+	// Inbox may be nil, for no inbox: the front page then has no link to
+	// one.
+	Inbox InboxCounter
 }
 
 type app struct {
@@ -87,10 +97,11 @@ type app struct {
 	species  SpeciesReader
 	listings Listings
 	photos   PhotoReader
+	inbox    InboxCounter
 }
 
 func newApp(cfg Config) app {
-	return app{log: cfg.Log, render: cfg.Render, places: cfg.Places, species: cfg.Species, listings: cfg.Listings, photos: cfg.Photos}
+	return app{log: cfg.Log, render: cfg.Render, places: cfg.Places, species: cfg.Species, listings: cfg.Listings, photos: cfg.Photos, inbox: cfg.Inbox}
 }
 
 // Routes mounts the stewards' screens, every route behind guard.
@@ -126,6 +137,11 @@ type indexRow struct {
 type indexView struct {
 	Places []indexRow
 	Done   string // what just happened, from the redirect after a save
+
+	// Inbox is whether there is one to link to, and Waiting how many
+	// photos are in it.
+	Inbox   bool
+	Waiting int
 }
 
 func (a app) index(w http.ResponseWriter, r *http.Request) {
@@ -151,6 +167,16 @@ func (a app) index(w http.ResponseWriter, r *http.Request) {
 	for _, p := range all {
 		if i, ok := at[p.ParentID]; ok && !p.TopLevel() {
 			v.Places[i].Bands = append(v.Places[i].Bands, indexRow{ID: p.ID.String(), Slug: p.Slug, Name: p.Name})
+		}
+	}
+
+	// A count that cannot be read is no reason to keep a steward from the
+	// places: logged, and the link shown without it.
+	if a.inbox != nil {
+		v.Inbox = true
+
+		if v.Waiting, err = a.inbox.Count(r.Context()); err != nil {
+			a.log.WarnContext(r.Context(), "counting the inbox", "request_id", web.RequestIDFrom(r.Context()), "error", err)
 		}
 	}
 

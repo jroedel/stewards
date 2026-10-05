@@ -7,6 +7,9 @@
 
 {{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
 
+{{if .Inbox}}<a class="onward" href="/steward/inbox"><span>Photo inbox <span class="quiet">{{if .Waiting}}{{.Waiting}} to sort{{else}}nothing waiting{{end}}</span></span><span aria-hidden="true">›</span></a>
+<a class="button button-block" href="/steward/inbox/new">Send photos</a>{{end}}
+
 {{if .Places}}
 <ul class="rows">
 {{range .Places}}<li class="row row-stack">

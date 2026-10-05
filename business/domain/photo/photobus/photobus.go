@@ -224,12 +224,6 @@ type Business struct {
 	store Storer
 	files Files
 	now   func() time.Time
-
-	// prepare is held while a photo is decoded and scaled. A 12-megapixel
-	// photo is about 50 MB of pixels while it is worked on, and a shared
-	// host's memory is not ours to spend twice over because two stewards
-	// pressed Upload in the same second; the second waits a second.
-	prepare chan struct{}
 }
 
 // NewBusiness constructs one. now may be nil, for the real clock.
@@ -238,7 +232,7 @@ func NewBusiness(store Storer, files Files, now func() time.Time) *Business {
 		now = time.Now
 	}
 
-	return &Business{store: store, files: files, now: now, prepare: make(chan struct{}, 1)}
+	return &Business{store: store, files: files, now: now}
 }
 
 // Add keeps a new photo of a species: the large and small pictures made from
@@ -338,17 +332,11 @@ func (b *Business) Import(ctx context.Context, speciesID types.ID, f Fields, dat
 	return p, false, err
 }
 
-// prepared decodes and scales one photo at a time, turning the reasons a
-// photo cannot be used into something a steward can act on.
+// prepared decodes and scales a photo -- one at a time, across the process,
+// which imaging sees to -- turning the reasons a photo cannot be used into
+// something a steward can act on.
 func (b *Business) prepared(ctx context.Context, data []byte) (imaging.Prepared, error) {
-	select {
-	case b.prepare <- struct{}{}:
-	case <-ctx.Done():
-		return imaging.Prepared{}, ctx.Err()
-	}
-	defer func() { <-b.prepare }()
-
-	p, err := imaging.Prepare(data)
+	p, err := imaging.Prepare(ctx, data)
 
 	switch {
 	case errors.Is(err, imaging.ErrNotAPhoto), errors.Is(err, imaging.ErrTooSmall), errors.Is(err, imaging.ErrTooLarge):

@@ -11,10 +11,12 @@
 // survives: there is no list of tags to strip that can be incomplete. The
 // original is the caller's to keep or not, privately.
 //
-// Two things are read from the EXIF before it is dropped, because the picture
-// is wrong without them or the form is tedious without them: the orientation
-// (a phone held upright saves the pixels sideways and a tag saying so) and
-// the date it was taken, which the caller can offer as the month.
+// Three things are read from the EXIF before it is dropped, because the
+// picture is wrong without them or the form is tedious without them: the
+// orientation (a phone held upright saves the pixels sideways and a tag saying
+// so), the date it was taken, which the caller can offer as the month, and the
+// GPS position, which the caller may keep beside the private original and
+// never in a picture it shows.
 //
 // JPEG and PNG only. iPhones store HEIC, but Safari converts to JPEG on upload
 // unless the form asks for HEIC by name, and decoding HEIC in Go would mean a
@@ -25,12 +27,14 @@ package imaging
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"time"
 
 	// The standard library decodes and encodes, but has no scaler: image/draw
 	// only composites at 1:1. x/image/draw is the Go team's own answer, the
@@ -84,19 +88,67 @@ type Prepared struct {
 	// if the caller keeps it.
 	Format string
 
-	// Taken is when the camera says the photo was taken, to the month, by
-	// the camera's own clock.
+	// Taken is when the camera says the photo was taken, by the camera's
+	// own clock.
 	Taken Taken
+
+	// Where is the camera's GPS position, and Located whether it gave one.
+	// Often it gives none even when the phone knew: a phone may strip the
+	// location from a photo chosen in a browser, for the person's privacy,
+	// unless they asked for it to be kept. Nothing may depend on it.
+	Where   Position
+	Located bool
 }
 
-// Taken is the date from the EXIF, to the month. Year and Month are zero
-// when there was none.
+// Taken is the date from the EXIF. Year and Month are zero when there was
+// none; Day and the clock are zero when the camera wrote only part of it,
+// which a camera whose clock was half set does.
 type Taken struct {
-	Year, Month int
+	Year, Month               int
+	Day, Hour, Minute, Second int
+
+	// Offset is the camera's offset from UTC in seconds, from the
+	// OffsetTimeOriginal tag phones have written since about 2018, and
+	// Zoned whether there was one. Without it the clock is only a wall
+	// clock, and Time needs to be told whose.
+	Offset int
+	Zoned  bool
 }
 
-// Prepare decodes a photo and makes its two sizes.
-func Prepare(data []byte) (Prepared, error) {
+// Time is the moment the photo was taken, read in the camera's own zone when
+// it said one and in fallback when it did not. ok is false when the camera
+// did not say the day: a month is not a moment.
+func (t Taken) Time(fallback *time.Location) (time.Time, bool) {
+	if t.Year == 0 || t.Day == 0 {
+		return time.Time{}, false
+	}
+
+	loc := fallback
+	if t.Zoned {
+		loc = time.FixedZone("", t.Offset)
+	}
+
+	return time.Date(t.Year, time.Month(t.Month), t.Day, t.Hour, t.Minute, t.Second, 0, loc), true
+}
+
+// Position is a point on the earth, in decimal degrees: north and east are
+// positive.
+type Position struct {
+	Lat, Lon float64
+}
+
+// one is held while a photo is decoded and scaled, by whichever caller is
+// doing it. A 12-megapixel photo is about 50 MB of pixels while it is worked
+// on, and a shared host's memory is not ours to spend twice over because two
+// stewards pressed Upload in the same second -- or because one sent ten photos
+// to the inbox while another added one to a plant. Package-wide rather than
+// each caller's own, which is what it was until there were two callers: two
+// limits of one each are a limit of two.
+var one = make(chan struct{}, 1)
+
+// Prepare decodes a photo and makes its two sizes, one photo at a time
+// across the whole process. It waits its turn for as long as ctx allows.
+func Prepare(ctx context.Context, data []byte) (Prepared, error) {
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || (format != "jpeg" && format != "png") {
 		return Prepared{}, ErrNotAPhoto
@@ -111,6 +163,15 @@ func Prepare(data []byte) (Prepared, error) {
 		return Prepared{}, ErrTooSmall
 	}
 
+	// After the header, so a refusal never waits behind somebody else's
+	// photo.
+	select {
+	case one <- struct{}{}:
+	case <-ctx.Done():
+		return Prepared{}, ctx.Err()
+	}
+	defer func() { <-one }()
+
 	var src image.Image
 	if format == "jpeg" {
 		src, err = jpeg.Decode(bytes.NewReader(data))
@@ -124,7 +185,7 @@ func Prepare(data []byte) (Prepared, error) {
 
 	meta := readEXIF(data, format)
 
-	p := Prepared{Format: format, Taken: meta.taken}
+	p := Prepared{Format: format, Taken: meta.taken, Where: meta.where, Located: meta.located}
 
 	// The small picture is made from the large one rather than from the
 	// original: the large has already done the expensive part, and from

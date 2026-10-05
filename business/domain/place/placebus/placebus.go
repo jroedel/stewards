@@ -292,12 +292,12 @@ func (b *Business) Delete(ctx context.Context, id types.ID) error {
 		return Invalid{Field: "place", Problem: fmt.Sprintf("%s has %d smaller places inside it. Move or remove those first", p.Name.EN, len(kids))}
 	}
 
-	// Plants listed here, and photos that say they were taken here, are
-	// the other things that keep a place: the database refuses the delete
-	// while a listing or a photo names it.
+	// Plants listed here, and photos that say they were taken here --
+	// a plant's or one still in the inbox -- are the other things that
+	// keep a place: the database refuses the delete while one names it.
 	if err := b.store.Delete(ctx, id); err != nil {
 		if errors.Is(err, ErrInUse) {
-			return Invalid{Field: "place", Problem: fmt.Sprintf("%s still has plants listed, or photos taken there. Take the plants off its list, and clear the place from those photos, first", p.Name.EN)}
+			return Invalid{Field: "place", Problem: fmt.Sprintf("%s still has plants listed, or photos taken there, in a plant's photos or the inbox. Take the plants off its list, clear the place from those photos, and sort the inbox, first", p.Name.EN)}
 		}
 
 		return err
