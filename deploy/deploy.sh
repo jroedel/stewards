@@ -310,14 +310,28 @@ install_cron() {
 
 # ------------------------------------------------------------------ backup and rollback
 
-# backup_script prints the shell that copies the database, for a caller to run
-# on the server while the app is stopped.
+# backup_script prints the shell that copies the database, and snapshots the
+# photo files, for a caller to run on the server while the app is stopped.
 #
 # Stopped, because a live SQLite database in WAL mode keeps its latest writes
 # in the -wal file, and a copy of the .db alone opens perfectly and is missing
 # them. A clean shutdown checkpoints the WAL into the .db, so the copy taken
 # afterwards is whole; the -wal is copied too, in case the shutdown was not
 # clean. sqlite3's .backup is used when the host has it, and is safe either way.
+#
+# The photos are snapshotted with hard links, not copied. photofs writes every
+# file whole to a temporary name and renames it into place, and never opens
+# one to change it, so a file once written is never modified: a link to it in
+# a snapshot is as good as a copy, and costs a directory entry rather than
+# the photo's size again. What a snapshot keeps is a photo that is later
+# removed -- discarded, pruned, or taken away by a release with a bug in it --
+# for as many backups as the database is kept. It is on the same disk, so it
+# is no defence against losing the server; that copy is a person's to take.
+# A snapshot that fails warns and carries on: the database's backup is the
+# one a deploy must not go without.
+#
+# photo-files is where the app keeps them unless config.toml says otherwise
+# ([photos] dir), and the config.toml scripts/secrets writes never does.
 #
 # A snippet rather than a remote call of its own, so that it can run inside the
 # same locked command as the stop and the swap -- see cmd_deploy. No `exit` in
@@ -344,6 +358,18 @@ backup_script() {
 				rm -f "\$old" "\$old-wal"
 			done
 			echo "backed up to backups/$APP-$stamp.db, keeping $KEEP_BACKUPS"
+		fi
+		if [ -d photo-files ]; then
+			mkdir -p backups && chmod 700 backups
+			if cp -al photo-files backups/photo-files-$stamp; then
+				echo "photos snapshotted to backups/photo-files-$stamp"
+			else
+				rm -rf backups/photo-files-$stamp
+				echo "WARNING: the photos could not be snapshotted; the database backup is unaffected" >&2
+			fi
+			ls -1d backups/photo-files-* 2>/dev/null | sort -r | tail -n +$((KEEP_BACKUPS + 1)) | while read -r old; do
+				rm -rf "\$old"
+			done
 		fi
 	SH
 }
@@ -501,6 +527,10 @@ cmd_status() {
 	remote_in_app "ls -lh $APP.db 2>/dev/null || echo '(no database yet)'"
 	remote_in_app "ls -1 backups/*.db 2>/dev/null | sort -r | head -3 || true"
 
+	log "the photos"
+	remote_in_app "du -sh photo-files 2>/dev/null || echo '(no photos yet)'"
+	remote_in_app "ls -1d backups/photo-files-* 2>/dev/null | sort -r | head -3 || echo '(no snapshot yet)'"
+
 	log "nothing private is public"
 	assert_app_dir_is_private
 	assert_not_exposed
@@ -514,7 +544,8 @@ cmd_logs()    { load_config; need_app_dir; ssh_setup; remote_in_app "tail -n ${1
 cmd_restart() { load_config; need_app_dir; ssh_setup; remote_in_app "./supervise.sh restart"; }
 
 # A backup by hand stops the app for the length of a copy, for the reason
-# backup_script gives. On a database this size that is a second or two.
+# backup_script gives. On a database this size that is a second or two, and
+# the photos' snapshot is links, not copies, so it adds little.
 cmd_backup() {
 	load_config; need_app_dir; ssh_setup
 	locked "./supervise.sh stop

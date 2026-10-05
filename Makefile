@@ -154,7 +154,7 @@ prod-logs: ## The tail of the server's log (make prod-logs N=200)
 	@deploy/deploy.sh logs $(or $(N),80)
 
 .PHONY: prod-backup
-prod-backup: ## Back up the live database now (stops the app for a moment)
+prod-backup: ## Back up the live database and snapshot the photos now (stops the app for a moment)
 	@deploy/deploy.sh backup
 
 .PHONY: prod-mail-report

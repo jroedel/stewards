@@ -285,6 +285,50 @@ newest_kept() { test -f "$APP_DIR/backups/stewards-20260930T000005Z.db"; }
 check "four backups with KEEP_BACKUPS=2 leave two (saw $(kept))" test "$(kept)" -eq 2
 check "and the two kept are the newest" newest_kept
 check "the backups directory is private" test "$(stat -c %a "$APP_DIR/backups")" = 700
+
+# The photos: snapshotted beside each backup, as links rather than copies.
+# Invented files, never a photo (CLAUDE.md).
+mkdir -p "$APP_DIR/photo-files/inbox"
+printf 'a picture\n' > "$APP_DIR/photo-files/abc-large.jpg"
+printf 'an inbox picture\n' > "$APP_DIR/photo-files/inbox/def-small.jpg"
+
+out="$(run_backup 2>&1)"
+snap="$(find "$APP_DIR/backups" -maxdepth 1 -name 'photo-files-*' | sort -r | head -1)"
+
+snapshotted()   { test -n "$snap" && test -f "$snap/abc-large.jpg" && test -f "$snap/inbox/def-small.jpg"; }
+same_inode()    { test "$(stat -c %i "$snap/abc-large.jpg")" = "$(stat -c %i "$APP_DIR/photo-files/abc-large.jpg")"; }
+said_snapshot() { grep -q 'photos snapshotted to backups/photo-files-' <<<"$out"; }
+check "the photos are snapshotted, inbox and all" snapshotted
+check "as hard links, not copies" same_inode
+check "and it says so" said_snapshot
+
+# A photo removed after the backup -- discarded, pruned, or by a bad release
+# -- is still in the snapshot.
+rm "$APP_DIR/photo-files/abc-large.jpg"
+survives() { test "$(cat "$snap/abc-large.jpg")" = 'a picture'; }
+check "a photo removed afterwards survives in the snapshot" survives
+
+for _ in 1 2 3; do run_backup >/dev/null 2>&1; done
+snaps() { find "$APP_DIR/backups" -maxdepth 1 -name 'photo-files-*' | wc -l | tr -d ' '; }
+check "snapshots are kept to KEEP_BACKUPS too (saw $(snaps))" test "$(snaps)" -eq 2
+
+# A host whose cp cannot link: the snapshot warns, the database is backed up
+# all the same, and the command the snippet is part of carries on.
+mkdir -p "$TMP/nocp"
+printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = -al ] && { echo "cp: cannot create hard link" >&2; exit 1; }; done\nexec /bin/cp "$@"\n' > "$TMP/nocp/cp"
+chmod +x "$TMP/nocp/cp"
+
+before="$(kept)"
+out="$( ( cd "$APP_DIR" && PATH="$TMP/nocp:$PATH" bash -c "$(backup_script)
+echo after-the-snippet" ) 2>&1 )"
+
+warned()       { grep -q 'WARNING: the photos could not be snapshotted' <<<"$out"; }
+db_backed_up() { grep -q 'backed up to backups/stewards-' <<<"$out"; }
+no_half_snap() { test "$(snaps)" -le 2 && ! find "$APP_DIR/backups" -maxdepth 1 -name "photo-files-$(cat "$TMP/stamps" | xargs printf '20260930T00000%dZ')" | grep -q .; }
+check "a snapshot that fails warns" warned
+check "and the database is backed up all the same" db_backed_up
+check "and nothing half-made is left" no_half_snap
+check "and the command carries on" grep -q 'after-the-snippet' <<<"$out"
 unset -f date
 
 # ------------------------------------------------------------------ the lock

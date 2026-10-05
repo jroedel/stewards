@@ -63,7 +63,8 @@ On the server, in `APP_DIR`:
 | `stewards` | the binary. `.prev` is the one before, `.last-good` the latest that started and answered, `.failed` the latest that did not |
 | `config.toml` | from `make deploy-send-secrets`; never edited on the server |
 | `stewards.db` | the database, mode 0600 |
-| `backups/` | one copy per deploy, the newest `KEEP_BACKUPS` kept |
+| `photo-files/` | the photos: each plant photo's large, small and original, and the inbox's in `inbox/`. Mode 0700 |
+| `backups/` | per deploy, a copy of the database and a snapshot of `photo-files/`, the newest `KEEP_BACKUPS` of each kept. The snapshots are hard links, so a photo is stored once however many hold it; they keep a photo removed later, but are on the same disk, so a copy off the server is still a person's to take |
 | `run.sh`, `supervise.sh` | start the binary, and keep it running from cron |
 | `stewards.log` | the server's log |
 | `deployed-commit.txt` | the commit that is live |
@@ -76,9 +77,9 @@ lines alone -- `scripts/deploy-test.sh` holds that.
 
 | Command | What |
 |---|---|
-| `make prod-status` | the process, the public checks, what is live, backups, the log |
+| `make prod-status` | the process, the public checks, what is live, backups, the photos and their snapshots, the log |
 | `make prod-logs N=200` | the tail of the log |
-| `make prod-backup` | a backup now (stops the app for a second or two) |
+| `make prod-backup` | a backup now, database and photos (stops the app for a second or two) |
 | `make prod-restart` | restart |
 | `make deploy` | deploy from your machine, from a clean `main` |
 | `make deploy-htaccess` | the front end only |
