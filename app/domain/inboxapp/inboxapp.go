@@ -10,8 +10,10 @@
 //
 // A batch reaches the server one of two ways, and both end in the same Add.
 //
-// The send screen's script (static/send.js) sends the photos one request at a
-// time, to SendPattern, and says "Sending 3 of 15" while it does. That is the
+// The send screen's script (static/send.mjs) sends the photos one request at a
+// time, to SendPattern, and says "Sending 3 of 15" while it does. A photo
+// larger than 4096 pixels on its longer side is shrunk to that on the phone
+// first (static/shrink.mjs), so the server is sent 12 MP at most. That is the
 // way a batch normally arrives. It was a single post at first, and the first
 // batch of fifteen from a phone showed what that costs: nothing on the screen
 // for the minutes it took, a form that could still be changed underneath it,
@@ -30,6 +32,7 @@
 package inboxapp
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"embed"
@@ -37,9 +40,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -107,20 +112,37 @@ const (
 	keepOneTime = time.Minute
 )
 
-// sendJS is the send screen's script. It is served from this app rather than
-// with the shared stylesheet and fonts, because it is about the inbox and
-// nothing else, and behind the same sign-in as every inbox route.
+// scripts are the send screen's modules: send.mjs, which the page loads, and
+// what it imports. They are served from this app rather than with the shared
+// stylesheet and fonts, because they are about the inbox and nothing else,
+// and behind the same sign-in as every inbox route. Named one by one rather
+// than as static/*.mjs, so the tests beside them are never served.
 //
-//go:embed static/send.js
-var sendJS []byte
+//go:embed static/send.mjs static/shrink.mjs static/jpeg.mjs
+var scripts embed.FS
 
-// scriptPath is where the script is linked from, with its hash as the
-// version, so that a phone can keep it for a year and still fetch the new one
-// the first time a page names it after a deploy.
-var scriptPath = func() string {
-	sum := sha256.Sum256(sendJS)
+// scriptDir is where the modules are served from. They import each other by
+// name, relative to it.
+const scriptDir = IndexPath + "/static/"
 
-	return IndexPath + "/send.js?v=" + hex.EncodeToString(sum[:])[:12]
+// scriptTags is each module's ETag: a hash of what it holds, worked out once.
+//
+// A phone asks again every time the page loads, and is told 304 when nothing
+// changed. Not a hash in the address and a year's cache, as the stylesheet
+// has: the page could name send.mjs by its hash, but send.mjs imports
+// shrink.mjs by a plain name, so after a deploy a phone would run a new
+// send.mjs with a shrink.mjs from before it.
+var scriptTags = func() map[string]string {
+	tags := map[string]string{}
+
+	names, _ := fs.Glob(scripts, "static/*.mjs")
+	for _, name := range names {
+		body, _ := scripts.ReadFile(name)
+		sum := sha256.Sum256(body)
+		tags[path.Base(name)] = `"` + hex.EncodeToString(sum[:])[:16] + `"`
+	}
+
+	return tags
 }()
 
 // Inbox is what this app needs from the inbox rules.
@@ -185,7 +207,7 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 		"GET " + IndexPath + "/new":         a.newForm,
 		UploadPattern:                       a.upload,
 		SendPattern:                         a.sendOne,
-		"GET " + IndexPath + "/send.js":     a.script,
+		"GET " + scriptDir + "{file}":       a.script,
 		"GET " + IndexPath + "/{id}":        a.sortForm,
 		"POST " + IndexPath + "/{id}":       a.sort,
 		"GET " + IndexPath + "/{id}/{file}": a.file,
@@ -587,15 +609,31 @@ func (a app) sendOne(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// script serves the send screen's script. Cacheable for a year, because the
-// page links it by its hash (scriptPath); that overrides the page policy's
-// no-store, as the stylesheet does.
+// script serves one of the send screen's modules, to be asked for again on
+// every page load (scriptTags says why).
 func (a app) script(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("file")
+
+	tag, ok := scriptTags[name]
+	if !ok {
+		http.NotFound(w, r)
+
+		return
+	}
+
+	body, err := scripts.ReadFile("static/" + name)
+	if err != nil {
+		http.NotFound(w, r)
+
+		return
+	}
+
 	h := w.Header()
 	h.Set("Content-Type", "text/javascript; charset=utf-8")
-	h.Set("Cache-Control", "private, max-age=31536000, immutable")
+	h.Set("Cache-Control", "private, no-cache")
+	h.Set("ETag", tag)
 
-	_, _ = w.Write(sendJS)
+	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(body))
 }
 
 // The sentences a photo is refused with, where both ways of sending say them.
@@ -640,7 +678,7 @@ func (a app) showNew(w http.ResponseWriter, r *http.Request, status int, v newVi
 
 	v.Nursery, v.Note = f.At == inboxbus.Nursery, f.Note
 	v.MaxPhotos, v.MaxMB = MaxPhotos, MaxBytes>>20
-	v.Script, v.SendURL = scriptPath, strings.TrimPrefix(SendPattern, "POST ")
+	v.Script, v.SendURL = scriptDir+"send.mjs", strings.TrimPrefix(SendPattern, "POST ")
 
 	byID := map[types.ID]placebus.Place{}
 	for _, p := range places {

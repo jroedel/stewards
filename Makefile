@@ -73,8 +73,16 @@ vuln-check: ## Check dependencies against the Go vulnerability database (needs n
 test-unit: ## Run unit tests, with the race detector
 	@GO=$(GO) scripts/go-test -race ./...
 
+.PHONY: test-js
+test-js: ## The send screen's JavaScript, under Node's own test runner. No browser
+	@scripts/js-test unit
+
+.PHONY: test-browser
+test-browser: ## The send screen in headless Chrome, against a server built for it
+	@scripts/js-test browser
+
 .PHONY: test
-test: test-unit lint shell-test ## Full check: unit tests + lint + shell tests
+test: test-unit lint shell-test test-js test-browser ## Full check: unit tests + lint + shell tests + JavaScript, in Node and in Chrome
 	@echo "vuln-check needs the network and is run separately by CI"
 
 .PHONY: cover

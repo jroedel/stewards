@@ -422,17 +422,17 @@ func TestAPhotoSentOneAtATimeNamesWhatIsWrongWithTheBatch(t *testing.T) {
 	}
 }
 
-// The send screen links its script by the script's own hash, and the header
-// policy lets that script run and send, and nothing inline.
+// The send screen loads its script as a module, the modules it imports are
+// served beside it and nothing else is, and the header policy lets them run
+// and send, and nothing inline.
 func TestTheSendScreenLinksItsScript(t *testing.T) {
 	s := serve(t)
 
 	w := s.get("/steward/inbox/new", true)
 	page := w.Body.String()
 
-	m := regexp.MustCompile(`<script src="(/steward/inbox/send\.js\?v=[0-9a-f]{12})" defer></script>`).FindStringSubmatch(page)
-	if m == nil {
-		t.Fatal("the send screen does not link its script")
+	if !strings.Contains(page, `<script type="module" src="/steward/inbox/static/send.mjs"></script>`) {
+		t.Fatal("the send screen does not load its script as a module")
 	}
 
 	for _, want := range []string{`data-send="/steward/inbox/send"`, `data-done="/steward/inbox"`, `data-max="20"`, `id="sending"`, `id="sent"`} {
@@ -451,13 +451,44 @@ func TestTheSendScreenLinksItsScript(t *testing.T) {
 		t.Errorf("the header policy allows inline script: %s", csp)
 	}
 
-	js := s.get(strings.ReplaceAll(m[1], "&amp;", "&"), true)
-	if js.Code != http.StatusOK || js.Header().Get("Content-Type") != "text/javascript; charset=utf-8" || !strings.Contains(js.Body.String(), "form[data-send]") {
-		t.Errorf("the script: %d %q", js.Code, js.Header().Get("Content-Type"))
+	// Each module, and each import in it, is served: a module whose import
+	// 404s fails as a whole, silently, and the page is back to one post.
+	imports := regexp.MustCompile(`from "\./([a-z]+\.mjs)"`)
+	for _, name := range []string{"send.mjs", "shrink.mjs", "jpeg.mjs"} {
+		js := s.get("/steward/inbox/static/"+name, true)
+		if js.Code != http.StatusOK || js.Header().Get("Content-Type") != "text/javascript; charset=utf-8" {
+			t.Errorf("%s: %d %q", name, js.Code, js.Header().Get("Content-Type"))
+
+			continue
+		}
+
+		if js.Header().Get("Cache-Control") != "private, no-cache" || js.Header().Get("ETag") == "" {
+			t.Errorf("%s is not asked for again after a deploy: %q %q", name, js.Header().Get("Cache-Control"), js.Header().Get("ETag"))
+		}
+
+		for _, m := range imports.FindAllStringSubmatch(js.Body.String(), -1) {
+			if w := s.get("/steward/inbox/static/"+m[1], true); w.Code != http.StatusOK {
+				t.Errorf("%s imports %s, which is not served: %d", name, m[1], w.Code)
+			}
+		}
+
+		// Unchanged since the phone last asked: 304, and nothing sent.
+		r := httptest.NewRequest(http.MethodGet, "/steward/inbox/static/"+name, nil)
+		r.Header.Set("If-None-Match", js.Header().Get("ETag"))
+		if again := s.send(r, true); again.Code != http.StatusNotModified {
+			t.Errorf("%s asked for again with its ETag: %d, want 304", name, again.Code)
+		}
 	}
 
-	if !strings.Contains(js.Header().Get("Cache-Control"), "immutable") {
-		t.Errorf("the script is not kept by the phone: %q", js.Header().Get("Cache-Control"))
+	// The tests beside the modules, and anything else, are not served.
+	for _, name := range []string{"jpeg_test.mjs", "send.js", "..%2Finboxapp.go"} {
+		if w := s.get("/steward/inbox/static/"+name, true); w.Code != http.StatusNotFound {
+			t.Errorf("%s: %d, want 404", name, w.Code)
+		}
+	}
+
+	if w := s.get("/steward/inbox/static/send.mjs", false); w.Code == http.StatusOK {
+		t.Error("the script was served to somebody signed out")
 	}
 }
 
