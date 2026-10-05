@@ -24,6 +24,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/inbox/stores/inboxdb"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
+	"github.com/jroedel/stewards/business/domain/nursery/nurserybus"
+	"github.com/jroedel/stewards/business/domain/nursery/stores/nurserydb"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/photo/stores/photodb"
 	"github.com/jroedel/stewards/business/domain/photo/stores/photofs"
@@ -50,6 +52,7 @@ type site struct {
 	listings *listingbus.Business
 	photos   *photobus.Business
 	inbox    *inboxbus.Business
+	nursery  *nurserybus.Business
 	cookie   *http.Cookie
 	key      string
 	steward  types.ID
@@ -72,6 +75,7 @@ func serve(t *testing.T) *site {
 		func() error { return photodb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
 		func() error { return inboxdb.Init(t.Context(), db) },
+		func() error { return nurserydb.Init(t.Context(), db) },
 		func() error { return workdaydb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
@@ -98,7 +102,8 @@ func serve(t *testing.T) *site {
 		listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
 		photos:   photobus.NewBusiness(photodb.NewStore(db), files, nil),
 	}
-	s.inbox = inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, s.photos, s.listings, nil)
+	s.nursery = nurserybus.NewBusiness(nurserydb.NewStore(db), nil)
+	s.inbox = inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, inboxbus.Deps{Photos: s.photos, Listings: s.listings, Stock: s.nursery}, nil)
 
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
@@ -107,6 +112,7 @@ func serve(t *testing.T) *site {
 		Photos:   s.photos,
 		Listings: s.listings,
 		Inbox:    s.inbox,
+		Nursery:  s.nursery,
 		BaseURL:  base, Mail: &mail.Recorder{},
 	}); err != nil {
 		t.Fatal(err)
@@ -284,6 +290,7 @@ func TestTheIndexListsWhatIsThere(t *testing.T) {
 		"PUT /api/v1/species/{slug}", apiapp.UploadPattern,
 		"GET /api/v1/places/{slug}/plants", "PUT /api/v1/places/{slug}/plants/{species}",
 		"GET /api/v1/inbox", "GET /api/v1/inbox/{id}/{file}", "POST /api/v1/inbox/{id}/sort",
+		"GET /api/v1/nursery", "PUT /api/v1/nursery/lines/{id}",
 	} {
 		if !seen[want] {
 			t.Errorf("the index does not list %s", want)

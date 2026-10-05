@@ -1,6 +1,6 @@
 ---
 name: stewards-api
-description: Add plants, their photos and where they grow to the live garden steward app through its API, and sort the steward's photo inbox, as the steward whose key is in STEWARDS_API_KEY. Use when the person asks to upload, import or add species data, species photos or a place's plants to the site, or to sort, go through or identify the photos in their inbox — not for developing the app.
+description: Add plants, their photos and where they grow to the live garden steward app through its API, sort the steward's photo inbox, and read nursery stock for planning a bed, as the steward whose key is in STEWARDS_API_KEY. Use when the person asks to upload, import or add species data, species photos or a place's plants to the site, to sort, go through or identify the photos in their inbox, or to plan a bed from what the nurseries have — not for developing the app.
 ---
 
 # Adding plants, photos and listings, and sorting the inbox, through the API
@@ -177,6 +177,7 @@ batches, and sorts them later. "Sort my inbox" means this:
    wingstem, again), and say "not sure" freely. The outcomes are:
    - `photo` — a photo of the plant, for its photos: something to find out
      about, or a flower not often seen. Choose the `kind`.
+   - `stock` — a plant for sale, from a nursery photo: see below.
    - `planted` — the plant was just planted at the `place`. It is listed
      there to protect and taken off the To plant list; the photo becomes its
      young plant. Only for photos on the property. Ask the person if it is a
@@ -201,13 +202,36 @@ batches, and sorts them later. "Sort my inbox" means this:
    plant that got one: the steward checks them there before any volunteer
    sees them. List the photos set aside with their questions.
 
-Nursery photos (`"at": "nursery"`) are stock for planning a bed: their tags
-are often legible, and the scientific name on a tag is the best evidence
-there is. Until the app keeps nursery stock, sort a good photo of a plant to
-its photos and set the rest aside with what the tag says.
+Nursery photos (`"at": "nursery"`) are stock for planning a bed. Sort each
+as `stock`: `nursery` (the name as `GET /api/v1/nursery` writes it, if it was
+visited before), `name_on_tag` as the tag writes it, and `pot_size`, `price`
+and `count` when the photo shows them. Give `species` only when the tag's
+scientific name matches a plant that is already here; a tag is evidence, not
+an identification, and an unmatched line is fine. A good flower close-up from
+a nursery can be a `photo` of the plant instead, if the person wants it.
 
 A photo with a person who can be recognised in it is never sorted to a
 plant's photos: set it aside and say so.
+
+## Planning a bed from nursery stock
+
+`GET /api/v1/nursery` is every visit, the most recent first, and `latest`
+marks each nursery's most recent visit: what is on its tables now. To turn
+it into a bed's candidate list:
+
+1. Read the bed: its place card, conditions and what is already listed there
+   (`GET /api/v1/places/<slug>/plants`), and the planting guide format the
+   stewards use (color, bloom, size, light).
+2. Take the `latest` visits' lines. For a line with a `species`, read the
+   plant (`GET /api/v1/species/<slug>`) for its status, light, water, size
+   and bloom. A line without one is a tag you can still reason about, but say
+   it is unmatched.
+3. Show the person a table: what fits the bed's light and water, natives
+   first, what blooms when the bed has gaps, pot size and price, and how many
+   the nursery had. Say what you left out and why.
+
+A line read wrongly is corrected with `PUT /api/v1/nursery/lines/<id>`,
+sending the whole line.
 
 ## When something is refused
 

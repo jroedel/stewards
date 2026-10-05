@@ -1,0 +1,43 @@
+{{define "title"}}Nursery stock · Garden stewards{{end}}
+{{define "content"}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow"><a href="/steward">Places</a></p>
+<h1>Nursery stock</h1>
+<p class="lead">What each nursery had when a steward last walked round it, for planning a bed. It comes from nursery photos sorted in the <a href="/steward/inbox">photo inbox</a>. Volunteers never see it.</p>
+
+{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+
+{{if .Current}}
+{{range .Current}}{{template "nursery-visit" .}}{{end}}
+{{else}}
+<div class="card empty"><p>No nursery stock yet. Send photos taken at a nursery to the inbox, then sort each one as nursery stock.</p></div>
+{{end}}
+
+{{if .Earlier}}
+<details class="card">
+  <summary>Earlier visits ({{len .Earlier}})</summary>
+  {{range .Earlier}}{{template "nursery-visit" .}}{{end}}
+</details>
+{{end}}
+</div>
+{{end}}{{end}}
+
+{{define "nursery-visit"}}
+<section class="card photo-kind" aria-label="{{.Nursery}}, {{.Day}}">
+  <h2>{{.Nursery}}</h2>
+  <p class="help">{{.Day}} · {{len .Lines}} {{if eq (len .Lines) 1}}plant{{else}}plants{{end}}</p>
+  <ul class="photo-list">
+  {{range .Lines}}<li id="line-{{.ID}}">
+    {{if .InboxID}}<a class="photo-thumb" href="/steward/inbox/{{.InboxID}}/large.jpg"><img src="/steward/inbox/{{.InboxID}}/small.jpg" alt="" loading="lazy"></a>{{end}}
+    <div class="photo-about">
+      <p class="row-name">{{if .Name}}<a href="/plants/{{.Slug}}">{{.Name}}</a>{{else}}{{.NameOnTag}}{{end}}</p>
+      <p class="row-tags">{{if .Native}}<span class="tag tag-ok">{{.Status}}</span>{{else if .Status}}<span class="tag">{{.Status}}</span>{{else if not .Name}}<span class="tag tag-open">Not matched to a plant yet</span>{{end}}</p>
+      {{if and .Name .NameOnTag}}<p class="row-note">Tag: {{.NameOnTag}}</p>{{end}}
+      {{with .Facts}}<p class="row-note">{{.}}</p>{{end}}
+      {{with .Note}}<p class="row-note">{{.}}</p>{{end}}
+      <a href="/steward/nursery/lines/{{.ID}}/edit">Correct</a>
+    </div>
+  </li>
+  {{end}}</ul>
+</section>
+{{end}}

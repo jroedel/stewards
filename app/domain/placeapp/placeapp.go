@@ -86,8 +86,10 @@ type Config struct {
 	Photos   PhotoReader
 
 	// Inbox may be nil, for no inbox: the front page then has no link to
-	// one.
-	Inbox InboxCounter
+	// one. NurseryStock is whether to link to the nursery stock, which
+	// arrives through the inbox.
+	Inbox        InboxCounter
+	NurseryStock bool
 }
 
 type app struct {
@@ -98,10 +100,11 @@ type app struct {
 	listings Listings
 	photos   PhotoReader
 	inbox    InboxCounter
+	nursery  bool
 }
 
 func newApp(cfg Config) app {
-	return app{log: cfg.Log, render: cfg.Render, places: cfg.Places, species: cfg.Species, listings: cfg.Listings, photos: cfg.Photos, inbox: cfg.Inbox}
+	return app{log: cfg.Log, render: cfg.Render, places: cfg.Places, species: cfg.Species, listings: cfg.Listings, photos: cfg.Photos, inbox: cfg.Inbox, nursery: cfg.NurseryStock}
 }
 
 // Routes mounts the stewards' screens, every route behind guard.
@@ -142,6 +145,7 @@ type indexView struct {
 	// photos are in it.
 	Inbox   bool
 	Waiting int
+	Nursery bool
 }
 
 func (a app) index(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +177,7 @@ func (a app) index(w http.ResponseWriter, r *http.Request) {
 	// A count that cannot be read is no reason to keep a steward from the
 	// places: logged, and the link shown without it.
 	if a.inbox != nil {
-		v.Inbox = true
+		v.Inbox, v.Nursery = true, a.nursery
 
 		if v.Waiting, err = a.inbox.Count(r.Context()); err != nil {
 			a.log.WarnContext(r.Context(), "counting the inbox", "request_id", web.RequestIDFrom(r.Context()), "error", err)

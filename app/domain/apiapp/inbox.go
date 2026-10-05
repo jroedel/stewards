@@ -11,6 +11,7 @@ import (
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/inbox/inboxbus"
+	"github.com/jroedel/stewards/business/domain/nursery/nurserybus"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/types"
@@ -22,7 +23,7 @@ import (
 // photo, say what plant it is and why, and file it once the steward agrees.
 // So the API reads the inbox, serves its pictures to the key, and sorts a
 // photo through inboxbus.Sort -- the same rule the sort screen uses -- into a
-// plant's photo, a planting, or "not sure yet".
+// plant's photo, a planting, a line of a nursery's stock, or "not sure yet".
 //
 // Not a discard. Throwing a photo away cannot be undone, and nothing is
 // removed through the API: a photo that should go is set aside with a note
@@ -64,6 +65,13 @@ type SortIn struct {
 	Kind    string `json:"kind"`
 	Place   string `json:"place"`
 	Note    string `json:"note"`
+
+	// For stock.
+	Nursery   string `json:"nursery"`
+	NameOnTag string `json:"name_on_tag"`
+	PotSize   string `json:"pot_size"`
+	Price     string `json:"price"`
+	Count     int    `json:"count"`
 }
 
 func (a app) inboxEndpoints() []Endpoint {
@@ -83,11 +91,16 @@ func (a app) inboxEndpoints() []Endpoint {
 			Method: http.MethodPost, Path: Prefix + "/inbox/{id}/sort", NeedsKey: true,
 			Summary: "Sort a photo: into a plant's photos, into a plant just planted at a place, or set aside as not sure yet. A plant's photo arrives not checked, as every photo from the API does. Sending the same sort twice changes nothing. A photo is discarded by a steward on its screen, never here: set it aside with a note saying why.",
 			Body: &Body{Encoding: "json", Fields: []Field{
-				{Name: "outcome", Type: "string", Required: true, Values: []string{string(inboxbus.AsPhoto), string(inboxbus.AsPlanted), string(inboxbus.AsUnsure)}, Description: "photo: a photo of the plant, to add to its photos. planted: the plant was just planted at the place; it is listed there to protect, off the To plant list, and the photo is added as its young plant. unsure: set aside, with a question in the note."},
+				{Name: "outcome", Type: "string", Required: true, Values: a.sortOutcomes(), Description: "photo: a photo of the plant, to add to its photos. planted: the plant was just planted at the place; it is listed there to protect, off the To plant list, and the photo is added as its young plant. stock: a plant for sale, from a photo taken at a nursery; a line of that nursery's stock on the day, keeping the photo for three months. unsure: set aside, with a question in the note."},
 				{Name: "species", Type: "string", Description: "The plant's slug, for photo and planted. It must already be added: PUT /api/v1/species/{slug} first."},
 				{Name: "kind", Type: "string", Values: kindNames(), Description: "What it shows, for photo; for planted, leave it out for young."},
 				{Name: "place", Type: "string", Description: "A place slug: where it was taken, for photo, or planted, for planted. Leave it out to keep the place the photo was sent with. Never for a photo taken at a nursery."},
-				{Name: "note", Type: "string", Description: fmt.Sprintf("For unsure: the question, or why it should go, at most %d characters.", inboxbus.MaxNote)},
+				{Name: "note", Type: "string", Description: fmt.Sprintf("For unsure: the question, or why it should go, at most %d characters. For stock: a note on the line.", inboxbus.MaxNote)},
+				{Name: "nursery", Type: "string", Description: "For stock: the nursery's name, as GET /api/v1/nursery writes it for one visited before."},
+				{Name: "name_on_tag", Type: "string", Description: "For stock: the name on the tag, as the tag writes it. Needed unless species is given; give both when the tag is legible."},
+				{Name: "pot_size", Type: "string", Description: `For stock: as the tag writes it, such as "1 gal" or "4 in".`},
+				{Name: "price", Type: "string", Description: `For stock: dollars and cents, such as "12.99".`},
+				{Name: "count", Type: "integer", Description: "For stock: how many were on the table, if counted."},
 			}},
 			Returns: `200 {"outcome": "photo", "unchanged": false, "photo": {"id", "photos_url"}, "listing": {...}, "inbox": inbox photo}. 409 when it was already sorted differently, with what it became.`,
 			handler: a.sortInbox,
@@ -212,6 +225,12 @@ func (a app) sortInbox(w http.ResponseWriter, r *http.Request) {
 
 	switch outcome {
 	case inboxbus.AsPhoto, inboxbus.AsPlanted, inboxbus.AsUnsure:
+	case inboxbus.AsStock:
+		if a.nursery == nil {
+			web.WriteJSON(w, http.StatusUnprocessableEntity, web.Problem("outcome", "Nursery stock is not kept here. Send photo or unsure."))
+
+			return
+		}
 	case inboxbus.AsDiscard:
 		web.WriteJSON(w, http.StatusUnprocessableEntity, web.Problem("outcome", "A photo is discarded by a steward on its screen, after looking, not through the API. Send unsure, with a note saying why it should go."))
 
@@ -224,6 +243,18 @@ func (a app) sortInbox(w http.ResponseWriter, r *http.Request) {
 
 	s := inboxbus.Sorting{Outcome: outcome, Kind: photobus.Kind(in.Kind), Note: in.Note}
 
+	if outcome == inboxbus.AsStock {
+		price, err := nurserybus.ParsePrice(in.Price)
+		if err != nil {
+			web.WriteJSON(w, http.StatusUnprocessableEntity, web.Problem("price", page.Sentence(err.Error())))
+
+			return
+		}
+
+		s.Nursery = in.Nursery
+		s.Stock = nurserybus.Fields{NameOnTag: in.NameOnTag, PotSize: in.PotSize, PriceCents: price, Count: in.Count, Note: in.Note}
+	}
+
 	var sp speciesbus.Species
 
 	if in.Species != "" {
@@ -232,7 +263,7 @@ func (a app) sortInbox(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		s.SpeciesID = sp.ID
+		s.SpeciesID, s.Stock.SpeciesID = sp.ID, sp.ID
 	}
 
 	if in.Place != "" {
@@ -313,7 +344,22 @@ func (a app) sortInbox(w http.ResponseWriter, r *http.Request) {
 		out["listing"] = a.listingOf(res.Listing, sp.Slug)
 	}
 
+	if outcome == inboxbus.AsStock && !res.Unchanged {
+		out["line"] = a.lineOf(res.Line, species, true)
+	}
+
 	web.WriteJSON(w, http.StatusOK, out)
+}
+
+// sortOutcomes is what the index offers: stock only where it is kept, and
+// never discard.
+func (a app) sortOutcomes() []string {
+	out := []string{string(inboxbus.AsPhoto), string(inboxbus.AsPlanted)}
+	if a.nursery != nil {
+		out = append(out, string(inboxbus.AsStock))
+	}
+
+	return append(out, string(inboxbus.AsUnsure))
 }
 
 func (a app) inboxItemOf(it inboxbus.Item, places, species map[types.ID]string) InboxItemJSON {
@@ -329,7 +375,7 @@ func (a app) inboxItemOf(it inboxbus.Item, places, species map[types.ID]string) 
 		out.TakenAt = it.TakenAt.In(types.Garden).Format(time.RFC3339)
 	}
 
-	if it.Status == inboxbus.New || it.Status == inboxbus.Unsure {
+	if it.HasPictures() {
 		out.LargeURL = a.base + Prefix + "/inbox/" + it.ID.String() + "/large.jpg"
 		out.SmallURL = a.base + Prefix + "/inbox/" + it.ID.String() + "/small.jpg"
 	}

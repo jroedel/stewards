@@ -47,6 +47,7 @@ var Expected = sqldb.Expected{
 		"large_width", "large_height", "small_width", "small_height",
 		"created_at", "updated_at",
 		"outcome", "species_id", "photo_id", "sorted_by", "sorted_at",
+		"nursery_line_id", "pruned_at",
 	},
 }
 
@@ -103,6 +104,11 @@ CREATE INDEX IF NOT EXISTS inbox_place ON inbox (place_id);
 		{"photo_id", "TEXT"},
 		{"sorted_by", "TEXT"},
 		{"sorted_at", "INTEGER"},
+
+		// For nursery stock: the line it became, and when its pictures
+		// were removed, which they are some months later.
+		{"nursery_line_id", "TEXT"},
+		{"pruned_at", "INTEGER"},
 	} {
 		if err := sqldb.AddColumn(ctx, db, "inbox", c.name, c.decl); err != nil {
 			return err
@@ -114,7 +120,7 @@ CREATE INDEX IF NOT EXISTS inbox_place ON inbox (place_id);
 
 const columns = `id, from_user_id, at, place_id, note, taken_at, lat, lon, status, format, sha256,
 large_width, large_height, small_width, small_height, created_at, updated_at,
-outcome, species_id, photo_id, sorted_by, sorted_at`
+outcome, species_id, photo_id, sorted_by, sorted_at, nursery_line_id, pruned_at`
 
 // open is the statuses a photo can still be sorted from, as SQL.
 const open = `status IN ('` + string(inboxbus.New) + `', '` + string(inboxbus.Unsure) + `')`
@@ -130,18 +136,23 @@ func (s *Store) Create(ctx context.Context, it inboxbus.Item) error {
 		lat, lon = it.Where.Lat, it.Where.Lon
 	}
 
-	var sorted any
+	var sorted, pruned any
 	if !it.SortedAt.IsZero() {
 		sorted = it.SortedAt.UnixMilli()
 	}
 
+	if !it.PrunedAt.IsZero() {
+		pruned = it.PrunedAt.UnixMilli()
+	}
+
 	_, err := s.db.ExecContext(ctx, `INSERT INTO inbox (`+columns+`)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		it.ID.String(), orNull(it.FromID), string(it.At), orNull(it.PlaceID), it.Note,
 		taken, lat, lon, string(it.Status), it.Format, it.SHA256,
 		it.Large.Width, it.Large.Height, it.Small.Width, it.Small.Height,
 		it.CreatedAt.UnixMilli(), it.UpdatedAt.UnixMilli(),
-		string(it.Outcome), orNull(it.SpeciesID), orNull(it.PhotoID), orNull(it.SortedBy), sorted)
+		string(it.Outcome), orNull(it.SpeciesID), orNull(it.PhotoID), orNull(it.SortedBy), sorted,
+		orNull(it.LineID), pruned)
 
 	switch {
 	case sqldb.IsForeignKeyViolation(err):
@@ -238,6 +249,49 @@ func (s *Store) SetPhoto(ctx context.Context, id, photoID types.ID, at time.Time
 	return nil
 }
 
+// SetLine records the line of nursery stock a sorted one became.
+func (s *Store) SetLine(ctx context.Context, id, lineID types.ID, at time.Time) error {
+	if _, err := s.db.ExecContext(ctx, `UPDATE inbox SET nursery_line_id = ?, updated_at = ? WHERE id = ?`,
+		orNull(lineID), at.UnixMilli(), id.String()); err != nil {
+		return fmt.Errorf("recording the nursery stock an inbox photo became: %w", err)
+	}
+
+	return nil
+}
+
+// StockTakenBefore is every nursery stock photo taken before the time, or
+// sent before it when the camera did not say, whose pictures are still kept.
+func (s *Store) StockTakenBefore(ctx context.Context, before time.Time) ([]inboxbus.Item, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+columns+` FROM inbox
+WHERE status = ? AND outcome = ? AND pruned_at IS NULL AND coalesce(taken_at, created_at) < ?
+ORDER BY created_at, id`, string(inboxbus.Sorted), string(inboxbus.AsStock), before.UnixMilli())
+	if err != nil {
+		return nil, fmt.Errorf("listing old nursery stock photos: %w", err)
+	}
+	defer rows.Close()
+
+	var all []inboxbus.Item
+	for rows.Next() {
+		it, err := scan(rows)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, it)
+	}
+
+	return all, rows.Err()
+}
+
+// SetPruned records that a photo's pictures are gone.
+func (s *Store) SetPruned(ctx context.Context, id types.ID, at time.Time) error {
+	if _, err := s.db.ExecContext(ctx, `UPDATE inbox SET pruned_at = ?, updated_at = ? WHERE id = ?`,
+		at.UnixMilli(), at.UnixMilli(), id.String()); err != nil {
+		return fmt.Errorf("recording an inbox photo's pictures as removed: %w", err)
+	}
+
+	return nil
+}
+
 // SetUnsure sets a photo aside with its note, only if it is still new or
 // unsure.
 func (s *Store) SetUnsure(ctx context.Context, id types.ID, note string, at time.Time) error {
@@ -286,6 +340,8 @@ func scan(row scanner) (inboxbus.Item, error) {
 		id, at, status   string
 		from, place      sql.NullString
 		taken, sorted    sql.NullInt64
+		pruned           sql.NullInt64
+		line             sql.NullString
 		lat, lon         sql.NullFloat64
 		created, updated int64
 		outcome          string
@@ -295,7 +351,7 @@ func scan(row scanner) (inboxbus.Item, error) {
 
 	err := row.Scan(&id, &from, &at, &place, &it.Note, &taken, &lat, &lon, &status, &it.Format, &it.SHA256,
 		&it.Large.Width, &it.Large.Height, &it.Small.Width, &it.Small.Height, &created, &updated,
-		&outcome, &species, &photo, &by, &sorted)
+		&outcome, &species, &photo, &by, &sorted, &line, &pruned)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return inboxbus.Item{}, err
@@ -313,7 +369,7 @@ func scan(row scanner) (inboxbus.Item, error) {
 	for _, ref := range []struct {
 		col sql.NullString
 		dst *types.ID
-	}{{from, &it.FromID}, {place, &it.PlaceID}, {species, &it.SpeciesID}, {photo, &it.PhotoID}, {by, &it.SortedBy}} {
+	}{{from, &it.FromID}, {place, &it.PlaceID}, {species, &it.SpeciesID}, {photo, &it.PhotoID}, {by, &it.SortedBy}, {line, &it.LineID}} {
 		if !ref.col.Valid {
 			continue
 		}
@@ -329,6 +385,10 @@ func scan(row scanner) (inboxbus.Item, error) {
 
 	if sorted.Valid {
 		it.SortedAt = time.UnixMilli(sorted.Int64).UTC()
+	}
+
+	if pruned.Valid {
+		it.PrunedAt = time.UnixMilli(pruned.Int64).UTC()
 	}
 
 	if lat.Valid && lon.Valid {

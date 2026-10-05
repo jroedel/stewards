@@ -9,7 +9,7 @@
 
 {{if .Sorted}}
 <p class="lead">{{.Sorted}}</p>
-{{with .PhotosAt}}<a class="button button-block" href="{{.}}">See the plant's photos</a>{{end}}
+{{with .SeeAt}}<a class="button button-block" href="{{.}}">{{$.Data.SeeLabel}}</a>{{end}}
 <a class="onward" href="/steward/inbox"><span>Back to the inbox</span><span aria-hidden="true">›</span></a>
 {{else}}
 
@@ -25,6 +25,7 @@
 {{if not .As}}
 <a class="button button-block" href="/steward/inbox/{{.ID}}?as=photo">A plant: add it to the plant's photos</a>
 {{if not .Nursery}}<a class="button button-block" href="/steward/inbox/{{.ID}}?as=planted">Just planted: list it at its place</a>{{end}}
+{{if .Stock}}<a class="button button-block" href="/steward/inbox/{{.ID}}?as=stock">Nursery stock: add it to the nursery's list</a>{{end}}
 <a class="button button-block button-quiet" href="/steward/inbox/{{.ID}}?as=unsure">Not sure yet: set it aside</a>
 <a class="button button-block button-quiet" href="/steward/inbox/{{.ID}}?as=discard">Discard</a>
 {{else}}
@@ -52,6 +53,46 @@
   {{if eq .As "planted"}}<p class="help">It is listed there to protect, and comes off the To plant list if it was on it.</p>{{end}}
   <p class="help">The photo goes to the plant's photos not yet checked. Volunteers see it once a steward checks it there.</p>
   <button class="button" type="submit">{{if eq .As "planted"}}Save the planting{{else}}Add the photo{{end}}</button>
+  {{end}}
+
+  {{if eq .As "stock"}}
+  <label for="nursery">Which nursery</label>
+  {{with index .Problems "nursery"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="nursery" name="nursery" type="text" value="{{.NurseryAt}}" maxlength="100" list="nurseries" required autocomplete="off">
+  <datalist id="nurseries">{{range .Nurseries}}<option value="{{.}}">{{end}}</datalist>
+
+  <label for="name_on_tag">Name on the tag</label>
+  <p class="help" id="tag-help">As the tag writes it, scientific name and all. Needed unless you choose the plant below.</p>
+  {{with index .Problems "name_on_tag"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="name_on_tag" name="name_on_tag" type="text" value="{{.NameOnTag}}" maxlength="100" aria-describedby="tag-help" autocomplete="off">
+
+  <label for="species">Which of our plants it is <span class="optional">optional</span></label>
+  <p class="help" id="species-help">Only if you are sure. A tag can be wrong, and a plant for sale is not an identification.</p>
+  {{with index .Problems "species"}}<p class="field-problem">{{.}}</p>{{end}}
+  <select id="species" name="species" aria-describedby="species-help">{{range .Species}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{if .Value}}{{.Label}}{{else}}Not matched yet{{end}}</option>{{end}}</select>
+
+  <div class="pair">
+    <div>
+      <label for="pot_size">Pot size <span class="optional">optional</span></label>
+      {{with index .Problems "pot_size"}}<p class="field-problem">{{.}}</p>{{end}}
+      <input id="pot_size" name="pot_size" type="text" value="{{.PotSize}}" maxlength="40" placeholder="1 gal">
+    </div>
+    <div>
+      <label for="price">Price <span class="optional">optional</span></label>
+      {{with index .Problems "price"}}<p class="field-problem">{{.}}</p>{{end}}
+      <input id="price" name="price" type="text" value="{{.Price}}" inputmode="decimal" placeholder="12.99">
+    </div>
+  </div>
+
+  <label for="count">How many there were <span class="optional">optional</span></label>
+  {{with index .Problems "count"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="count" name="count" type="text" value="{{.Count}}" inputmode="numeric">
+
+  <label for="stock_note">A note <span class="optional">optional</span></label>
+  {{with index .Problems "note"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="stock_note" name="stock_note" type="text" value="{{.StockNote}}" maxlength="300" placeholder="healthy, in bloom, on the shade table">
+  <p class="help">Nursery stock is for planning beds. Volunteers never see it, and the photo is removed after three months.</p>
+  <button class="button" type="submit">Add to the nursery's list</button>
   {{end}}
 
   {{if eq .As "unsure"}}

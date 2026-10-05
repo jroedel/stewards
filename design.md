@@ -174,7 +174,8 @@ The phase 1 mockups are at <https://claude.ai/artifact/EZV9C92thqqWH5drvW2AQr>.
 |---|---|---|
 | **Send photos** | Get the photos off the phone, now | Many photos at once · one toggle, *On the property* (always the default) or *At a nursery* · optional place and one-line note for the whole batch · nothing asked per photo |
 | **Photo inbox** | What is waiting to be sorted? | Waiting photos by the day they were taken · "Sort, starting with the newest" · *Not sure yet*, with each photo's question · the count on the stewards' front page is the only reminder |
-| **Sort a photo** | What is this one? | The photo, large · four choices: *a plant's photo*, *just planted* (not for a nursery photo), *not sure yet*, *discard* (with a tick to confirm) · each opens one short form · after saving, on to the next photo |
+| **Sort a photo** | What is this one? | The photo, large · the choices: *a plant's photo*, *just planted* (not for a nursery photo), *nursery stock* (only for one), *not sure yet*, *discard* (with a tick to confirm) · each opens one short form · after saving, on to the next photo |
+| **Nursery stock** | What can we buy for the next bed? | Each nursery's latest visit first, earlier ones folded away · each line: the tag photo (kept three months), the plant it was matched to with its native status, the name on the tag, pot · price · how many · *Correct* |
 
 **Keep from the first mockups** (reviewed 2026-09-30): the **month-by-month bloom color map** on the place card, and the species card's **list of the places it grows** ("Where it grows here"). A species links to every place it's in, and each place links back.
 
