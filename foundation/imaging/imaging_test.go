@@ -2,6 +2,7 @@ package imaging
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"hash/crc32"
@@ -10,8 +11,10 @@ import (
 	"image/draw"
 	"image/jpeg"
 	"image/png"
+	"math"
 	"runtime"
 	"testing"
+	"time"
 )
 
 // Fixtures are drawn here, never a real photo: a real one has a garden, a
@@ -121,7 +124,7 @@ func isRed(c color.Color) bool {
 func TestAnUprightPhonePhotoComesOutUprightAndClean(t *testing.T) {
 	src := withEXIF(jpegOf(t, picture(2000, 1000)), 6, "2027:04:18 09:30:00")
 
-	p, err := Prepare(src)
+	p, err := Prepare(t.Context(), src)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,8 +148,12 @@ func TestAnUprightPhonePhotoComesOutUprightAndClean(t *testing.T) {
 		t.Error("the photo was not turned a quarter clockwise")
 	}
 
-	if p.Taken != (Taken{Year: 2027, Month: 4}) {
-		t.Errorf("taken %+v, want April 2027", p.Taken)
+	if p.Taken != (Taken{Year: 2027, Month: 4, Day: 18, Hour: 9, Minute: 30}) {
+		t.Errorf("taken %+v, want 18 April 2027 at 9:30", p.Taken)
+	}
+
+	if p.Located {
+		t.Errorf("a photo with no GPS directory was located at %+v", p.Where)
 	}
 
 	for name, b := range map[string][]byte{"large": p.Large.JPEG, "small": p.Small.JPEG} {
@@ -200,7 +207,7 @@ func TestASmallTransparentPNGIsNotEnlargedOrBlackened(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p, err := Prepare(buf.Bytes())
+	p, err := Prepare(t.Context(), buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +242,7 @@ func TestWhatIsNotAPhotoIsRefused(t *testing.T) {
 		"too small":      {tiny, ErrTooSmall},
 		"a pixel bomb":   {pngClaiming(t, 100_000, 100_000), ErrTooLarge},
 	} {
-		if _, err := Prepare(tc.data); !errors.Is(err, tc.want) {
+		if _, err := Prepare(t.Context(), tc.data); !errors.Is(err, tc.want) {
 			t.Errorf("%s: %v, want %v", name, err, tc.want)
 		}
 	}
@@ -296,7 +303,7 @@ func TestAPhonePhotoIsShrunkWithoutCostingItsSizeInMemory(t *testing.T) {
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
 
-	p, err := Prepare(src)
+	p, err := Prepare(t.Context(), src)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,7 +339,7 @@ func TestFineDetailIsAveragedNotSkipped(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p, err := Prepare(buf.Bytes())
+	p, err := Prepare(t.Context(), buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,4 +361,197 @@ func TestFineDetailIsAveragedNotSkipped(t *testing.T) {
 
 func fill(img *image.RGBA, r image.Rectangle, c color.RGBA) {
 	draw.Draw(img, r, image.NewUniform(c), image.Point{}, draw.Src)
+}
+
+// gpsEXIF is a JPEG's APP1 with what a phone writes about where and when, in
+// big-endian, which is the other byte order withEXIF does not cover: the
+// date, its offset from UTC, and a GPS directory with a latitude and a
+// longitude as degrees, minutes and seconds. The position is made up, a
+// field west of Austin, rather than anybody's garden.
+func gpsEXIF(jpg []byte, latRef byte, lat [3][2]uint32, lonRef byte, lon [3][2]uint32, taken, offset string) []byte {
+	be := binary.BigEndian
+	var t []byte
+	put16 := func(v uint16) { t = be.AppendUint16(t, v) }
+	put32 := func(v uint32) { t = be.AppendUint32(t, v) }
+	entry := func(tag, kind uint16, count, value uint32) {
+		put16(tag)
+		put16(kind)
+		put32(count)
+		put32(value)
+	}
+
+	// In big-endian an inline ASCII or SHORT value sits at the front of
+	// the field, so a one-letter reference is the field's top byte.
+	inline := func(b byte) uint32 { return uint32(b) << 24 }
+
+	dir := func(n int) uint32 { return uint32(2 + n*12 + 4) }
+
+	const ifd0At = 8
+	exifAt := ifd0At + dir(2)
+	dateAt := exifAt + dir(2)
+	offsetAt := dateAt + 20
+	gpsAt := offsetAt + 7
+	latAt := gpsAt + dir(4)
+	lonAt := latAt + 24
+
+	t = append(t, "MM\x00*"...)
+	put32(ifd0At)
+
+	put16(2)
+	entry(0x8769, 4, 1, exifAt)
+	entry(0x8825, 4, 1, gpsAt)
+	put32(0)
+
+	put16(2)
+	entry(0x9003, 2, 20, dateAt)
+	entry(0x9011, 2, 7, offsetAt)
+	put32(0)
+	t = append(t, taken+"\x00"...)
+	t = append(t, offset+"\x00"...)
+
+	put16(4)
+	entry(1, 2, 2, inline(latRef))
+	entry(2, 5, 3, latAt)
+	entry(3, 2, 2, inline(lonRef))
+	entry(4, 5, 3, lonAt)
+	put32(0)
+
+	for _, r := range append(lat[:], lon[:]...) {
+		put32(r[0])
+		put32(r[1])
+	}
+
+	seg := append([]byte("Exif\x00\x00"), t...)
+	app1 := []byte{0xFF, 0xE1}
+	app1 = binary.BigEndian.AppendUint16(app1, uint16(len(seg)+2))
+	app1 = append(app1, seg...)
+
+	out := append([]byte{}, jpg[:2]...)
+	out = append(out, app1...)
+
+	return append(out, jpg[2:]...)
+}
+
+// 30° 18' 36.72" N, 97° 54' 0" W, as a phone writes it: whole degrees and
+// minutes, and seconds as hundredths.
+var (
+	fieldLat = [3][2]uint32{{30, 1}, {18, 1}, {3672, 100}}
+	fieldLon = [3][2]uint32{{97, 1}, {54, 1}, {0, 1}}
+)
+
+func TestAPhonesPositionAndMomentAreRead(t *testing.T) {
+	src := gpsEXIF(jpegOf(t, picture(400, 300)), 'N', fieldLat, 'W', fieldLon, "2026:10:03 16:45:09", "-05:00")
+
+	p, err := Prepare(t.Context(), src)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !p.Located {
+		t.Fatal("the GPS position was not read")
+	}
+
+	if math.Abs(p.Where.Lat-30.3102) > 1e-6 || math.Abs(p.Where.Lon-(-97.9)) > 1e-6 {
+		t.Errorf("located at %+v, want 30.3102, -97.9", p.Where)
+	}
+
+	// The camera's own zone wins over the fallback: 4:45 pm at UTC-5 is
+	// 9:45 pm UTC, whatever zone the caller would have guessed.
+	at, ok := p.Taken.Time(time.UTC)
+	if !ok || !at.Equal(time.Date(2026, 10, 3, 21, 45, 9, 0, time.UTC)) {
+		t.Errorf("taken at %v (%v), want 21:45:09 UTC on 3 October 2026", at, ok)
+	}
+
+	for name, b := range map[string][]byte{"large": p.Large.JPEG, "small": p.Small.JPEG} {
+		if bytes.Contains(b, []byte("Exif")) {
+			t.Errorf("the %s picture still carries the EXIF", name)
+		}
+	}
+}
+
+func TestAPositionThatCannotBeRightIsNotOne(t *testing.T) {
+	zero := [3][2]uint32{{0, 1}, {0, 1}, {0, 1}}
+
+	for name, src := range map[string][]byte{
+		"no fix, written as zeros": gpsEXIF(jpegOf(t, picture(400, 300)), 'N', zero, 'E', zero, "2026:10:03 16:45:09", "-05:00"),
+		"a zero denominator":       gpsEXIF(jpegOf(t, picture(400, 300)), 'N', [3][2]uint32{{30, 0}, {0, 1}, {0, 1}}, 'W', fieldLon, "2026:10:03 16:45:09", "-05:00"),
+		"no reference":             gpsEXIF(jpegOf(t, picture(400, 300)), 0, fieldLat, 'W', fieldLon, "2026:10:03 16:45:09", "-05:00"),
+		"past the pole":            gpsEXIF(jpegOf(t, picture(400, 300)), 'N', [3][2]uint32{{91, 1}, {0, 1}, {0, 1}}, 'W', fieldLon, "2026:10:03 16:45:09", "-05:00"),
+	} {
+		if m := readEXIF(src, "jpeg"); m.located {
+			t.Errorf("%s: located at %+v", name, m.where)
+		}
+	}
+}
+
+// A camera that wrote no zone, or one that wrote nonsense, gives a wall
+// clock, which the caller reads in the zone it knows the garden is in.
+func TestAClockWithNoZoneIsReadInTheCallersZone(t *testing.T) {
+	chicago, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Skip("no zone database here:", err)
+	}
+
+	src := gpsEXIF(jpegOf(t, picture(400, 300)), 'N', fieldLat, 'W', fieldLon, "2026:10:03 16:45:09", "later")
+	m := readEXIF(src, "jpeg")
+
+	if m.taken.Zoned {
+		t.Errorf("an offset of %q was believed", "later")
+	}
+
+	at, ok := m.taken.Time(chicago)
+	if !ok || !at.Equal(time.Date(2026, 10, 3, 16, 45, 9, 0, chicago)) {
+		t.Errorf("taken at %v, want 4:45 pm in Chicago", at)
+	}
+}
+
+func TestAPartDateIsKeptToTheMonth(t *testing.T) {
+	for raw, want := range map[string]Taken{
+		"2026:09:31 10:00:00": {Year: 2026, Month: 9}, // no 31 September
+		"2026:10:03 25:00:00": {Year: 2026, Month: 10},
+		"2026:10:03         ": {Year: 2026, Month: 10},
+		"2026:02:29 10:00:00": {Year: 2026, Month: 2}, // not a leap year
+		"2028:02:29 10:00:00": {Year: 2028, Month: 2, Day: 29, Hour: 10},
+	} {
+		got := parseTaken([]byte(raw))
+		if got != want {
+			t.Errorf("%q: %+v, want %+v", raw, got, want)
+		}
+
+		if _, ok := got.Time(time.UTC); ok != (want.Day != 0) {
+			t.Errorf("%q: Time says ok=%v", raw, ok)
+		}
+	}
+}
+
+// Only one photo is decoded at a time in the whole process, and waiting for
+// the turn gives up when the request does. The turn is taken here by hand,
+// as another caller's photo would take it.
+func TestAPhotoWaitsItsTurnAndGivesUpWithItsRequest(t *testing.T) {
+	src := jpegOf(t, picture(400, 300))
+
+	one <- struct{}{}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+
+	_, err := Prepare(ctx, src)
+	<-one
+
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Prepare while another photo was being decoded: %v, want it to wait and then give up", err)
+	}
+
+	// And a photo that is refused from its header does not wait at all.
+	one <- struct{}{}
+	_, err = Prepare(t.Context(), []byte("not a photo"))
+	<-one
+
+	if !errors.Is(err, ErrNotAPhoto) {
+		t.Errorf("a non-photo while another was being decoded: %v", err)
+	}
+
+	if _, err := Prepare(t.Context(), src); err != nil {
+		t.Errorf("after the turn was given back: %v", err)
+	}
 }

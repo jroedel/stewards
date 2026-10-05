@@ -1,0 +1,33 @@
+{{define "title"}}Photo inbox · Garden stewards{{end}}
+{{define "content"}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow"><a href="/steward">Places</a></p>
+<h1>Photo inbox</h1>
+<p class="lead">Photos sent from the garden or a nursery, waiting to be sorted: which plant, which place, and what happened. Volunteers never see them.</p>
+
+{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+
+<a class="button button-block" href="/steward/inbox/new">Send photos</a>
+
+{{if .Days}}
+<p class="help">{{.Count}} waiting to be sorted.</p>
+{{range .Days}}
+<section class="card photo-kind" aria-label="{{.Label}}">
+  <h2>{{.Label}}</h2>
+  <ul class="photo-list">
+  {{range .Items}}<li>
+    <a class="photo-thumb" href="/steward/inbox/{{.ID}}/large.jpg"><img src="/steward/inbox/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="" loading="lazy"></a>
+    <div class="photo-about">
+      <p class="row-tags">{{if .Nursery}}<span class="tag">At a nursery</span>{{else if .Where}}<span class="tag">{{.Where}}</span>{{else}}<span class="tag tag-open">Place not said</span>{{end}}</p>
+      {{with .Note}}<p class="row-note">{{.}}</p>{{end}}
+      {{with .Time}}<p class="row-note">{{.}}</p>{{end}}
+    </div>
+  </li>
+  {{end}}</ul>
+</section>
+{{end}}
+{{else}}
+<div class="card empty"><p>Nothing waiting. Photos you send land here until they are sorted.</p></div>
+{{end}}
+</div>
+{{end}}{{end}}

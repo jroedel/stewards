@@ -1,0 +1,42 @@
+{{define "title"}}Send photos · Garden stewards{{end}}
+{{define "content"}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow"><a href="/steward/inbox">Photo inbox</a></p>
+<h1>Send photos</h1>
+<p class="lead">Choose as many as you like, up to {{.MaxPhotos}} at a time. They wait in the inbox; what each one is can be sorted later.</p>
+
+{{with .Kept}}<p class="done" role="status">{{.}}</p>{{end}}
+{{if .Refused}}<div class="problem" role="alert">
+  <p>{{len .Refused}} not kept:</p>
+  <ul>{{range .Refused}}<li><strong>{{.Name}}</strong>: {{.Problem}}</li>{{end}}</ul>
+</div>{{end}}
+{{if .Problems}}<p class="problem" role="alert">Nothing was sent yet. Fix what is marked below, choose the photos again, and press Send.</p>{{end}}
+
+<form class="card form" method="post" action="/steward/inbox" enctype="multipart/form-data">
+  <label for="photo">Photos</label>
+  <p class="help" id="photo-help">JPEG or PNG, as the camera saved them, up to {{.MaxMB}} MB in all.</p>
+  {{with index .Problems "photo"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="photo" name="photo" type="file" accept="image/jpeg,image/png" multiple required aria-describedby="photo-help">
+
+  <fieldset>
+    <legend>Where were they taken?</legend>
+    {{with index .Problems "at"}}<p class="field-problem">{{.}}</p>{{end}}
+    <label class="check"><input type="radio" name="at" value="property"{{if not .Nursery}} checked{{end}}> On the property</label>
+    <label class="check"><input type="radio" name="at" value="nursery"{{if .Nursery}} checked{{end}}> At a nursery</label>
+  </fieldset>
+
+  <label for="place">Which place <span class="optional">optional</span></label>
+  <p class="help" id="place-help">Only if they are all from one place. Leave it for photos from all over, or from a nursery.</p>
+  {{with index .Problems "place"}}<p class="field-problem">{{.}}</p>{{end}}
+  <select id="place" name="place" aria-describedby="place-help">{{range .Places}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+
+  <label for="note">A note <span class="optional">optional</span></label>
+  <p class="help" id="note-help">One line to jog your memory later, such as "new by the gate" or "shade table, by the till".</p>
+  {{with index .Problems "note"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="note" name="note" type="text" value="{{.Note}}" maxlength="300" aria-describedby="note-help">
+
+  {{with index .Problems "from"}}<p class="field-problem">{{.}}</p>{{end}}
+  <button class="button" type="submit">Send</button>
+</form>
+</div>
+{{end}}{{end}}

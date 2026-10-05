@@ -14,6 +14,7 @@ import (
 	"github.com/jroedel/stewards/app/domain/apiapp"
 	"github.com/jroedel/stewards/app/domain/authapp"
 	"github.com/jroedel/stewards/app/domain/homeapp"
+	"github.com/jroedel/stewards/app/domain/inboxapp"
 	"github.com/jroedel/stewards/app/domain/photoapp"
 	"github.com/jroedel/stewards/app/domain/placeapp"
 	"github.com/jroedel/stewards/app/domain/signupapp"
@@ -23,6 +24,7 @@ import (
 	"github.com/jroedel/stewards/app/sdk/health"
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
+	"github.com/jroedel/stewards/business/domain/inbox/inboxbus"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
@@ -46,6 +48,11 @@ type Config struct {
 	Photos   *photobus.Business
 	Users    *userbus.Business
 	Workdays *workdaybus.Business
+
+	// Inbox may be nil, and its screens are then not mounted. Optional
+	// rather than required only so that a test about something else need
+	// not build one; main always passes it.
+	Inbox *inboxbus.Business
 
 	// Subscribers may be nil, and with no Mail or no BaseURL it is unused:
 	// the email sign-up is mounted only when it can send its welcome.
@@ -82,7 +89,7 @@ func New(cfg Config) (http.Handler, error) {
 
 	// One renderer holding every app's pages: the stylesheet has one hashed
 	// path, and net/http panics on a pattern registered twice.
-	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, stewardapp.Templates, workdayapp.Templates, signupapp.Templates)
+	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, inboxapp.Templates, stewardapp.Templates, workdayapp.Templates, signupapp.Templates)
 	if err != nil {
 		return nil, err
 	}
@@ -98,6 +105,12 @@ func New(cfg Config) (http.Handler, error) {
 	signUp := cfg.BaseURL != "" && cfg.Mail != nil && cfg.Subscribers != nil
 	homeapp.New(cfg.Log, render, cfg.Places, cfg.Workdays, signUp).Routes(mux)
 	places := placeapp.Config{Log: cfg.Log, Render: render, Places: cfg.Places, Species: cfg.Species, Listings: cfg.Listings, Photos: cfg.Photos}
+	// Assigned only when there is one: a nil *inboxbus.Business inside
+	// the interface is not a nil interface, and the front page would call
+	// it.
+	if cfg.Inbox != nil {
+		places.Inbox = cfg.Inbox
+	}
 	species := speciesapp.Config{Log: cfg.Log, Render: render, Species: cfg.Species, Places: cfg.Places, Listings: cfg.Listings, Photos: cfg.Photos}
 	photos := photoapp.Config{Log: cfg.Log, Render: render, Photos: cfg.Photos, Species: cfg.Species, Places: cfg.Places}
 
@@ -123,6 +136,10 @@ func New(cfg Config) (http.Handler, error) {
 		placeapp.Routes(mux, places, guard)
 		speciesapp.Routes(mux, species, guard)
 		photoapp.Routes(mux, photos, guard)
+
+		if cfg.Inbox != nil {
+			inboxapp.Routes(mux, inboxapp.Config{Log: cfg.Log, Render: render, Inbox: cfg.Inbox, Places: cfg.Places}, guard)
+		}
 		workdayapp.Routes(mux, workdayapp.Config{Log: cfg.Log, Render: render, Days: cfg.Workdays}, guard)
 
 		if signUp {
@@ -167,9 +184,9 @@ func New(cfg Config) (http.Handler, error) {
 	// Who is signed in comes after them, so a refused write costs no
 	// database read; the language innermost, since only the pages need it.
 	//
-	// How big and what shape are a fork rather than a line. The two upload
-	// routes are the writes that are a file: they get a photo-sized limit
-	// and must be multipart. The rest of the API keeps 64 KB and must be
+	// How big and what shape are a fork rather than a line. The upload
+	// routes are the writes that are a file: they get a photo-sized limit,
+	// or a batch-sized one for the inbox, and must be multipart. The rest of the API keeps 64 KB and must be
 	// JSON; every other route keeps 64 KB and form encoding. Separate
 	// branches into the muxes, rather than one limit with exceptions inside
 	// it, because a limit can only tighten (web.MaxBody): an upload must
@@ -185,6 +202,7 @@ func New(cfg Config) (http.Handler, error) {
 
 	shape := http.NewServeMux()
 	shape.Handle(photoapp.UploadPattern, web.Wrap(inner, web.MaxBody(maxUpload), web.MultipartOnly()))
+	shape.Handle(inboxapp.UploadPattern, web.Wrap(inner, web.MaxBody(inboxapp.MaxBytes), web.MultipartOnly()))
 	shape.Handle(apiapp.UploadPattern, web.Wrap(apiInner, web.MaxBody(maxUpload), web.MultipartOnly()))
 	shape.Handle("/api/", web.Wrap(apiInner, web.MaxBody(maxBody), web.JSONOnly()))
 	shape.Handle("/", web.Wrap(inner, web.MaxBody(maxBody), web.FormEncodedOnly()))

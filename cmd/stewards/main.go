@@ -10,10 +10,13 @@ import (
 	"maps"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/jroedel/stewards/app/sdk/muxer"
+	"github.com/jroedel/stewards/business/domain/inbox/inboxbus"
+	"github.com/jroedel/stewards/business/domain/inbox/stores/inboxdb"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
@@ -106,6 +109,14 @@ func run() error {
 		return err
 	}
 
+	// The inbox's photos in a directory of their own inside it: the same
+	// tree to back up, and no route that serves a plant's photo can ever
+	// be handed one of these, which nobody has looked at yet.
+	inboxFiles, err := photofs.NewStore(filepath.Join(cfg.Photos.Dir, "inbox"))
+	if err != nil {
+		return err
+	}
+
 	expected := expectedSchema()
 
 	if err := sqldb.CheckSchema(ctx, db, expected); err != nil {
@@ -144,6 +155,7 @@ func run() error {
 		Photos:   photobus.NewBusiness(photodb.NewStore(db), photoFiles, nil),
 		Users:    users,
 		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
+		Inbox:    inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, nil),
 
 		Subscribers: subscribers,
 		BaseURL:     cfg.Server.BaseURL,
@@ -165,7 +177,9 @@ func run() error {
 // order the references point in. Places come first of the domains: every
 // layer points at a place, and the listings of species at places reference
 // both places and species, so they go after both; so do photos, for the same
-// reason. Stewardship days and the email list reference nothing, and go last. A store added in
+// reason. The inbox names a place and the steward who sent each photo, so it
+// follows the stewards. Stewardship days and the email list reference
+// nothing, and go last. A store added in
 // the wrong place fails at startup on a fresh database and nowhere else, which
 // is the cheapest moment for it to fail.
 func prepare(ctx context.Context, db *sql.DB) error {
@@ -179,6 +193,7 @@ func prepare(ctx context.Context, db *sql.DB) error {
 		{"plants listed at places", listingdb.Init},
 		{"photos", photodb.Init},
 		{"stewards", userdb.Init},
+		{"the photo inbox", inboxdb.Init},
 		{"stewardship days", workdaydb.Init},
 		{"the email list", subscriberdb.Init},
 	} {
@@ -205,6 +220,7 @@ func expectedSchema() sqldb.Expected {
 		listingdb.Expected,
 		photodb.Expected,
 		userdb.Expected,
+		inboxdb.Expected,
 		workdaydb.Expected,
 		subscriberdb.Expected,
 	} {

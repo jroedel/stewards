@@ -236,7 +236,7 @@ func TestAListedPlaceOrPlantCannotBeRemoved(t *testing.T) {
 	confirm := url.Values{"confirm": {"yes"}}
 
 	w := s.post("/steward/places/"+middle+"/delete", confirm)
-	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "Middle band still has plants listed, or photos taken there.") {
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "Middle band still has plants listed, or photos taken there,") {
 		t.Errorf("removing a place with plants: %d", w.Code)
 	}
 
