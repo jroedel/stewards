@@ -213,7 +213,8 @@ func New(cfg Config) (http.Handler, error) {
 	//
 	// How big and what shape are a fork rather than a line. The upload
 	// routes are the writes that are a file: they get a photo-sized limit,
-	// or a batch-sized one for the inbox, and must be multipart. The rest of the API keeps 64 KB and must be
+	// or a batch-sized one for the inbox's form without its script, and must
+	// be multipart. The rest of the API keeps 64 KB and must be
 	// JSON; every other route keeps 64 KB and form encoding. Separate
 	// branches into the muxes, rather than one limit with exceptions inside
 	// it, because a limit can only tighten (web.MaxBody): an upload must
@@ -230,6 +231,7 @@ func New(cfg Config) (http.Handler, error) {
 	shape := http.NewServeMux()
 	shape.Handle(photoapp.UploadPattern, web.Wrap(inner, web.MaxBody(maxUpload), web.MultipartOnly()))
 	shape.Handle(inboxapp.UploadPattern, web.Wrap(inner, web.MaxBody(inboxapp.MaxBytes), web.MultipartOnly()))
+	shape.Handle(inboxapp.SendPattern, web.Wrap(inner, web.MaxBody(inboxapp.MaxSendBytes), web.MultipartOnly()))
 	shape.Handle(apiapp.UploadPattern, web.Wrap(apiInner, web.MaxBody(maxUpload), web.MultipartOnly()))
 	shape.Handle("/api/", web.Wrap(apiInner, web.MaxBody(maxBody), web.JSONOnly()))
 	shape.Handle("/", web.Wrap(inner, web.MaxBody(maxBody), web.FormEncodedOnly()))

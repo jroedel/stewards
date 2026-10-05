@@ -2,6 +2,7 @@ package inboxapp_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"image"
 	"image/jpeg"
 	"log/slog"
@@ -173,9 +174,23 @@ type file struct {
 	data []byte
 }
 
-// batch posts the send form as a phone would: multipart, every photo chosen a
-// part called photo.
+// batch posts the send form as a phone would without its script: multipart,
+// every photo chosen a part called photo.
 func (s *site) batch(fields url.Values, files ...file) *httptest.ResponseRecorder {
+	s.t.Helper()
+
+	return s.multipart(inboxapp.IndexPath, fields, files...)
+}
+
+// one sends a photo as the send screen's script does: one to a request, with
+// the batch's fields every time.
+func (s *site) one(fields url.Values, f file) *httptest.ResponseRecorder {
+	s.t.Helper()
+
+	return s.multipart(inboxapp.IndexPath+"/send", fields, f)
+}
+
+func (s *site) multipart(path string, fields url.Values, files ...file) *httptest.ResponseRecorder {
 	s.t.Helper()
 
 	var body bytes.Buffer
@@ -197,7 +212,7 @@ func (s *site) batch(fields url.Values, files ...file) *httptest.ResponseRecorde
 
 	_ = mw.Close()
 
-	r := httptest.NewRequest(http.MethodPost, inboxapp.IndexPath, &body)
+	r := httptest.NewRequest(http.MethodPost, path, &body)
 	r.Header.Set("Content-Type", mw.FormDataContentType())
 
 	return s.send(r, true)
@@ -314,6 +329,153 @@ func TestABatchThatCannotBeSentSaysWhy(t *testing.T) {
 	if n, _ := s.inbox.Count(t.Context()); n != 0 {
 		t.Errorf("%d kept from batches that were refused", n)
 	}
+}
+
+// A batch sent by the script, a photo to a request: each answers whether it
+// was kept, a photo sent twice is there already, and a photo that cannot be
+// kept says why without stopping the ones after it. What the script counts,
+// the inbox shows.
+func TestPhotosSentOneAtATimeWaitInTheInbox(t *testing.T) {
+	s := serve(t)
+
+	fields := property()
+	fields.Set("place", s.inflow.ID.String())
+	fields.Set("note", "new by the outlet")
+
+	first := noisy(t, 11)
+
+	for _, tc := range []struct {
+		f       file
+		status  int
+		outcome string
+		field   string
+	}{
+		{file{"IMG_0011.JPG", first}, http.StatusCreated, "kept", ""},
+		{file{"IMG_0011 copy.JPG", first}, http.StatusOK, "already", ""},
+		{file{"Screenshot.txt", []byte("a shopping list")}, http.StatusUnprocessableEntity, "", "photo"},
+		{file{"IMG_0012.JPG", noisy(t, 12)}, http.StatusCreated, "kept", ""},
+	} {
+		w := s.one(fields, tc.f)
+		got := answer(t, w)
+
+		if w.Code != tc.status || got.Outcome != tc.outcome || got.Error.Field != tc.field || w.Header().Get("Content-Type") != "application/json; charset=utf-8" {
+			t.Errorf("%s: %d %+v, want %d %q %q", tc.f.name, w.Code, got, tc.status, tc.outcome, tc.field)
+		}
+
+		if tc.field != "" && got.Error.Problem == "" {
+			t.Errorf("%s was refused without saying why", tc.f.name)
+		}
+	}
+
+	list := s.get("/steward/inbox", true).Body.String()
+	for _, want := range []string{"2 waiting to be sorted.", "Inflow band", "new by the outlet"} {
+		if !strings.Contains(list, want) {
+			t.Errorf("the inbox does not show %q", want)
+		}
+	}
+}
+
+// What is wrong with the batch rather than a photo is refused with its field,
+// which is how the script knows to stop rather than go on to the next.
+func TestAPhotoSentOneAtATimeNamesWhatIsWrongWithTheBatch(t *testing.T) {
+	s := serve(t)
+
+	for name, tc := range map[string]struct {
+		fields url.Values
+		files  []file
+		field  string
+	}{
+		"nowhere":     {url.Values{}, []file{{"IMG.JPG", noisy(t, 13)}}, "at"},
+		"a bad place": {url.Values{"at": {"property"}, "place": {"elsewhere"}}, []file{{"IMG.JPG", noisy(t, 13)}}, "place"},
+		"no photo":    {property(), nil, "photo"},
+		"two photos":  {property(), []file{{"A.JPG", noisy(t, 14)}, {"B.JPG", noisy(t, 15)}}, "photo"},
+	} {
+		w := s.multipart(inboxapp.IndexPath+"/send", tc.fields, tc.files...)
+		if got := answer(t, w); w.Code != http.StatusUnprocessableEntity || got.Error.Field != tc.field || got.Error.Problem == "" {
+			t.Errorf("%s: %d %+v, want 422 on %q", name, w.Code, got, tc.field)
+		}
+	}
+
+	if n, _ := s.inbox.Count(t.Context()); n != 0 {
+		t.Errorf("%d kept from photos that were refused", n)
+	}
+
+	// And nobody signed out sends anything.
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	_ = mw.WriteField("at", "property")
+	part, _ := mw.CreateFormFile("photo", "IMG.JPG")
+	_, _ = part.Write(noisy(t, 16))
+	_ = mw.Close()
+
+	r := httptest.NewRequest(http.MethodPost, inboxapp.IndexPath+"/send", &body)
+	r.Header.Set("Content-Type", mw.FormDataContentType())
+
+	if w := s.send(r, false); w.Code == http.StatusCreated || w.Code == http.StatusOK {
+		t.Errorf("a photo was taken from somebody signed out: %d", w.Code)
+	}
+
+	if n, _ := s.inbox.Count(t.Context()); n != 0 {
+		t.Error("a photo from somebody signed out is in the inbox")
+	}
+}
+
+// The send screen links its script by the script's own hash, and the header
+// policy lets that script run and send, and nothing inline.
+func TestTheSendScreenLinksItsScript(t *testing.T) {
+	s := serve(t)
+
+	w := s.get("/steward/inbox/new", true)
+	page := w.Body.String()
+
+	m := regexp.MustCompile(`<script src="(/steward/inbox/send\.js\?v=[0-9a-f]{12})" defer></script>`).FindStringSubmatch(page)
+	if m == nil {
+		t.Fatal("the send screen does not link its script")
+	}
+
+	for _, want := range []string{`data-send="/steward/inbox/send"`, `data-done="/steward/inbox"`, `data-max="20"`, `id="sending"`, `id="sent"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the send screen has no %s for its script", want)
+		}
+	}
+
+	csp := w.Header().Get("Content-Security-Policy")
+	for _, want := range []string{"script-src 'self'", "connect-src 'self'"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("the header policy does not allow %q: %s", want, csp)
+		}
+	}
+	if strings.Contains(csp, "unsafe-inline") {
+		t.Errorf("the header policy allows inline script: %s", csp)
+	}
+
+	js := s.get(strings.ReplaceAll(m[1], "&amp;", "&"), true)
+	if js.Code != http.StatusOK || js.Header().Get("Content-Type") != "text/javascript; charset=utf-8" || !strings.Contains(js.Body.String(), "form[data-send]") {
+		t.Errorf("the script: %d %q", js.Code, js.Header().Get("Content-Type"))
+	}
+
+	if !strings.Contains(js.Header().Get("Cache-Control"), "immutable") {
+		t.Errorf("the script is not kept by the phone: %q", js.Header().Get("Cache-Control"))
+	}
+}
+
+type sendAnswer struct {
+	Outcome string `json:"outcome"`
+	Error   struct {
+		Field   string `json:"field"`
+		Problem string `json:"problem"`
+	} `json:"error"`
+}
+
+func answer(t *testing.T, w *httptest.ResponseRecorder) sendAnswer {
+	t.Helper()
+
+	var a sendAnswer
+	if err := json.Unmarshal(w.Body.Bytes(), &a); err != nil {
+		t.Fatalf("the answer is not JSON: %d %s", w.Code, w.Body.String())
+	}
+
+	return a
 }
 
 // At a nursery, a place chosen before the toggle was flipped is dropped.

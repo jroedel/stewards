@@ -22,12 +22,23 @@ const hsts = "max-age=31536000; includeSubDomains"
 
 // Policy is the whole header policy for this application.
 //
-// No script-src, deliberately. Nothing is served yet, and every page planned
-// for Phase 1 renders on the server. The day a page genuinely needs script --
-// working offline under the canopy is the likely one, per design.md -- this
-// grows a directive and deserves a Report-Only rollout rather than a quiet
-// edit, because a CSP that blocks your own script fails silently in a way that
-// looks like the feature is broken.
+// Script from this site only, and nothing inline. The first script is the
+// inbox's send screen, which sends a batch of photos one at a time and shows
+// how far it has got (inboxapp); it is a file served from this origin, so
+// 'self' is all it needs, and connect-src 'self' is the fetch it sends them
+// with. No 'unsafe-inline' and no nonce: a page that wants script links a
+// file, and an injected <script> or onclick= still does nothing.
+//
+// This went in enforced rather than as a Report-Only rollout, which is what
+// this comment used to ask for. A rollout is for a policy that might block
+// script a page depends on; here the only script is an improvement on a form
+// that works without it, so the worst a mistake in this policy can do is put
+// the send screen back the way it was. Nothing in this app takes reports yet,
+// either.
+//
+// What 'self' must never take in is a file somebody uploaded. Every response
+// is nosniff (web.SecureHeaders), and every photo is served as a JPEG this app
+// made from it, as image/jpeg, so a "photo" with script in it is never run.
 //
 // no-store is the starting point and not the settled answer. It is right for
 // a steward's edit screen and wrong for a species card a volunteer wants on
@@ -38,6 +49,8 @@ func Policy() web.PolicyFor {
 		return web.Policy{
 			ContentSecurityPolicy: strings.Join([]string{
 				"default-src 'none'",
+				"script-src 'self'",
+				"connect-src 'self'",
 				"style-src 'self'",
 
 				// Self-hosted, never from a font service: a stylesheet that
