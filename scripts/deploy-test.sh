@@ -410,6 +410,9 @@ upload_check() {
 	: > "$FAKE_LOG"
 	(
 		load_config() { :; }; need_app_dir() { :; }; ssh_setup() { :; }; require() { :; }
+		# As ssh does: it reads whatever is on its stdin and passes it to
+		# the remote command, which here would be the list of sizes.
+		remote_in_app() { cat >/dev/null; ( cd "$APP_DIR" && bash -c "$1" ); }
 		health_public() { :; }
 		ok()  { echo "ok: $*"; }
 		bad() { echo "bad: $*"; }
@@ -444,6 +447,7 @@ check "an answer the app never logged is not called a pass" grep -q '^bad: Apach
 check "and the check fails" test "$status" -ne 0
 
 check "every probe sends an empty Expect, so Apache checks the size first" test "$(sort -u "$FAKE_EXPECTS")" = empty
+check "both sizes are probed, not just the first ($(wc -l <"$FAKE_EXPECTS") probes in 4 runs)" test "$(wc -l <"$FAKE_EXPECTS")" -eq 8
 rm -f "$FAKE_LOG"
 
 echo
