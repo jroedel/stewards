@@ -15,6 +15,7 @@ import (
 	"github.com/jroedel/stewards/app/domain/authapp"
 	"github.com/jroedel/stewards/app/domain/homeapp"
 	"github.com/jroedel/stewards/app/domain/inboxapp"
+	"github.com/jroedel/stewards/app/domain/nurseryapp"
 	"github.com/jroedel/stewards/app/domain/photoapp"
 	"github.com/jroedel/stewards/app/domain/placeapp"
 	"github.com/jroedel/stewards/app/domain/signupapp"
@@ -26,6 +27,7 @@ import (
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/inbox/inboxbus"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
+	"github.com/jroedel/stewards/business/domain/nursery/nurserybus"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
@@ -53,6 +55,10 @@ type Config struct {
 	// rather than required only so that a test about something else need
 	// not build one; main always passes it.
 	Inbox *inboxbus.Business
+
+	// Nursery may be nil likewise, for no nursery stock screens. It is
+	// only mounted with an Inbox, which is how stock arrives.
+	Nursery *nurserybus.Business
 
 	// Subscribers may be nil, and with no Mail or no BaseURL it is unused:
 	// the email sign-up is mounted only when it can send its welcome.
@@ -89,7 +95,7 @@ func New(cfg Config) (http.Handler, error) {
 
 	// One renderer holding every app's pages: the stylesheet has one hashed
 	// path, and net/http panics on a pattern registered twice.
-	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, inboxapp.Templates, stewardapp.Templates, workdayapp.Templates, signupapp.Templates)
+	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, inboxapp.Templates, nurseryapp.Templates, stewardapp.Templates, workdayapp.Templates, signupapp.Templates)
 	if err != nil {
 		return nil, err
 	}
@@ -110,6 +116,7 @@ func New(cfg Config) (http.Handler, error) {
 	// it.
 	if cfg.Inbox != nil {
 		places.Inbox = cfg.Inbox
+		places.NurseryStock = cfg.Nursery != nil
 	}
 	species := speciesapp.Config{Log: cfg.Log, Render: render, Species: cfg.Species, Places: cfg.Places, Listings: cfg.Listings, Photos: cfg.Photos}
 	photos := photoapp.Config{Log: cfg.Log, Render: render, Photos: cfg.Photos, Species: cfg.Species, Places: cfg.Places}
@@ -138,7 +145,16 @@ func New(cfg Config) (http.Handler, error) {
 		photoapp.Routes(mux, photos, guard)
 
 		if cfg.Inbox != nil {
-			inboxapp.Routes(mux, inboxapp.Config{Log: cfg.Log, Render: render, Inbox: cfg.Inbox, Places: cfg.Places, Species: cfg.Species}, guard)
+			inboxCfg := inboxapp.Config{Log: cfg.Log, Render: render, Inbox: cfg.Inbox, Places: cfg.Places, Species: cfg.Species}
+			if cfg.Nursery != nil {
+				inboxCfg.Nursery = cfg.Nursery
+			}
+
+			inboxapp.Routes(mux, inboxCfg, guard)
+
+			if cfg.Nursery != nil {
+				nurseryapp.Routes(mux, nurseryapp.Config{Log: cfg.Log, Render: render, Stock: cfg.Nursery, Species: cfg.Species}, guard)
+			}
 		}
 		workdayapp.Routes(mux, workdayapp.Config{Log: cfg.Log, Render: render, Days: cfg.Workdays}, guard)
 
@@ -172,6 +188,10 @@ func New(cfg Config) (http.Handler, error) {
 		// As for the front page: a nil *Business is not a nil interface.
 		if cfg.Inbox != nil {
 			apiCfg.Inbox = cfg.Inbox
+		}
+
+		if cfg.Nursery != nil {
+			apiCfg.Nursery = cfg.Nursery
 		}
 
 		apiapp.Routes(api, apiCfg)

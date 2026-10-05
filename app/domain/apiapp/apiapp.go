@@ -94,8 +94,10 @@ type Config struct {
 	Listings Listings
 
 	// Inbox may be nil, and its endpoints are then neither mounted nor in
-	// the index.
-	Inbox Inbox
+	// the index. Nursery likewise; it is only offered with an Inbox, which
+	// is how stock arrives.
+	Inbox   Inbox
+	Nursery Nursery
 
 	// BaseURL is the public origin, for the absolute links in answers: a
 	// program reading them may be anywhere.
@@ -109,6 +111,7 @@ type app struct {
 	photos   Photos
 	listings Listings
 	inbox    Inbox
+	nursery  Nursery
 	base     string
 }
 
@@ -116,7 +119,10 @@ type app struct {
 // behind mid.RequireKey; mid.APIKey, which reads the key, is the muxer's to
 // put around the whole of it.
 func Routes(mux *http.ServeMux, cfg Config) {
-	a := app{log: cfg.Log, species: cfg.Species, places: cfg.Places, photos: cfg.Photos, listings: cfg.Listings, inbox: cfg.Inbox, base: cfg.BaseURL}
+	a := app{log: cfg.Log, species: cfg.Species, places: cfg.Places, photos: cfg.Photos, listings: cfg.Listings, inbox: cfg.Inbox, nursery: cfg.Nursery, base: cfg.BaseURL}
+	if a.inbox == nil {
+		a.nursery = nil
+	}
 	require := mid.RequireKey()
 
 	for _, e := range a.endpoints() {
@@ -260,6 +266,10 @@ func (a app) endpoints() []Endpoint {
 
 	if a.inbox != nil {
 		all = append(all, a.inboxEndpoints()...)
+	}
+
+	if a.nursery != nil {
+		all = append(all, a.nurseryEndpoints()...)
 	}
 
 	return all

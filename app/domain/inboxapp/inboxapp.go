@@ -32,6 +32,7 @@ import (
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/inbox/inboxbus"
+	"github.com/jroedel/stewards/business/domain/nursery/nurserybus"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
@@ -83,6 +84,13 @@ type Inbox interface {
 	Open(ctx context.Context, id types.ID, size photobus.Size) (inboxbus.Item, photobus.File, error)
 }
 
+// NurseryReader is what it needs from the nursery rules: the nurseries a
+// steward has been to, to choose from rather than type.
+type NurseryReader interface {
+	Nurseries(ctx context.Context) ([]string, error)
+	LastNursery(ctx context.Context, seen time.Time) (string, error)
+}
+
 // SpeciesReader is what it needs from the species rules: the plants a photo
 // is sorted to.
 type SpeciesReader interface {
@@ -102,6 +110,10 @@ type Config struct {
 	Inbox   Inbox
 	Places  PlaceReader
 	Species SpeciesReader
+
+	// Nursery may be nil, and a nursery photo is then not offered as
+	// stock.
+	Nursery NurseryReader
 }
 
 type app struct {
@@ -110,12 +122,13 @@ type app struct {
 	inbox   Inbox
 	places  PlaceReader
 	species SpeciesReader
+	nursery NurseryReader
 }
 
 // Routes mounts the inbox, every route behind guard. Its pictures too: an
 // inbox photo is a steward's alone, whatever it shows.
 func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
-	a := app{log: cfg.Log, render: cfg.Render, inbox: cfg.Inbox, places: cfg.Places, species: cfg.Species}
+	a := app{log: cfg.Log, render: cfg.Render, inbox: cfg.Inbox, places: cfg.Places, species: cfg.Species, nursery: cfg.Nursery}
 
 	for pattern, h := range map[string]http.HandlerFunc{
 		"GET " + IndexPath:                  a.list,
@@ -232,6 +245,8 @@ func sortedWords(done string) string {
 		return "Added to the plant's photos. It is shown to volunteers once a steward checks it there."
 	case "planted":
 		return "Listed as planted there, and added to the plant's photos to be checked."
+	case "stock":
+		return "Added to the nursery's stock."
 	case "unsure":
 		return "Set aside, with the question."
 	case "discard":
@@ -495,9 +510,20 @@ type sortView struct {
 	Problems               map[string]string
 	Done                   string
 
+	// Stock is whether a nursery photo can be stock, and the line's fields
+	// as given or as offered.
+	Stock     bool
+	Nurseries []string
+	NurseryAt string
+	NameOnTag string
+	PotSize   string
+	Price     string
+	Count     string
+	StockNote string
+
 	// Sorted is set once it has been: what it became, and where to see it.
-	Sorted   string
-	PhotosAt string
+	Sorted          string
+	SeeAt, SeeLabel string
 }
 
 func (a app) sortForm(w http.ResponseWriter, r *http.Request) {
@@ -508,8 +534,12 @@ func (a app) sortForm(w http.ResponseWriter, r *http.Request) {
 
 	as := r.URL.Query().Get("as")
 	switch inboxbus.Outcome(as) {
-	case inboxbus.AsPhoto, inboxbus.AsPlanted, inboxbus.AsUnsure, inboxbus.AsDiscard:
+	case inboxbus.AsPhoto, inboxbus.AsPlanted, inboxbus.AsStock, inboxbus.AsUnsure, inboxbus.AsDiscard:
 	default:
+		as = ""
+	}
+
+	if as == string(inboxbus.AsStock) && (it.At != inboxbus.Nursery || a.nursery == nil) {
 		as = ""
 	}
 
@@ -542,6 +572,24 @@ func (a app) sort(w http.ResponseWriter, r *http.Request) {
 		Note:    r.PostFormValue("note"),
 	}
 
+	if s.Outcome == inboxbus.AsStock {
+		v.NurseryAt, v.NameOnTag, v.PotSize = r.PostFormValue("nursery"), r.PostFormValue("name_on_tag"), r.PostFormValue("pot_size")
+		v.Price, v.Count, v.StockNote = r.PostFormValue("price"), r.PostFormValue("count"), r.PostFormValue("stock_note")
+		s.Nursery = v.NurseryAt
+		s.Stock = nurserybus.Fields{NameOnTag: v.NameOnTag, PotSize: v.PotSize, Note: v.StockNote}
+
+		var err error
+		if s.Stock.PriceCents, err = nurserybus.ParsePrice(v.Price); err != nil {
+			v.Problems["price"] = page.Sentence(err.Error())
+		}
+
+		if c := strings.TrimSpace(v.Count); c != "" {
+			if s.Stock.Count, err = strconv.Atoi(c); err != nil {
+				v.Problems["count"] = "Write how many there were as a number, or leave it empty."
+			}
+		}
+	}
+
 	for field, dst := range map[string]*types.ID{"species": &s.SpeciesID, "place": &s.PlaceID} {
 		if raw := r.PostFormValue(field); raw != "" {
 			id, err := types.ParseID(raw)
@@ -550,6 +598,10 @@ func (a app) sort(w http.ResponseWriter, r *http.Request) {
 			}
 			*dst = id
 		}
+	}
+
+	if s.Outcome == inboxbus.AsStock {
+		s.Stock.SpeciesID = s.SpeciesID
 	}
 
 	// A discard is the one sort that cannot be undone, so it asks, as
@@ -650,8 +702,12 @@ func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inb
 	switch it.Status {
 	case inboxbus.Sorted:
 		v.Sorted = "This photo has been sorted: " + sortedWords(string(it.Outcome))
-		if !it.SpeciesID.Zero() {
-			v.PhotosAt = "/steward/species/" + it.SpeciesID.String() + "/photos"
+
+		switch {
+		case it.Outcome == inboxbus.AsStock:
+			v.SeeAt, v.SeeLabel = "/steward/nursery", "See the nursery stock"
+		case !it.SpeciesID.Zero():
+			v.SeeAt, v.SeeLabel = "/steward/species/"+it.SpeciesID.String()+"/photos", "See the plant's photos"
 		}
 	case inboxbus.Discarded:
 		v.Sorted = "This photo was discarded."
@@ -671,6 +727,25 @@ func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inb
 	}
 
 	v.NoPlants = len(plants) == 0
+
+	if v.Stock = it.At == inboxbus.Nursery && a.nursery != nil; v.Stock && v.As == string(inboxbus.AsStock) {
+		if v.Nurseries, err = a.nursery.Nurseries(r.Context()); err != nil {
+			a.fail(w, r, "listing the nurseries", err)
+
+			return
+		}
+
+		// The nursery already recorded for the photo's day, if any: a
+		// morning's twenty tags are one nursery, and typing it once is
+		// enough.
+		if v.NurseryAt == "" {
+			if v.NurseryAt, err = a.nursery.LastNursery(r.Context(), it.When()); err != nil {
+				a.fail(w, r, "finding the day's nursery", err)
+
+				return
+			}
+		}
+	}
 
 	v.Species = []option{{Value: "", Label: "Choose the plant", Selected: s.SpeciesID.Zero()}}
 	for _, sp := range plants {

@@ -20,6 +20,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/inbox/stores/inboxdb"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
+	"github.com/jroedel/stewards/business/domain/nursery/nurserybus"
+	"github.com/jroedel/stewards/business/domain/nursery/stores/nurserydb"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/photo/stores/photodb"
 	"github.com/jroedel/stewards/business/domain/photo/stores/photofs"
@@ -145,8 +147,10 @@ func run() error {
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
 	photos := photobus.NewBusiness(photodb.NewStore(db), photoFiles, nil)
 	listings := listingbus.NewBusiness(listingdb.NewStore(db), nil)
+	nursery := nurserybus.NewBusiness(nurserydb.NewStore(db), nil)
+	inbox := inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, inboxbus.Deps{Photos: photos, Listings: listings, Stock: nursery}, nil)
 	subscribers := subscriberbus.NewBusiness(subscriberdb.NewStore(db), nil)
-	go prune(ctx, log, users, subscribers)
+	go prune(ctx, log, users, subscribers, inbox)
 
 	handler, err := muxer.New(muxer.Config{
 		Log:      log,
@@ -158,7 +162,8 @@ func run() error {
 		Photos:   photos,
 		Users:    users,
 		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
-		Inbox:    inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, photos, listings, nil),
+		Inbox:    inbox,
+		Nursery:  nursery,
 
 		Subscribers: subscribers,
 		BaseURL:     cfg.Server.BaseURL,
@@ -227,6 +232,7 @@ func prepare(ctx context.Context, db *sql.DB) error {
 		{"photos", photodb.Init},
 		{"stewards", userdb.Init},
 		{"the photo inbox", inboxdb.Init},
+		{"nursery stock", nurserydb.Init},
 		{"stewardship days", workdaydb.Init},
 		{"the email list", subscriberdb.Init},
 	} {
@@ -254,6 +260,7 @@ func expectedSchema() sqldb.Expected {
 		photodb.Expected,
 		userdb.Expected,
 		inboxdb.Expected,
+		nurserydb.Expected,
 		workdaydb.Expected,
 		subscriberdb.Expected,
 	} {
@@ -263,11 +270,12 @@ func expectedSchema() sqldb.Expected {
 	return expected
 }
 
-// prune clears expired sign-in links and sessions, and sign-ups to the email
-// list left unconfirmed by its first version, at startup and then every six hours.
+// prune clears expired sign-in links and sessions, sign-ups to the email list
+// left unconfirmed by its first version, and nursery stock photos past
+// inboxbus.StockKept, at startup and then every six hours.
 // Housekeeping: nothing depends on it for correctness, since every check
 // reads the expiry, so a failure is logged and the next round tries again.
-func prune(ctx context.Context, log *slog.Logger, users *userbus.Business, subscribers *subscriberbus.Business) {
+func prune(ctx context.Context, log *slog.Logger, users *userbus.Business, subscribers *subscriberbus.Business, inbox *inboxbus.Business) {
 	tick := time.NewTicker(6 * time.Hour)
 	defer tick.Stop()
 
@@ -278,6 +286,10 @@ func prune(ctx context.Context, log *slog.Logger, users *userbus.Business, subsc
 
 		if err := subscribers.Prune(ctx); err != nil && ctx.Err() == nil {
 			log.Warn("the email list could not be pruned", "error", err)
+		}
+
+		if err := inbox.PruneStock(ctx); err != nil && ctx.Err() == nil {
+			log.Warn("old nursery stock photos could not be removed", "error", err)
 		}
 
 		select {

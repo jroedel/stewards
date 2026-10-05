@@ -9,6 +9,7 @@
 
 {{if .Inbox}}<a class="onward" href="/steward/inbox"><span>Photo inbox <span class="quiet">{{if .Waiting}}{{.Waiting}} to sort{{else}}nothing waiting{{end}}</span></span><span aria-hidden="true">›</span></a>
 <a class="button button-block" href="/steward/inbox/new">Send photos</a>{{end}}
+{{if .Nursery}}<a class="onward" href="/steward/nursery"><span>Nursery stock <span class="quiet">what the nurseries had, for planning a bed</span></span><span aria-hidden="true">›</span></a>{{end}}
 
 {{if .Places}}
 <ul class="rows">

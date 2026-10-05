@@ -24,8 +24,8 @@
 //
 // Sorting is one rule, Sort, whether a steward does it on the phone or their
 // Claude does it through the API: a photo becomes a plant's photo, or a plant
-// just planted at a place (a listing and a photo), or is set aside as not
-// sure yet, or is discarded. What it becomes arrives as photobus and
+// just planted at a place (a listing and a photo), or a line of a nursery's
+// stock, or is set aside as not sure yet, or is discarded. What it becomes arrives as photobus and
 // listingbus make anything: a plant's photo unchecked, for a steward to
 // compare with the plant, as every photo from an import is. The inbox keeps
 // its row afterwards, with what it became, so that the same photo sent again
@@ -46,6 +46,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
+	"github.com/jroedel/stewards/business/domain/nursery/nurserybus"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/types"
 	"github.com/jroedel/stewards/foundation/imaging"
@@ -101,6 +102,12 @@ const (
 	Discarded Status = "discarded"
 )
 
+// StockKept is how long a nursery stock photo is kept after the visit. Stock
+// changes every week; a tag photo from three months ago is about a plant long
+// sold, and a steward's batch of twenty is a hundred megabytes on a shared
+// host. The line it was for stays.
+const StockKept = 90 * 24 * time.Hour
+
 // Outcome is what a photo is sorted into.
 type Outcome string
 
@@ -113,6 +120,11 @@ const (
 	// protect, off the To plant list if it was on it, and the photo is
 	// added to its photos as a young plant there.
 	AsPlanted Outcome = "planted"
+
+	// AsStock is a plant on a nursery's tables, for planning a bed: a line
+	// of that nursery's stock on the day. The photo stays the inbox's, as
+	// the line's picture of the plant or its tag, for StockKept.
+	AsStock Outcome = "stock"
 
 	// AsUnsure sets a photo aside, with a question. Not a final outcome:
 	// the photo stays in the inbox, to be sorted again.
@@ -156,6 +168,12 @@ type Item struct {
 	PhotoID   types.ID
 	SortedBy  types.ID
 	SortedAt  time.Time
+
+	// LineID is the line of nursery stock it became, for AsStock; and
+	// PrunedAt when its pictures were removed, StockKept after it was
+	// taken.
+	LineID   types.ID
+	PrunedAt time.Time
 
 	// Format is the original's, "jpeg" or "png", which names its file.
 	Format       string
@@ -273,6 +291,16 @@ type Storer interface {
 	// SetUnsure sets a photo still new or unsure aside, with its note;
 	// ErrTaken if it has been sorted meanwhile.
 	SetUnsure(ctx context.Context, id types.ID, note string, at time.Time) error
+
+	// SetLine records the line of nursery stock a sorted one became.
+	SetLine(ctx context.Context, id, lineID types.ID, at time.Time) error
+
+	// StockTakenBefore is every nursery stock photo taken (or, without a
+	// camera's date, sent) before the time, whose pictures are still kept.
+	StockTakenBefore(ctx context.Context, before time.Time) ([]Item, error)
+
+	// SetPruned records that a photo's pictures are gone.
+	SetPruned(ctx context.Context, id types.ID, at time.Time) error
 }
 
 // Photos is what sorting needs from the photo rules.
@@ -286,24 +314,35 @@ type Listings interface {
 	Set(ctx context.Context, placeID, speciesID types.ID, f listingbus.Fields) (listingbus.Listing, error)
 }
 
+// Stock is what it needs from the nursery rules.
+type Stock interface {
+	Add(ctx context.Context, nursery string, seen time.Time, inboxID types.ID, f nurserybus.Fields) (nurserybus.Line, error)
+}
+
+// Deps is the rules sorting makes things through.
+type Deps struct {
+	Photos   Photos
+	Listings Listings
+	Stock    Stock
+}
+
 // Business holds the rules.
 type Business struct {
-	store    Storer
-	files    photobus.Files
-	photos   Photos
-	listings Listings
-	now      func() time.Time
+	store Storer
+	files photobus.Files
+	deps  Deps
+	now   func() time.Time
 }
 
 // NewBusiness constructs one. files is a directory of the inbox's own,
 // separate from the species photos', so that an inbox photo can never be
 // served by the route that serves those. now may be nil, for the real clock.
-func NewBusiness(store Storer, files photobus.Files, photos Photos, listings Listings, now func() time.Time) *Business {
+func NewBusiness(store Storer, files photobus.Files, deps Deps, now func() time.Time) *Business {
 	if now == nil {
 		now = time.Now
 	}
 
-	return &Business{store: store, files: files, photos: photos, listings: listings, now: now}
+	return &Business{store: store, files: files, deps: deps, now: now}
 }
 
 // Check is the batch's fields checked on their own, before any photo is read:
@@ -479,6 +518,11 @@ type Sorting struct {
 	// Note is the question, for a photo set aside; empty keeps the note it
 	// came with.
 	Note string
+
+	// Nursery and Stock are the line of stock, for AsStock. Stock.SpeciesID
+	// is the plant here it is, if matched, and SpeciesID is ignored.
+	Nursery string
+	Stock   nurserybus.Fields
 }
 
 // Result is what a photo was sorted into.
@@ -493,6 +537,9 @@ type Result struct {
 
 	// Listing is the plant's listing at the place, for a planting.
 	Listing listingbus.Listing
+
+	// Line is the line of nursery stock, for AsStock.
+	Line nurserybus.Line
 
 	// Unchanged is true when the photo had already been sorted exactly so:
 	// the same sort sent twice, which a program retrying is apt to do.
@@ -529,8 +576,12 @@ func (b *Business) Sort(ctx context.Context, id, by types.ID, s Sorting) (Result
 		s.Kind = photobus.Young
 	}
 
+	if s.Outcome == AsStock {
+		s.SpeciesID = s.Stock.SpeciesID
+	}
+
 	if it.Status == Sorted || it.Status == Discarded {
-		if it.Outcome == s.Outcome && it.SpeciesID == s.SpeciesID && (s.Outcome == AsPhoto || s.Outcome == AsPlanted || s.Outcome == AsDiscard) {
+		if it.Outcome == s.Outcome && it.SpeciesID == s.SpeciesID && (s.Outcome == AsPhoto || s.Outcome == AsPlanted || s.Outcome == AsStock || s.Outcome == AsDiscard) {
 			return Result{Item: it, Unchanged: true}, nil
 		}
 
@@ -570,6 +621,10 @@ func (b *Business) Sort(ctx context.Context, id, by types.ID, s Sorting) (Result
 		}
 
 		return Result{Item: it}, nil
+	}
+
+	if s.Outcome == AsStock {
+		return b.sortStock(ctx, it, by, s, now)
 	}
 
 	// A planting is checked against what is listed before anything is
@@ -623,6 +678,79 @@ func (b *Business) Sort(ctx context.Context, id, by types.ID, s Sorting) (Result
 	return res, nil
 }
 
+// sortStock makes a photo a line of its nursery's stock on the day it was
+// taken. Claimed first, as a photo is; but its pictures stay, as the line's.
+func (b *Business) sortStock(ctx context.Context, it Item, by types.ID, s Sorting, now time.Time) (Result, error) {
+	was := it.Status
+
+	if err := b.store.Claim(ctx, it.ID, Claim{Status: Sorted, Outcome: AsStock, SpeciesID: s.SpeciesID, By: by, At: now}); err != nil {
+		return Result{}, b.taken(ctx, it.ID, err)
+	}
+
+	keep := context.WithoutCancel(ctx)
+
+	line, err := b.deps.Stock.Add(ctx, s.Nursery, it.When(), it.ID, s.Stock)
+	if err != nil {
+		_ = b.store.Unclaim(keep, it.ID, was, b.now().UTC().Truncate(time.Millisecond))
+
+		if invalid, ok := errors.AsType[nurserybus.Invalid](err); ok {
+			return Result{}, Invalid{Field: invalid.Field, Problem: invalid.Problem}
+		}
+
+		return Result{}, err
+	}
+
+	if err := b.store.SetLine(keep, it.ID, line.ID, now); err != nil {
+		return Result{}, err
+	}
+
+	it.Status, it.Outcome, it.SpeciesID, it.LineID = Sorted, AsStock, s.SpeciesID, line.ID
+	it.SortedBy, it.SortedAt, it.UpdatedAt = by, now, now
+
+	return Result{Item: it, Line: line}, nil
+}
+
+// PruneStock removes the pictures of nursery stock photos taken more than
+// StockKept ago, keeping the lines they were for. Housekeeping, run with the
+// other prunes; a photo whose files cannot be removed is tried again next
+// time.
+func (b *Business) PruneStock(ctx context.Context) error {
+	now := b.now().UTC().Truncate(time.Millisecond)
+
+	old, err := b.store.StockTakenBefore(ctx, now.Add(-StockKept))
+	if err != nil {
+		return err
+	}
+
+	var errs []error
+	for _, it := range old {
+		if err := b.removeFiles(it); err != nil {
+			errs = append(errs, err)
+
+			continue
+		}
+
+		if err := b.store.SetPruned(ctx, it.ID, now); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// HasPictures is whether a photo's pictures can still be opened: while it is
+// in the inbox, and as a line of nursery stock until it is pruned.
+func (it Item) HasPictures() bool {
+	switch it.Status {
+	case New, Unsure:
+		return true
+	case Sorted:
+		return it.Outcome == AsStock && it.PrunedAt.IsZero()
+	}
+
+	return false
+}
+
 // make adds the plant's photo and, for a planting, its listing.
 func (b *Business) make(ctx context.Context, it Item, s Sorting, listed *listingbus.Listing) (Result, error) {
 	data, err := b.original(it)
@@ -632,7 +760,7 @@ func (b *Business) make(ctx context.Context, it Item, s Sorting, listed *listing
 
 	var res Result
 
-	res.Photo, err = b.photos.Add(ctx, s.SpeciesID, photobus.Fields{Kind: s.Kind, PlaceID: s.PlaceID, Source: photobus.Ours}, data)
+	res.Photo, err = b.deps.Photos.Add(ctx, s.SpeciesID, photobus.Fields{Kind: s.Kind, PlaceID: s.PlaceID, Source: photobus.Ours}, data)
 
 	invalid, isInvalid := errors.AsType[photobus.Invalid](err)
 	dup, isDup := errors.AsType[photobus.Duplicate](err)
@@ -657,7 +785,7 @@ func (b *Business) make(ctx context.Context, it Item, s Sorting, listed *listing
 		f = listingbus.Fields{Action: listed.Action, Note: listed.Note}
 	}
 
-	res.Listing, err = b.listings.Set(ctx, s.PlaceID, s.SpeciesID, f)
+	res.Listing, err = b.deps.Listings.Set(ctx, s.PlaceID, s.SpeciesID, f)
 	if invalid, ok := errors.AsType[listingbus.Invalid](err); ok {
 		return Result{}, Invalid{Field: invalid.Field, Problem: invalid.Problem}
 	}
@@ -678,13 +806,17 @@ func (b *Business) checkSorting(it Item, s Sorting) error {
 		case s.Outcome == AsPlanted && s.PlaceID.Zero():
 			return Invalid{Field: "place", Problem: "choose the place it was planted"}
 		}
+	case AsStock:
+		if it.At != Nursery {
+			return Invalid{Field: "outcome", Problem: "only a photo taken at a nursery is nursery stock. Add it as a photo of the plant instead"}
+		}
 	case AsUnsure:
 		if utf8.RuneCountInString(s.Note) > MaxNote {
 			return Invalid{Field: "note", Problem: fmt.Sprintf("the question is longer than %d characters. Keep it to a line", MaxNote)}
 		}
 	case AsDiscard:
 	default:
-		return Invalid{Field: "outcome", Problem: "choose what this photo is: a plant's photo, a plant just planted, not sure yet, or discard"}
+		return Invalid{Field: "outcome", Problem: "choose what this photo is: a plant's photo, a plant just planted, nursery stock, not sure yet, or discard"}
 	}
 
 	return nil
@@ -692,7 +824,7 @@ func (b *Business) checkSorting(it Item, s Sorting) error {
 
 // listing is the plant's listing at the place, or nil.
 func (b *Business) listing(ctx context.Context, placeID, speciesID types.ID) (*listingbus.Listing, error) {
-	all, err := b.listings.ForPlace(ctx, placeID)
+	all, err := b.deps.Listings.ForPlace(ctx, placeID)
 	if err != nil {
 		return nil, fmt.Errorf("reading what is listed at the place: %w", err)
 	}
@@ -759,8 +891,9 @@ func (b *Business) Open(ctx context.Context, id types.ID, size photobus.Size) (I
 		return Item{}, nil, err
 	}
 
-	// Its pictures went when it became something, or was thrown away.
-	if it.Status == Sorted || it.Status == Discarded {
+	// Its pictures went when it became a plant's photo, or was thrown away,
+	// or was nursery stock long enough ago.
+	if !it.HasPictures() {
 		return Item{}, nil, ErrNotFound
 	}
 

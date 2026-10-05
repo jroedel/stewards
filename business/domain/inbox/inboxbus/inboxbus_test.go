@@ -20,6 +20,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/inbox/stores/inboxdb"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
+	"github.com/jroedel/stewards/business/domain/nursery/nurserybus"
+	"github.com/jroedel/stewards/business/domain/nursery/stores/nurserydb"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/photo/stores/photodb"
 	"github.com/jroedel/stewards/business/domain/photo/stores/photofs"
@@ -38,6 +40,7 @@ type garden struct {
 	places   *placebus.Business
 	photos   *photobus.Business
 	listings *listingbus.Business
+	nursery  *nurserybus.Business
 	dir      string
 	clock    *time.Time
 
@@ -63,6 +66,7 @@ func setup(t *testing.T) *garden {
 		func() error { return photodb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
 		func() error { return inboxdb.Init(t.Context(), db) },
+		func() error { return nurserydb.Init(t.Context(), db) },
 		func() error { return inboxdb.Init(t.Context(), db) }, // at every startup
 	} {
 		if err := init(); err != nil {
@@ -96,7 +100,8 @@ func setup(t *testing.T) *garden {
 		dir:      dir,
 		clock:    &clock,
 	}
-	g.inbox = inboxbus.NewBusiness(inboxdb.NewStore(db), files, g.photos, g.listings, now)
+	g.nursery = nurserybus.NewBusiness(nurserydb.NewStore(db), now)
+	g.inbox = inboxbus.NewBusiness(inboxdb.NewStore(db), files, inboxbus.Deps{Photos: g.photos, Listings: g.listings, Stock: g.nursery}, now)
 
 	species := speciesbus.NewBusiness(speciesdb.NewStore(db), nil)
 	if g.penstemon, err = species.Create(t.Context(), speciesbus.Fields{Slug: "brazos-penstemon", Common: types.Text{EN: "Brazos penstemon"}}); err != nil {
@@ -647,5 +652,128 @@ func TestTwoSortsAtOnceMakeOneThing(t *testing.T) {
 	photos, _ := g.photos.ForSpecies(t.Context(), g.penstemon.ID)
 	if won != 1 || len(photos) != 1 {
 		t.Errorf("%d sorts succeeded and %d photos were made, want one of each", won, len(photos))
+	}
+}
+
+// ------------------------------------------------------------------ nursery stock
+
+func (g *garden) atNursery(t *testing.T, shade uint8) inboxbus.Item {
+	t.Helper()
+
+	return g.sent(t, inboxbus.Fields{FromID: g.steward.ID, At: inboxbus.Nursery}, shade)
+}
+
+// A tag photo becomes a line of that morning's stock, and keeps its picture
+// as the line's.
+func TestANurseryPhotoBecomesALineOfStock(t *testing.T) {
+	g := setup(t)
+	it := g.atNursery(t, 40)
+
+	res, err := g.inbox.Sort(t.Context(), it.ID, g.steward.ID, inboxbus.Sorting{
+		Outcome: inboxbus.AsStock, Nursery: "Natural Gardener",
+		Stock: nurserybus.Fields{SpeciesID: g.penstemon.ID, NameOnTag: "Penstemon tenuis", PotSize: "1 gal", PriceCents: 1299},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if res.Line.NameOnTag != "Penstemon tenuis" || res.Line.InboxID != it.ID || res.Line.SpeciesID != g.penstemon.ID {
+		t.Errorf("the line is %+v", res.Line)
+	}
+
+	stock, _ := g.nursery.All(t.Context())
+
+	// The photo's camera date is 18 April 2026, and that is the visit's day.
+	if len(stock) != 1 || !stock[0].Visit.Day.Equal(time.Date(2026, 4, 18, 0, 0, 0, 0, types.Garden)) {
+		t.Errorf("stock %+v", stock)
+	}
+
+	got, _ := g.inbox.ByID(t.Context(), it.ID)
+	if got.Status != inboxbus.Sorted || got.Outcome != inboxbus.AsStock || got.LineID != res.Line.ID || !got.HasPictures() {
+		t.Errorf("the inbox remembers %+v", got)
+	}
+
+	if _, f, err := g.inbox.Open(t.Context(), it.ID, photobus.Small); err != nil {
+		t.Errorf("the line's picture: %v", err)
+	} else {
+		f.Close()
+	}
+
+	if n, _ := g.inbox.Count(t.Context()); n != 0 {
+		t.Errorf("%d still to sort", n)
+	}
+}
+
+func TestOnlyANurseryPhotoIsStock(t *testing.T) {
+	g := setup(t)
+	it := g.sent(t, g.property(), 41)
+
+	_, err := g.inbox.Sort(t.Context(), it.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsStock, Nursery: "Natural Gardener", Stock: nurserybus.Fields{NameOnTag: "Turk's cap"}})
+	if invalid, ok := errors.AsType[inboxbus.Invalid](err); !ok || invalid.Field != "outcome" {
+		t.Errorf("a garden photo as stock: %v", err)
+	}
+
+	// And a line the nursery rules refuse leaves the photo in the inbox.
+	nursery := g.atNursery(t, 42)
+
+	_, err = g.inbox.Sort(t.Context(), nursery.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsStock, Stock: nurserybus.Fields{NameOnTag: "Turk's cap"}})
+	if invalid, ok := errors.AsType[inboxbus.Invalid](err); !ok || invalid.Field != "nursery" {
+		t.Errorf("stock with no nursery: %v", err)
+	}
+
+	if got, _ := g.inbox.ByID(t.Context(), nursery.ID); got.Status != inboxbus.New {
+		t.Errorf("after the refusal the photo is %+v", got)
+	}
+}
+
+// Three months on, a tag photo's pictures go; the line stays.
+func TestOldStockPhotosArePruned(t *testing.T) {
+	g := setup(t)
+
+	// Taken 18 April; the clock is 5 October, so it is old already. One sent
+	// today with no camera date is not.
+	old := g.atNursery(t, 43)
+
+	recent, err := g.inbox.Add(t.Context(), inboxbus.Fields{FromID: g.steward.ID, At: inboxbus.Nursery}, photo(t, 44))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, id := range []types.ID{old.ID, recent.ID} {
+		if _, err := g.inbox.Sort(t.Context(), id, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsStock, Nursery: "Natural Gardener", Stock: nurserybus.Fields{NameOnTag: "Turk's cap"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for range 2 { // and again, which finds nothing more to do
+		if err := g.inbox.PruneStock(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if got, _ := g.inbox.ByID(t.Context(), old.ID); got.PrunedAt.IsZero() || got.HasPictures() {
+		t.Errorf("the old photo: %+v", got)
+	}
+
+	if _, _, err := g.inbox.Open(t.Context(), old.ID, photobus.Small); !errors.Is(err, inboxbus.ErrNotFound) {
+		t.Errorf("the old photo's picture: %v", err)
+	}
+
+	if got, _ := g.inbox.ByID(t.Context(), recent.ID); !got.HasPictures() {
+		t.Error("the recent photo was pruned")
+	}
+
+	if n := len(g.files(t)); n != 3 {
+		t.Errorf("%d files, want the recent photo's three", n)
+	}
+
+	stock, _ := g.nursery.All(t.Context())
+	lines := 0
+	for _, st := range stock {
+		lines += len(st.Lines)
+	}
+
+	if lines != 2 {
+		t.Errorf("%d lines, want both kept", lines)
 	}
 }

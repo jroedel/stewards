@@ -44,22 +44,37 @@ INSERT INTO inbox (id, at, note, status, format, sha256, large_width, large_heig
 VALUES ('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'property', 'by the gate', 'new', 'jpeg', 'abc', 1600, 1200, 800, 600, 1, 1);
 `
 
+// And as PR #37 left it, with the sorting columns: what the server has now.
+const afterSorting = before + `
+ALTER TABLE inbox ADD COLUMN outcome TEXT NOT NULL DEFAULT '';
+ALTER TABLE inbox ADD COLUMN species_id TEXT;
+ALTER TABLE inbox ADD COLUMN photo_id TEXT;
+ALTER TABLE inbox ADD COLUMN sorted_by TEXT;
+ALTER TABLE inbox ADD COLUMN sorted_at INTEGER;
+`
+
 func TestInitBringsTheFirstInboxTableForward(t *testing.T) {
+	for name, ddl := range map[string]string{"as PR 35 made it": before, "as PR 37 left it": afterSorting} {
+		t.Run(name, func(t *testing.T) { bringsForward(t, ddl) })
+	}
+}
+
+func bringsForward(t *testing.T, ddl string) {
 	db, err := sqldb.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
 
-	for _, init := range []func() error{
+	for step, init := range []func() error{
 		func() error { return placedb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
-		func() error { _, err := db.ExecContext(t.Context(), before); return err },
+		func() error { _, err := db.ExecContext(t.Context(), ddl); return err },
 		func() error { return inboxdb.Init(t.Context(), db) },
 		func() error { return inboxdb.Init(t.Context(), db) }, // and at the next startup
 	} {
 		if err := init(); err != nil {
-			t.Fatal(err)
+			t.Fatalf("step %d: %v", step, err)
 		}
 	}
 
@@ -74,7 +89,7 @@ func TestInitBringsTheFirstInboxTableForward(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if it.Status != inboxbus.New || it.Outcome != "" || !it.SpeciesID.Zero() || !it.SortedAt.IsZero() || it.Note != "by the gate" {
+	if it.Status != inboxbus.New || it.Outcome != "" || !it.SpeciesID.Zero() || !it.SortedAt.IsZero() || !it.LineID.Zero() || !it.PrunedAt.IsZero() || it.Note != "by the gate" {
 		t.Errorf("the photo from before is %+v", it)
 	}
 }

@@ -22,6 +22,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/inbox/stores/inboxdb"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
+	"github.com/jroedel/stewards/business/domain/nursery/nurserybus"
+	"github.com/jroedel/stewards/business/domain/nursery/stores/nurserydb"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/photo/stores/photodb"
 	"github.com/jroedel/stewards/business/domain/photo/stores/photofs"
@@ -42,6 +44,7 @@ type site struct {
 	t        *testing.T
 	h        http.Handler
 	inbox    *inboxbus.Business
+	nursery  *nurserybus.Business
 	photos   *photobus.Business
 	listings *listingbus.Business
 	cookie   *http.Cookie
@@ -69,6 +72,7 @@ func serve(t *testing.T) *site {
 		func() error { return photodb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
 		func() error { return inboxdb.Init(t.Context(), db) },
+		func() error { return nurserydb.Init(t.Context(), db) },
 		func() error { return workdaydb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
@@ -97,7 +101,8 @@ func serve(t *testing.T) *site {
 		photos:   photobus.NewBusiness(photodb.NewStore(db), photoFiles, nil),
 		listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
 	}
-	s.inbox = inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, s.photos, s.listings, nil)
+	s.nursery = nurserybus.NewBusiness(nurserydb.NewStore(db), nil)
+	s.inbox = inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, inboxbus.Deps{Photos: s.photos, Listings: s.listings, Stock: s.nursery}, nil)
 
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
@@ -108,6 +113,7 @@ func serve(t *testing.T) *site {
 		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
 		Listings: s.listings,
 		Inbox:    s.inbox,
+		Nursery:  s.nursery,
 		BaseURL:  "https://stewards.example.invalid", Mail: &mail.Recorder{},
 	}); err != nil {
 		t.Fatal(err)
@@ -540,5 +546,95 @@ func TestASecondSortIsToldTheFirstWon(t *testing.T) {
 	w := s.post("/steward/inbox/"+ids[0], url.Values{"as": {"discard"}, "confirm": {"yes"}})
 	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/steward/inbox?done=taken" {
 		t.Errorf("second: %d %s", w.Code, w.Header().Get("Location"))
+	}
+}
+
+// A morning's tags at a nursery, sorted as stock: the second is offered the
+// nursery the first was sorted to, and both are on the nursery stock page,
+// with their photos.
+func TestNurseryPhotosAreSortedIntoStock(t *testing.T) {
+	s := serve(t)
+	ids := s.sent(url.Values{"at": {"nursery"}}, file{"IMG_0020.JPG", noisy(t, 20)}, file{"IMG_0021.JPG", noisy(t, 21)})
+
+	if body := s.get("/steward/inbox/"+ids[0], true).Body.String(); !strings.Contains(body, "Nursery stock: add it") {
+		t.Fatal("a nursery photo is not offered as stock")
+	}
+
+	w := s.post("/steward/inbox/"+ids[0], url.Values{
+		"as": {"stock"}, "nursery": {"Natural Gardener"}, "name_on_tag": {"Penstemon tenuis"},
+		"species": {s.penstemon.ID.String()}, "pot_size": {"1 gal"}, "price": {"$12.99"}, "count": {"8"},
+	})
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/steward/inbox/"+ids[1]+"?done=stock" {
+		t.Fatalf("sorting the first tag: %d %s\n%s", w.Code, w.Header().Get("Location"), w.Body.String())
+	}
+
+	if form := s.get("/steward/inbox/"+ids[1]+"?as=stock", true).Body.String(); !strings.Contains(form, `value="Natural Gardener"`) {
+		t.Error("the second tag is not offered the morning's nursery")
+	}
+
+	if w := s.post("/steward/inbox/"+ids[1], url.Values{"as": {"stock"}, "nursery": {"Natural Gardener"}, "name_on_tag": {"Malvaviscus arboreus"}, "price": {"twelve"}}); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "dollars and cents") {
+		t.Errorf("a price that is not one: %d", w.Code)
+	}
+
+	if w := s.post("/steward/inbox/"+ids[1], url.Values{"as": {"stock"}, "nursery": {"Natural Gardener"}, "name_on_tag": {"Malvaviscus arboreus"}}); w.Code != http.StatusSeeOther {
+		t.Fatalf("sorting the second tag: %d\n%s", w.Code, w.Body.String())
+	}
+
+	page := s.get("/steward/nursery", true).Body.String()
+	for _, want := range []string{"Natural Gardener", "2 plants", "Brazos penstemon", "Tag: Penstemon tenuis", "1 gal · $12.99 · 8 there", "Malvaviscus arboreus", "Not matched to a plant yet", "/steward/inbox/" + ids[0] + "/small.jpg"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the nursery stock page does not show %q", want)
+		}
+	}
+
+	// The tag photo is still served, as the line's.
+	if w := s.get("/steward/inbox/"+ids[0]+"/small.jpg", true); w.Code != http.StatusOK {
+		t.Errorf("the line's photo: %d", w.Code)
+	}
+
+	if front := s.get("/steward", true).Body.String(); !strings.Contains(front, "/steward/nursery") {
+		t.Error("the stewards' front page does not link to the nursery stock")
+	}
+}
+
+// A garden photo is never offered as stock.
+func TestAGardenPhotoIsNotOfferedAsStock(t *testing.T) {
+	s := serve(t)
+	ids := s.sent(property(), file{"IMG_0022.JPG", noisy(t, 22)})
+
+	for _, path := range []string{"/steward/inbox/" + ids[0], "/steward/inbox/" + ids[0] + "?as=stock"} {
+		if body := s.get(path, true).Body.String(); strings.Contains(body, "Nursery stock") || strings.Contains(body, "Which nursery") {
+			t.Errorf("%s offers a garden photo as stock", path)
+		}
+	}
+}
+
+// A tag read wrongly is corrected on the nursery stock page.
+func TestALineOfStockIsCorrected(t *testing.T) {
+	s := serve(t)
+	ids := s.sent(url.Values{"at": {"nursery"}}, file{"IMG_0023.JPG", noisy(t, 23)})
+
+	if w := s.post("/steward/inbox/"+ids[0], url.Values{"as": {"stock"}, "nursery": {"Natural Gardener"}, "name_on_tag": {"Penstemon tenius"}}); w.Code != http.StatusSeeOther {
+		t.Fatalf("sorting: %d", w.Code)
+	}
+
+	stock, _ := s.nursery.All(t.Context())
+	line := stock[0].Lines[0].ID.String()
+
+	if form := s.get("/steward/nursery/lines/"+line+"/edit", true).Body.String(); !strings.Contains(form, "Penstemon tenius") || !strings.Contains(form, "/steward/inbox/"+ids[0]+"/large.jpg") {
+		t.Error("the correction form does not show the line and its photo")
+	}
+
+	w := s.post("/steward/nursery/lines/"+line, url.Values{"name_on_tag": {"Penstemon tenuis"}, "species": {s.penstemon.ID.String()}, "price": {"9.5"}})
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/steward/nursery?done=saved#line-"+line {
+		t.Fatalf("correcting: %d %s\n%s", w.Code, w.Header().Get("Location"), w.Body.String())
+	}
+
+	if page := s.get("/steward/nursery?done=saved", true).Body.String(); !strings.Contains(page, "Saved.") || !strings.Contains(page, "$9.50") || !strings.Contains(page, "Brazos penstemon") {
+		t.Error("the correction is not shown")
+	}
+
+	if w := s.post("/steward/nursery/lines/"+line, url.Values{"name_on_tag": {""}}); w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("a line with nothing to name it: %d", w.Code)
 	}
 }

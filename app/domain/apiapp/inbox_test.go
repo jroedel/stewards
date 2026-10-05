@@ -228,3 +228,53 @@ func TestAPhotoSetAsideThroughTheAPIIsListedAsUnsure(t *testing.T) {
 		t.Error("a photo set aside is still waiting")
 	}
 }
+
+type nurseryList struct {
+	Visits []apiapp.VisitJSON `json:"visits"`
+}
+
+// A steward's Claude reads a tag and files it as stock; the stock is read
+// back, with each line's photo, and a line is corrected.
+func TestNurseryStockIsSortedReadAndCorrectedThroughTheAPI(t *testing.T) {
+	s := serve(t)
+
+	if w := s.put("winecup", winecup()); w.Code != http.StatusCreated {
+		t.Fatalf("adding the plant: %d", w.Code)
+	}
+
+	id := s.inboxed(inboxbus.Nursery, types.ID{}, 7)
+
+	w := s.sortPhoto(id, map[string]any{
+		"outcome": "stock", "nursery": "Natural Gardener", "name_on_tag": "Callirhoe involucrata",
+		"species": "winecup", "pot_size": "4 in", "price": "4.99", "count": 20,
+	})
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"line"`) {
+		t.Fatalf("sorting as stock: %d\n%s", w.Code, w.Body.String())
+	}
+
+	list := decode[nurseryList](t, s.api(http.MethodGet, "/api/v1/nursery", s.key, nil, ""))
+	if len(list.Visits) != 1 || !list.Visits[0].Latest || len(list.Visits[0].Lines) != 1 {
+		t.Fatalf("the stock: %+v", list)
+	}
+
+	l := list.Visits[0].Lines[0]
+	if l.Species != "winecup" || l.Price != "$4.99" || l.Count != 20 || l.PhotoURL != base+"/api/v1/inbox/"+id+"/large.jpg" {
+		t.Errorf("the line: %+v", l)
+	}
+
+	if w := s.api(http.MethodGet, "/api/v1/inbox/"+id+"/large.jpg", s.key, nil, ""); w.Code != http.StatusOK {
+		t.Errorf("the line's photo: %d", w.Code)
+	}
+
+	b, _ := json.Marshal(map[string]any{"name_on_tag": "Callirhoe involucrata", "pot_size": "4 in", "price": "3.99"})
+	w = s.api(http.MethodPut, "/api/v1/nursery/lines/"+l.ID, s.key, bytes.NewReader(b), "application/json")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"price": "$3.99"`) || strings.Contains(w.Body.String(), `"species"`) {
+		t.Errorf("correcting: %d\n%s", w.Code, w.Body.String())
+	}
+
+	// Stock only from a nursery photo.
+	garden := s.inboxed(inboxbus.Property, types.ID{}, 8)
+	if w := s.sortPhoto(garden, map[string]any{"outcome": "stock", "nursery": "Natural Gardener", "name_on_tag": "x"}); w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("a garden photo as stock: %d", w.Code)
+	}
+}

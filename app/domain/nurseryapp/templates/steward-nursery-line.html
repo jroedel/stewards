@@ -1,0 +1,45 @@
+{{define "title"}}Correct nursery stock · Garden stewards{{end}}
+{{define "content"}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow"><a href="/steward/nursery">Nursery stock</a></p>
+<h1>Correct a line</h1>
+
+{{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below and press Save.</p>{{end}}
+
+{{with .InboxID}}<div class="card"><a class="photo-large" href="/steward/inbox/{{.}}/large.jpg"><img src="/steward/inbox/{{.}}/large.jpg" alt=""></a></div>{{end}}
+
+<form class="card form" method="post" action="/steward/nursery/lines/{{.ID}}">
+  <label for="name_on_tag">Name on the tag</label>
+  {{with index .Problems "name_on_tag"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="name_on_tag" name="name_on_tag" type="text" value="{{.NameOnTag}}" maxlength="100" autocomplete="off">
+
+  <label for="species">Which of our plants it is <span class="optional">optional</span></label>
+  <p class="help" id="species-help">Only if you are sure. A tag can be wrong.</p>
+  {{with index .Problems "species"}}<p class="field-problem">{{.}}</p>{{end}}
+  <select id="species" name="species" aria-describedby="species-help">{{range .Species}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+
+  <div class="pair">
+    <div>
+      <label for="pot_size">Pot size</label>
+      {{with index .Problems "pot_size"}}<p class="field-problem">{{.}}</p>{{end}}
+      <input id="pot_size" name="pot_size" type="text" value="{{.PotSize}}" maxlength="40">
+    </div>
+    <div>
+      <label for="price">Price</label>
+      {{with index .Problems "price"}}<p class="field-problem">{{.}}</p>{{end}}
+      <input id="price" name="price" type="text" value="{{.Price}}" inputmode="decimal">
+    </div>
+  </div>
+
+  <label for="count">How many there were</label>
+  {{with index .Problems "count"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="count" name="count" type="text" value="{{.Count}}" inputmode="numeric">
+
+  <label for="note">A note</label>
+  {{with index .Problems "note"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="note" name="note" type="text" value="{{.Note}}" maxlength="300">
+
+  <button class="button" type="submit">Save</button>
+</form>
+</div>
+{{end}}{{end}}
