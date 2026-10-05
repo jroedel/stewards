@@ -8,6 +8,7 @@
 {{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
 
 <a class="button button-block" href="/steward/inbox/new">Send photos</a>
+{{with .Days}}<a class="button button-block button-quiet" href="/steward/inbox/{{(index (index . 0).Items 0).ID}}">Sort, starting with the newest</a>{{end}}
 
 {{if .Days}}
 <p class="help">{{.Count}} waiting to be sorted.</p>
@@ -16,11 +17,12 @@
   <h2>{{.Label}}</h2>
   <ul class="photo-list">
   {{range .Items}}<li>
-    <a class="photo-thumb" href="/steward/inbox/{{.ID}}/large.jpg"><img src="/steward/inbox/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="" loading="lazy"></a>
+    <a class="photo-thumb" href="/steward/inbox/{{.ID}}"><img src="/steward/inbox/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="" loading="lazy"></a>
     <div class="photo-about">
       <p class="row-tags">{{if .Nursery}}<span class="tag">At a nursery</span>{{else if .Where}}<span class="tag">{{.Where}}</span>{{else}}<span class="tag tag-open">Place not said</span>{{end}}</p>
       {{with .Note}}<p class="row-note">{{.}}</p>{{end}}
       {{with .Time}}<p class="row-note">{{.}}</p>{{end}}
+      <a href="/steward/inbox/{{.ID}}">Sort</a>
     </div>
   </li>
   {{end}}</ul>
@@ -28,6 +30,22 @@
 {{end}}
 {{else}}
 <div class="card empty"><p>Nothing waiting. Photos you send land here until they are sorted.</p></div>
+{{end}}
+
+{{if .Aside}}
+<section class="card photo-kind" aria-labelledby="aside">
+  <h2 id="aside">Not sure yet</h2>
+  <ul class="photo-list">
+  {{range .Aside}}<li>
+    <a class="photo-thumb" href="/steward/inbox/{{.ID}}"><img src="/steward/inbox/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="" loading="lazy"></a>
+    <div class="photo-about">
+      <p class="row-tags">{{if .Nursery}}<span class="tag">At a nursery</span>{{else if .Where}}<span class="tag">{{.Where}}</span>{{end}}</p>
+      {{with .Note}}<p class="row-note">{{.}}</p>{{end}}
+      <a href="/steward/inbox/{{.ID}}">Sort</a>
+    </div>
+  </li>
+  {{end}}</ul>
+</section>
 {{end}}
 </div>
 {{end}}{{end}}

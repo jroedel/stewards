@@ -39,12 +39,15 @@ import (
 )
 
 type site struct {
-	t      *testing.T
-	h      http.Handler
-	inbox  *inboxbus.Business
-	cookie *http.Cookie
+	t        *testing.T
+	h        http.Handler
+	inbox    *inboxbus.Business
+	photos   *photobus.Business
+	listings *listingbus.Business
+	cookie   *http.Cookie
 
-	inflow placebus.Place
+	inflow    placebus.Place
+	penstemon speciesbus.Species
 }
 
 // Through the muxer, signed in as a steward, so a batch goes through the same
@@ -87,16 +90,23 @@ func serve(t *testing.T) *site {
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
 	places := placebus.NewBusiness(placedb.NewStore(db), nil)
 
-	s := &site{t: t, inbox: inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, nil)}
+	species := speciesbus.NewBusiness(speciesdb.NewStore(db), nil)
+
+	s := &site{
+		t:        t,
+		photos:   photobus.NewBusiness(photodb.NewStore(db), photoFiles, nil),
+		listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
+	}
+	s.inbox = inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, s.photos, s.listings, nil)
 
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
 		Places:   places,
-		Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
-		Photos:   photobus.NewBusiness(photodb.NewStore(db), photoFiles, nil),
+		Species:  species,
+		Photos:   s.photos,
 		Users:    users,
 		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
-		Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
+		Listings: s.listings,
 		Inbox:    s.inbox,
 		BaseURL:  "https://stewards.example.invalid", Mail: &mail.Recorder{},
 	}); err != nil {
@@ -120,7 +130,20 @@ func serve(t *testing.T) *site {
 		t.Fatal(err)
 	}
 
+	if s.penstemon, err = species.Create(t.Context(), speciesbus.Fields{
+		Slug: "brazos-penstemon", Common: types.Text{EN: "Brazos penstemon"}, Scientific: "Penstemon tenuis", Status: speciesbus.StatusNative,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	return s
+}
+
+func (s *site) post(path string, form url.Values) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	return s.send(r, true)
 }
 
 func (s *site) send(r *http.Request, signedIn bool) *httptest.ResponseRecorder {
@@ -350,5 +373,172 @@ func TestAnInboxPictureIsAStewardsAlone(t *testing.T) {
 
 	if w := s.get("/steward/inbox", false); w.Code == http.StatusOK {
 		t.Error("the inbox was shown to somebody signed out")
+	}
+}
+
+// sent is the ids of the photos in the inbox, newest first, after sending
+// these.
+func (s *site) sent(fields url.Values, files ...file) []string {
+	s.t.Helper()
+
+	if w := s.batch(fields, files...); w.Code != http.StatusSeeOther {
+		s.t.Fatalf("send: %d\n%s", w.Code, w.Body.String())
+	}
+
+	items, err := s.inbox.Waiting(s.t.Context())
+	if err != nil {
+		s.t.Fatal(err)
+	}
+
+	var ids []string
+	for _, it := range items {
+		ids = append(ids, it.ID.String())
+	}
+
+	return ids
+}
+
+// A batch sorted on the phone, one photo after another: each sort goes on to
+// the next, and the last back to the inbox.
+func TestABatchIsSortedOneAfterAnother(t *testing.T) {
+	s := serve(t)
+
+	fields := property()
+	fields.Set("place", s.inflow.ID.String())
+	ids := s.sent(fields, file{"IMG_0010.JPG", noisy(t, 10)}, file{"IMG_0011.JPG", noisy(t, 11)})
+
+	first := s.get("/steward/inbox/"+ids[0], true).Body.String()
+	for _, want := range []string{"A plant: add it to the plant's photos", "Just planted: list it at its place", "Not sure yet", "Discard", "Inflow band"} {
+		if !strings.Contains(first, want) {
+			t.Errorf("the sort screen does not offer %q", want)
+		}
+	}
+
+	form := s.get("/steward/inbox/"+ids[0]+"?as=photo", true).Body.String()
+	if !strings.Contains(form, "Brazos penstemon (Penstemon tenuis)") || !strings.Contains(form, "Flower close-up") {
+		t.Error("the photo form does not list the plants and the kinds")
+	}
+
+	w := s.post("/steward/inbox/"+ids[0], url.Values{"as": {"photo"}, "species": {s.penstemon.ID.String()}, "kind": {"flower"}})
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/steward/inbox/"+ids[1]+"?done=photo" {
+		t.Fatalf("sorting the first: %d %s\n%s", w.Code, w.Header().Get("Location"), w.Body.String())
+	}
+
+	if next := s.get(w.Header().Get("Location"), true).Body.String(); !strings.Contains(next, "Added to the plant&#39;s photos") {
+		t.Error("the next photo's screen does not say the last was added")
+	}
+
+	w = s.post("/steward/inbox/"+ids[1], url.Values{"as": {"planted"}, "species": {s.penstemon.ID.String()}, "kind": {"young"}, "place": {s.inflow.ID.String()}})
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/steward/inbox?done=planted" {
+		t.Fatalf("sorting the last: %d %s\n%s", w.Code, w.Header().Get("Location"), w.Body.String())
+	}
+
+	photos, _ := s.photos.ForSpecies(t.Context(), s.penstemon.ID)
+	listed, _ := s.listings.ForPlace(t.Context(), s.inflow.ID)
+
+	if len(photos) != 2 || photos[0].Checked || photos[1].Checked {
+		t.Errorf("the plant has %d photos, %+v; want two, unchecked", len(photos), photos)
+	}
+
+	if len(listed) != 1 || listed[0].Action != listingbus.Protect || listed[0].Planned {
+		t.Errorf("listed at the inflow: %+v", listed)
+	}
+
+	// Sorted: the screen says what it became and where to see it, and the
+	// inbox is empty.
+	if done := s.get("/steward/inbox/"+ids[0], true).Body.String(); !strings.Contains(done, "has been sorted") || !strings.Contains(done, "/steward/species/"+s.penstemon.ID.String()+"/photos") {
+		t.Error("a sorted photo's screen does not say what it became")
+	}
+
+	if list := s.get("/steward/inbox?done=planted", true).Body.String(); !strings.Contains(list, "Listed as planted there") || !strings.Contains(list, "Nothing waiting") {
+		t.Error("the inbox after the last sort")
+	}
+}
+
+// A photo taken at a nursery is never offered as planted here.
+func TestANurseryPhotoIsNotOfferedAsPlanted(t *testing.T) {
+	s := serve(t)
+	ids := s.sent(url.Values{"at": {"nursery"}}, file{"IMG_0012.JPG", noisy(t, 12)})
+
+	for _, path := range []string{"/steward/inbox/" + ids[0], "/steward/inbox/" + ids[0] + "?as=planted"} {
+		body := s.get(path, true).Body.String()
+		if strings.Contains(body, "Just planted") || strings.Contains(body, "Save the planting") {
+			t.Errorf("%s offers a nursery photo as planted", path)
+		}
+	}
+}
+
+func TestADiscardAsksFirst(t *testing.T) {
+	s := serve(t)
+	ids := s.sent(property(), file{"IMG_0013.JPG", noisy(t, 13)})
+
+	if w := s.post("/steward/inbox/"+ids[0], url.Values{"as": {"discard"}}); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "Tick the box") {
+		t.Errorf("a discard without the box: %d", w.Code)
+	}
+
+	if n, _ := s.inbox.Count(t.Context()); n != 1 {
+		t.Error("the photo was discarded without the box ticked")
+	}
+
+	if w := s.post("/steward/inbox/"+ids[0], url.Values{"as": {"discard"}, "confirm": {"yes"}}); w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/steward/inbox?done=discard" {
+		t.Errorf("a discard with the box: %d %s", w.Code, w.Header().Get("Location"))
+	}
+
+	if w := s.get("/steward/inbox/"+ids[0]+"/small.jpg", true); w.Code != http.StatusNotFound {
+		t.Errorf("a discarded photo's picture: %d", w.Code)
+	}
+}
+
+// Set aside: it leaves the count, and waits under Not sure yet with its
+// question.
+func TestAPhotoSetAsideWaitsWithItsQuestion(t *testing.T) {
+	s := serve(t)
+	ids := s.sent(property(), file{"IMG_0014.JPG", noisy(t, 14)})
+
+	if w := s.post("/steward/inbox/"+ids[0], url.Values{"as": {"unsure"}, "note": {"frostweed or wingstem?"}}); w.Code != http.StatusSeeOther {
+		t.Fatalf("setting it aside: %d\n%s", w.Code, w.Body.String())
+	}
+
+	list := s.get("/steward/inbox", true).Body.String()
+	if !strings.Contains(list, "Not sure yet") || !strings.Contains(list, "frostweed or wingstem?") || !strings.Contains(list, "Nothing waiting") {
+		t.Error("the inbox does not show the photo set aside")
+	}
+
+	if front := s.get("/steward", true).Body.String(); !strings.Contains(front, "nothing waiting") {
+		t.Error("a photo set aside is still counted as to sort")
+	}
+
+	if body := s.get("/steward/inbox/"+ids[0], true).Body.String(); !strings.Contains(body, "Question: frostweed or wingstem?") {
+		t.Error("the sort screen does not show the question")
+	}
+}
+
+// A refusal from the rules is shown on the form, and the photo stays.
+func TestASortTheRulesRefuseIsShown(t *testing.T) {
+	s := serve(t)
+	ids := s.sent(property(), file{"IMG_0015.JPG", noisy(t, 15)})
+
+	w := s.post("/steward/inbox/"+ids[0], url.Values{"as": {"planted"}, "species": {s.penstemon.ID.String()}, "kind": {"young"}})
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "Choose the place it was planted.") {
+		t.Errorf("a planting with no place: %d\n%s", w.Code, w.Body.String())
+	}
+
+	if n, _ := s.inbox.Count(t.Context()); n != 1 {
+		t.Error("the refused photo left the inbox")
+	}
+}
+
+// Sorted on one phone, then on another that still had the screen open.
+func TestASecondSortIsToldTheFirstWon(t *testing.T) {
+	s := serve(t)
+	ids := s.sent(property(), file{"IMG_0016.JPG", noisy(t, 16)})
+
+	if w := s.post("/steward/inbox/"+ids[0], url.Values{"as": {"photo"}, "species": {s.penstemon.ID.String()}, "kind": {"leaf"}}); w.Code != http.StatusSeeOther {
+		t.Fatalf("first: %d", w.Code)
+	}
+
+	w := s.post("/steward/inbox/"+ids[0], url.Values{"as": {"discard"}, "confirm": {"yes"}})
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/steward/inbox?done=taken" {
+		t.Errorf("second: %d %s", w.Code, w.Header().Get("Location"))
 	}
 }

@@ -6,6 +6,11 @@
 // as photos do: a place with an inbox photo cannot be deleted until the photo
 // is sorted away from it, which placedb already reports as ErrInUse.
 //
+// What a sorted photo became -- species_id, photo_id -- and who sorted it are
+// plain columns, without references. They are a record, not a constraint: a
+// steward who later removes a wrong photo from a plant, or a plant that was
+// added twice, must not be refused because the inbox remembers it.
+//
 // taken_at and the position are nullable rather than zero for unknown. A
 // photo taken at midnight UTC on 1 January 1970 is not a photo anybody here
 // took, but 0, 0 is a real point and a reader should not have to know which
@@ -41,6 +46,7 @@ var Expected = sqldb.Expected{
 		"taken_at", "lat", "lon", "status", "format", "sha256",
 		"large_width", "large_height", "small_width", "small_height",
 		"created_at", "updated_at",
+		"outcome", "species_id", "photo_id", "sorted_by", "sorted_at",
 	},
 }
 
@@ -87,11 +93,31 @@ CREATE INDEX IF NOT EXISTS inbox_place ON inbox (place_id);
 		return fmt.Errorf("creating the inbox table: %w", err)
 	}
 
+	// Later columns, for sorting. Each arrives as an ALTER beside the CREATE
+	// above, so a fresh database and one from before them end the same; and
+	// nothing that mentions one may sit in the CREATE block (CLAUDE.md).
+	for _, c := range []struct{ name, decl string }{
+		// inboxbus.Outcome; '' until it is sorted.
+		{"outcome", "TEXT NOT NULL DEFAULT ''"},
+		{"species_id", "TEXT"},
+		{"photo_id", "TEXT"},
+		{"sorted_by", "TEXT"},
+		{"sorted_at", "INTEGER"},
+	} {
+		if err := sqldb.AddColumn(ctx, db, "inbox", c.name, c.decl); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 const columns = `id, from_user_id, at, place_id, note, taken_at, lat, lon, status, format, sha256,
-large_width, large_height, small_width, small_height, created_at, updated_at`
+large_width, large_height, small_width, small_height, created_at, updated_at,
+outcome, species_id, photo_id, sorted_by, sorted_at`
+
+// open is the statuses a photo can still be sorted from, as SQL.
+const open = `status IN ('` + string(inboxbus.New) + `', '` + string(inboxbus.Unsure) + `')`
 
 // Create inserts a photo.
 func (s *Store) Create(ctx context.Context, it inboxbus.Item) error {
@@ -104,12 +130,18 @@ func (s *Store) Create(ctx context.Context, it inboxbus.Item) error {
 		lat, lon = it.Where.Lat, it.Where.Lon
 	}
 
+	var sorted any
+	if !it.SortedAt.IsZero() {
+		sorted = it.SortedAt.UnixMilli()
+	}
+
 	_, err := s.db.ExecContext(ctx, `INSERT INTO inbox (`+columns+`)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		it.ID.String(), orNull(it.FromID), string(it.At), orNull(it.PlaceID), it.Note,
 		taken, lat, lon, string(it.Status), it.Format, it.SHA256,
 		it.Large.Width, it.Large.Height, it.Small.Width, it.Small.Height,
-		it.CreatedAt.UnixMilli(), it.UpdatedAt.UnixMilli())
+		it.CreatedAt.UnixMilli(), it.UpdatedAt.UnixMilli(),
+		string(it.Outcome), orNull(it.SpeciesID), orNull(it.PhotoID), orNull(it.SortedBy), sorted)
 
 	switch {
 	case sqldb.IsForeignKeyViolation(err):
@@ -169,6 +201,74 @@ func (s *Store) Count(ctx context.Context, status inboxbus.Status) (int, error) 
 	return n, nil
 }
 
+// Claim marks a photo sorted or discarded, only if it is still new or unsure:
+// one statement, so of two at once exactly one changes a row.
+func (s *Store) Claim(ctx context.Context, id types.ID, c inboxbus.Claim) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE inbox SET
+    status = ?, outcome = ?, species_id = ?, sorted_by = ?, sorted_at = ?, updated_at = ?
+WHERE id = ? AND `+open,
+		string(c.Status), string(c.Outcome), orNull(c.SpeciesID), orNull(c.By), c.At.UnixMilli(), c.At.UnixMilli(),
+		id.String())
+	if err != nil {
+		return fmt.Errorf("claiming an inbox photo: %w", err)
+	}
+
+	return s.changed(ctx, res, id)
+}
+
+// Unclaim puts a claimed photo back.
+func (s *Store) Unclaim(ctx context.Context, id types.ID, was inboxbus.Status, at time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE inbox SET
+    status = ?, outcome = '', species_id = NULL, photo_id = NULL, sorted_by = NULL, sorted_at = NULL, updated_at = ?
+WHERE id = ?`, string(was), at.UnixMilli(), id.String())
+	if err != nil {
+		return fmt.Errorf("putting an inbox photo back: %w", err)
+	}
+
+	return nil
+}
+
+// SetPhoto records the photo a sorted one became.
+func (s *Store) SetPhoto(ctx context.Context, id, photoID types.ID, at time.Time) error {
+	if _, err := s.db.ExecContext(ctx, `UPDATE inbox SET photo_id = ?, updated_at = ? WHERE id = ?`,
+		orNull(photoID), at.UnixMilli(), id.String()); err != nil {
+		return fmt.Errorf("recording what an inbox photo became: %w", err)
+	}
+
+	return nil
+}
+
+// SetUnsure sets a photo aside with its note, only if it is still new or
+// unsure.
+func (s *Store) SetUnsure(ctx context.Context, id types.ID, note string, at time.Time) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE inbox SET status = ?, note = ?, updated_at = ? WHERE id = ? AND `+open,
+		string(inboxbus.Unsure), note, at.UnixMilli(), id.String())
+	if err != nil {
+		return fmt.Errorf("setting an inbox photo aside: %w", err)
+	}
+
+	return s.changed(ctx, res, id)
+}
+
+// changed is nil when the update touched the row, and otherwise says why it
+// did not: there is no such photo, or it is no longer open.
+func (s *Store) changed(ctx context.Context, res sql.Result, id types.ID) error {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("counting the rows changed: %w", err)
+	}
+
+	if n == 1 {
+		return nil
+	}
+
+	if _, err := s.ByID(ctx, id); err != nil {
+		return err
+	}
+
+	return inboxbus.ErrTaken
+}
+
 func (s *Store) one(row *sql.Row) (inboxbus.Item, error) {
 	it, err := scan(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -185,13 +285,17 @@ func scan(row scanner) (inboxbus.Item, error) {
 		it               inboxbus.Item
 		id, at, status   string
 		from, place      sql.NullString
-		taken            sql.NullInt64
+		taken, sorted    sql.NullInt64
 		lat, lon         sql.NullFloat64
 		created, updated int64
+		outcome          string
+		species, photo   sql.NullString
+		by               sql.NullString
 	)
 
 	err := row.Scan(&id, &from, &at, &place, &it.Note, &taken, &lat, &lon, &status, &it.Format, &it.SHA256,
-		&it.Large.Width, &it.Large.Height, &it.Small.Width, &it.Small.Height, &created, &updated)
+		&it.Large.Width, &it.Large.Height, &it.Small.Width, &it.Small.Height, &created, &updated,
+		&outcome, &species, &photo, &by, &sorted)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return inboxbus.Item{}, err
@@ -200,7 +304,7 @@ func scan(row scanner) (inboxbus.Item, error) {
 		return inboxbus.Item{}, fmt.Errorf("reading an inbox photo: %w", err)
 	}
 
-	it.At, it.Status = inboxbus.At(at), inboxbus.Status(status)
+	it.At, it.Status, it.Outcome = inboxbus.At(at), inboxbus.Status(status), inboxbus.Outcome(outcome)
 
 	if it.ID, err = types.ParseID(id); err != nil {
 		return inboxbus.Item{}, fmt.Errorf("an inbox photo has an unreadable id %q: %w", id, err)
@@ -209,7 +313,7 @@ func scan(row scanner) (inboxbus.Item, error) {
 	for _, ref := range []struct {
 		col sql.NullString
 		dst *types.ID
-	}{{from, &it.FromID}, {place, &it.PlaceID}} {
+	}{{from, &it.FromID}, {place, &it.PlaceID}, {species, &it.SpeciesID}, {photo, &it.PhotoID}, {by, &it.SortedBy}} {
 		if !ref.col.Valid {
 			continue
 		}
@@ -221,6 +325,10 @@ func scan(row scanner) (inboxbus.Item, error) {
 
 	if taken.Valid {
 		it.TakenAt = time.UnixMilli(taken.Int64).UTC()
+	}
+
+	if sorted.Valid {
+		it.SortedAt = time.UnixMilli(sorted.Int64).UTC()
 	}
 
 	if lat.Valid && lon.Valid {

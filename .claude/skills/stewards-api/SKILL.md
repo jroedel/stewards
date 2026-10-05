@@ -1,9 +1,9 @@
 ---
 name: stewards-api
-description: Add plants, their photos and where they grow to the live garden steward app through its API, as the steward whose key is in STEWARDS_API_KEY. Use when the person asks to upload, import or add species data, species photos or a place's plants to the site — not for developing the app.
+description: Add plants, their photos and where they grow to the live garden steward app through its API, and sort the steward's photo inbox, as the steward whose key is in STEWARDS_API_KEY. Use when the person asks to upload, import or add species data, species photos or a place's plants to the site, or to sort, go through or identify the photos in their inbox — not for developing the app.
 ---
 
-# Adding plants, photos and listings through the API
+# Adding plants, photos and listings, and sorting the inbox, through the API
 
 The garden steward app has a JSON API at `/api/v1` for exactly this: a
 steward's own Claude adding plants and photos without typing them into the
@@ -150,6 +150,64 @@ better.
   uploading, and keep the originals as the camera or the source saved them:
   the server makes the sizes it needs and strips location and camera details
   itself.
+
+## Sorting the photo inbox
+
+The steward sends photos from the garden or a nursery to the inbox in
+batches, and sorts them later. "Sort my inbox" means this:
+
+1. **List what is waiting:** `GET /api/v1/inbox` (and `?status=unsure` for
+   the photos set aside earlier). Each photo says whether it was taken on the
+   property or `at` a nursery, the `place` if the steward chose one, a `note`,
+   and when the camera says it was taken.
+2. **Look at each photo.** Download its `large_url` into `photos/inbox/`
+   (gitignored), named by its id, and read it:
+
+   ```sh
+   scripts/stewards-api GET /api/v1/inbox/<id>/large.jpg -o photos/inbox/<id>.jpg
+   ```
+
+   Group them by day and place: ten photos taken a minute apart at the
+   inflow band are one walk, and their notes and neighbours are evidence.
+3. **Propose, in one table, and wait for a yes.** For each photo: what you
+   think it shows and *why* (leaf shape, flower, habit — what you can see),
+   how sure you are, the outcome, the plant's slug, the kind, the place. Your
+   reading of a photo is a suggestion for the steward to agree to, never an
+   identification: name the look-alikes when there are any (frostweed and
+   wingstem, again), and say "not sure" freely. The outcomes are:
+   - `photo` — a photo of the plant, for its photos: something to find out
+     about, or a flower not often seen. Choose the `kind`.
+   - `planted` — the plant was just planted at the `place`. It is listed
+     there to protect and taken off the To plant list; the photo becomes its
+     young plant. Only for photos on the property. Ask the person if it is a
+     planting or just a photo when you cannot tell; a photo of a plant is not
+     a planting.
+   - `unsure` — set aside with a question in `note`. Use it for anything you
+     cannot name with confidence, and for a photo you think should go
+     (blurred, a pocket, a duplicate angle), with the reason: the API never
+     discards, and the steward decides on the photo's `screen_url`.
+4. **Add any plant that is not there yet first**, as in "How to run a batch",
+   with sources you actually read. A plant added this way is not confirmed.
+5. **Sort**, one photo at a time, once the person has said yes:
+
+   ```sh
+   scripts/stewards-api POST /api/v1/inbox/<id>/sort \
+     --json '{"outcome": "photo", "species": "winecup", "kind": "flower"}'
+   ```
+
+   Sending the same sort twice answers `"unchanged": true`; a `409` means
+   somebody sorted it differently meanwhile, and the answer says how.
+6. **Report** what each photo became, and give the `photos_url` of each
+   plant that got one: the steward checks them there before any volunteer
+   sees them. List the photos set aside with their questions.
+
+Nursery photos (`"at": "nursery"`) are stock for planning a bed: their tags
+are often legible, and the scientific name on a tag is the best evidence
+there is. Until the app keeps nursery stock, sort a good photo of a plant to
+its photos and set the rest aside with what the tag says.
+
+A photo with a person who can be recognised in it is never sorted to a
+plant's photos: set it aside and say so.
 
 ## When something is refused
 

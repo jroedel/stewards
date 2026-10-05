@@ -138,7 +138,7 @@ func New(cfg Config) (http.Handler, error) {
 		photoapp.Routes(mux, photos, guard)
 
 		if cfg.Inbox != nil {
-			inboxapp.Routes(mux, inboxapp.Config{Log: cfg.Log, Render: render, Inbox: cfg.Inbox, Places: cfg.Places}, guard)
+			inboxapp.Routes(mux, inboxapp.Config{Log: cfg.Log, Render: render, Inbox: cfg.Inbox, Places: cfg.Places, Species: cfg.Species}, guard)
 		}
 		workdayapp.Routes(mux, workdayapp.Config{Log: cfg.Log, Render: render, Days: cfg.Workdays}, guard)
 
@@ -165,9 +165,16 @@ func New(cfg Config) (http.Handler, error) {
 	// Mounted only with sign-in on, like the screens: a key is made on one.
 	api := http.NewServeMux()
 	if cfg.BaseURL != "" {
-		apiapp.Routes(api, apiapp.Config{
+		apiCfg := apiapp.Config{
 			Log: cfg.Log, Species: cfg.Species, Places: cfg.Places, Photos: cfg.Photos, Listings: cfg.Listings, BaseURL: cfg.BaseURL,
-		})
+		}
+
+		// As for the front page: a nil *Business is not a nil interface.
+		if cfg.Inbox != nil {
+			apiCfg.Inbox = cfg.Inbox
+		}
+
+		apiapp.Routes(api, apiCfg)
 	}
 
 	// The order is outermost first. RequestID before Logging so the request
