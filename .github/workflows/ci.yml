@@ -54,6 +54,27 @@ jobs:
       - name: shell tests
         run: make shell-test
 
+      # The send screen's script is plain JavaScript modules with no build
+      # step, so nothing else would notice it breaking until a steward pressed
+      # Send. Node's own test runner, so there is nothing to install from npm;
+      # Node itself is pinned here because the browser tests need 22 or later
+      # and the runner's own may be older.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: JavaScript tests
+        run: make test-js
+
+      # In the runner's own Chrome, against a server built from this commit:
+      # the shrinking, which way up it comes out, and the send screen sending
+      # under the real header policy. CI is set here, so a missing Chrome fails
+      # this step rather than skipping it.
+      - name: browser tests
+        if: hashFiles('cmd/stewards/*.go') != ''
+        timeout-minutes: 10
+        run: make test-browser
+
       - name: vulnerability scan
         if: hashFiles('**/*.go') != ''
         run: make vuln-check

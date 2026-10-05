@@ -1,19 +1,24 @@
 // The send screen's script. It sends the photos chosen one request at a time,
-// says how far it has got, and keeps the form still while it does.
+// each shrunk first if it is larger than it needs to be (shrink.mjs), says how
+// far it has got, and keeps the form still while it does.
 //
 // Without it the form posts the whole batch at once. That works, but it shows
 // nothing for the minutes it takes, it can be changed underneath, and the
 // first batch of fifteen sent that way ended on an error page from the proxy
 // although every photo had arrived. Everything here improves on a form that
-// works without it: if this file does not load, only the progress is lost.
+// works without it: if this file does not load -- or the browser knows no
+// modules, which is how it is loaded -- only the progress is lost.
 //
 // Sending again is always safe. A photo already in the inbox is recognised by
 // its contents and counted as "there already", never added twice, so every
-// way this can fail ends in the same advice: press Send again.
+// way this can fail ends in the same advice: press Send again. That holds for
+// a shrunk photo too: the same photo shrinks to the same bytes in the same
+// browser, which shrink_browser_test.mjs checks rather than assumes.
 //
-// No build step and no library: one file, served by inboxapp with a hash in
-// its address, and written for the browsers on the stewards' phones.
-"use strict";
+// No build step and no library: modules served by inboxapp as they are here,
+// and written for the browsers on the stewards' phones. send_browser_test.mjs
+// drives this page in a real browser against a real server.
+import { shrink } from "./shrink.mjs";
 
 (() => {
   const form = document.querySelector("form[data-send]");
@@ -140,11 +145,15 @@
   // It answers {outcome}, {photo: why it was not kept}, or {stop: why the
   // batch cannot go on}.
   async function send(fields, file, i, n) {
+    // Once, before any try: shrinking the same photo again gives the same
+    // bytes, but there is no need to spend the phone's time finding out.
+    const photo = await shrink(file);
+
     const body = new FormData();
     for (const [k, v] of fields) {
       body.append(k, v);
     }
-    body.append("photo", file, file.name);
+    body.append("photo", photo, file.name);
 
     for (let attempt = 0; ; attempt++) {
       let answer = null;

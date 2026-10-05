@@ -88,10 +88,19 @@ about.
 ```sh
 make test-unit     # the tests, with -race. No network.
 make lint          # go vet + gofmt check
-make test          # both, plus the shell tests
+make test          # both, plus the shell tests and the JavaScript ones below
 make vuln-check    # govulncheck. Needs the network.
 make go-check PKG= # the after-editing-Go loop, on one package
+make test-js       # the JavaScript, under Node's own test runner
+make test-browser  # the same in headless Chrome, against a server built for it
 ```
+
+**JavaScript** is plain ES modules with no build step and no npm, served by
+the app that owns them (today only `app/domain/inboxapp/static/`). After
+changing one, run `make test-js test-browser`. A unit test is `*_test.mjs`
+beside the module; a browser test is `*_browser_test.mjs`, driven through
+`scripts/browser.mjs`. Both are found by name. The browser tests skip, and
+say so, on a machine with no Chrome; in CI they fail instead.
 
 `make test-unit` counts the passing packages instead of listing them, so **there
 is nothing to pipe it through**. A filter written in a hurry is one that
