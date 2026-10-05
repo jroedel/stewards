@@ -155,11 +155,14 @@ A question about *behaviour* starts in `business/domain/…bus`. A question abou
   with the steward's own key from `STEWARDS_API_KEY`. That is the steward
   using their app, not an agent operating the server, so it is not a way
   around the rule above: never as a test, never while developing, and never
-  to read or change anything but plants, photos and listings. The API
+  to read or change anything but plants, photos, listings and the steward's
+  photo inbox. The API
   confirms no plant and checks no photo, so neither reaches a volunteer
   until a person has looked at it. A listing is the exception -- it is on
   the place card as soon as it is made -- which is why the API may only
   protect a plant or mark it careful, never tell volunteers to pull one.
+  Sorting the inbox files a photo the same way, unchecked, and never
+  discards one: a person does that on the photo's screen.
 - **Agents never set GitHub secrets or variables**, and never read
   `secrets.env`. The split mass-intentions uses applies here: `DEPLOY_*` are
   GitHub secrets, `APP_*` are GitHub variables, and runtime credentials go to

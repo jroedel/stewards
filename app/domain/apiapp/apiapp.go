@@ -1,6 +1,6 @@
 // Package apiapp is the JSON API at /api/v1: how a program -- a script, or a
 // steward's own Claude -- adds plants, their photos and where they grow
-// without typing them into the screens.
+// without typing them into the screens, and sorts the photo inbox (inbox.go).
 //
 // # The index is the route table
 //
@@ -14,7 +14,8 @@
 // # What a key can and cannot do
 //
 // A key acts as the steward who made it (mid.APIKey), and only through the
-// import rules: speciesbus.Import, photobus.Import and listingbus.Import.
+// import rules: speciesbus.Import, photobus.Import and listingbus.Import, and
+// inboxbus.Sort, which files a photo the way photobus.Import would.
 // None will confirm a plant, check a photo, or tell volunteers to pull one. A batch from a program lands as "not yet confirmed"
 // and "not checked", and a person ticks those on the screens after looking --
 // the wingstem lesson, which applies to Claude as much as to a nursery tag.
@@ -92,6 +93,10 @@ type Config struct {
 	Photos   Photos
 	Listings Listings
 
+	// Inbox may be nil, and its endpoints are then neither mounted nor in
+	// the index.
+	Inbox Inbox
+
 	// BaseURL is the public origin, for the absolute links in answers: a
 	// program reading them may be anywhere.
 	BaseURL string
@@ -103,6 +108,7 @@ type app struct {
 	places   Places
 	photos   Photos
 	listings Listings
+	inbox    Inbox
 	base     string
 }
 
@@ -110,7 +116,7 @@ type app struct {
 // behind mid.RequireKey; mid.APIKey, which reads the key, is the muxer's to
 // put around the whole of it.
 func Routes(mux *http.ServeMux, cfg Config) {
-	a := app{log: cfg.Log, species: cfg.Species, places: cfg.Places, photos: cfg.Photos, listings: cfg.Listings, base: cfg.BaseURL}
+	a := app{log: cfg.Log, species: cfg.Species, places: cfg.Places, photos: cfg.Photos, listings: cfg.Listings, inbox: cfg.Inbox, base: cfg.BaseURL}
 	require := mid.RequireKey()
 
 	for _, e := range a.endpoints() {
@@ -177,7 +183,7 @@ func (a app) endpoints() []Endpoint {
 		return Field{Name: name, Type: "object {min, max}", Description: what + " In whole inches, a range or one number in both. 0 for not known."}
 	}
 
-	return []Endpoint{
+	all := []Endpoint{
 		{
 			Method: http.MethodGet, Path: Prefix, Summary: "This index: every endpoint, what it takes, and the rules.",
 			Returns: "This document.", handler: a.index,
@@ -251,6 +257,12 @@ func (a app) endpoints() []Endpoint {
 			handler: a.addPhoto,
 		},
 	}
+
+	if a.inbox != nil {
+		all = append(all, a.inboxEndpoints()...)
+	}
+
+	return all
 }
 
 func (a app) index(w http.ResponseWriter, r *http.Request) {
@@ -262,7 +274,7 @@ func (a app) index(w http.ResponseWriter, r *http.Request) {
 			a.base + "/steward/keys; it acts as that steward, is shown once, and lasts 90 days.",
 		Rules: []string{
 			"Nothing sent here is confirmed or checked. A steward confirms a plant, and checks a photo, on its screen after looking. Sending confirmed or checked is refused.",
-			"Nothing is removed through the API. A person does that on the screens.",
+			"Nothing is removed through the API, an inbox photo included. A person does that on the screens.",
 			"An import never marks a plant to pull at a place. A steward does that on the place's Plants screen.",
 			"Sending a plant exactly as it is already changes nothing, and the same photo twice is kept once, so a batch can safely be sent again.",
 			"A plant's slug is its address, /plants/<slug>, and cannot change once made: lower-case letters, numbers and hyphens, such as winecup.",

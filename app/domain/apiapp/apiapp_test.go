@@ -20,6 +20,8 @@ import (
 	"github.com/jroedel/stewards/app/domain/apiapp"
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/muxer"
+	"github.com/jroedel/stewards/business/domain/inbox/inboxbus"
+	"github.com/jroedel/stewards/business/domain/inbox/stores/inboxdb"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
@@ -46,8 +48,11 @@ type site struct {
 	species  *speciesbus.Business
 	places   *placebus.Business
 	listings *listingbus.Business
+	photos   *photobus.Business
+	inbox    *inboxbus.Business
 	cookie   *http.Cookie
 	key      string
+	steward  types.ID
 }
 
 func serve(t *testing.T) *site {
@@ -66,6 +71,7 @@ func serve(t *testing.T) *site {
 		func() error { return listingdb.Init(t.Context(), db) },
 		func() error { return photodb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
+		func() error { return inboxdb.Init(t.Context(), db) },
 		func() error { return workdaydb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
@@ -78,6 +84,11 @@ func serve(t *testing.T) *site {
 		t.Fatal(err)
 	}
 
+	inboxFiles, err := photofs.NewStore(filepath.Join(t.TempDir(), "photo-files", "inbox"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	log := slog.New(slog.DiscardHandler)
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
 	s := &site{
@@ -85,23 +96,28 @@ func serve(t *testing.T) *site {
 		species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
 		places:   placebus.NewBusiness(placedb.NewStore(db), nil),
 		listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
+		photos:   photobus.NewBusiness(photodb.NewStore(db), files, nil),
 	}
+	s.inbox = inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, s.photos, s.listings, nil)
 
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
 		Places: s.places, Species: s.species, Users: users,
 		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
-		Photos:   photobus.NewBusiness(photodb.NewStore(db), files, nil),
+		Photos:   s.photos,
 		Listings: s.listings,
+		Inbox:    s.inbox,
 		BaseURL:  base, Mail: &mail.Recorder{},
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	addr, _ := types.ParseEmail("steward@example.org")
-	if _, err := users.Create(t.Context(), addr, ""); err != nil {
+	u, err := users.Create(t.Context(), addr, "")
+	if err != nil {
 		t.Fatal(err)
 	}
+	s.steward = u.ID
 
 	req, _ := users.RequestSignIn(t.Context(), addr)
 	_, value, err := users.SignIn(t.Context(), req.Secret)
@@ -267,6 +283,7 @@ func TestTheIndexListsWhatIsThere(t *testing.T) {
 		"GET /api/v1", "GET /api/v1/places", "GET /api/v1/species", "GET /api/v1/species/{slug}",
 		"PUT /api/v1/species/{slug}", apiapp.UploadPattern,
 		"GET /api/v1/places/{slug}/plants", "PUT /api/v1/places/{slug}/plants/{species}",
+		"GET /api/v1/inbox", "GET /api/v1/inbox/{id}/{file}", "POST /api/v1/inbox/{id}/sort",
 	} {
 		if !seen[want] {
 			t.Errorf("the index does not list %s", want)

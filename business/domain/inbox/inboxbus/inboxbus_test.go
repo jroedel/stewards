@@ -12,15 +12,21 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jroedel/stewards/business/domain/inbox/inboxbus"
 	"github.com/jroedel/stewards/business/domain/inbox/stores/inboxdb"
+	"github.com/jroedel/stewards/business/domain/listing/listingbus"
+	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
+	"github.com/jroedel/stewards/business/domain/photo/stores/photodb"
 	"github.com/jroedel/stewards/business/domain/photo/stores/photofs"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
+	"github.com/jroedel/stewards/business/domain/species/speciesbus"
+	"github.com/jroedel/stewards/business/domain/species/stores/speciesdb"
 	"github.com/jroedel/stewards/business/domain/user/stores/userdb"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
 	"github.com/jroedel/stewards/business/types"
@@ -28,13 +34,16 @@ import (
 )
 
 type garden struct {
-	inbox  *inboxbus.Business
-	places *placebus.Business
-	dir    string
-	clock  *time.Time
+	inbox    *inboxbus.Business
+	places   *placebus.Business
+	photos   *photobus.Business
+	listings *listingbus.Business
+	dir      string
+	clock    *time.Time
 
-	steward userbus.User
-	inflow  placebus.Place
+	steward   userbus.User
+	inflow    placebus.Place
+	penstemon speciesbus.Species
 }
 
 func setup(t *testing.T) *garden {
@@ -49,6 +58,9 @@ func setup(t *testing.T) *garden {
 	for _, init := range []func() error{
 		func() error { return sqldb.Init(t.Context(), db) },
 		func() error { return placedb.Init(t.Context(), db) },
+		func() error { return speciesdb.Init(t.Context(), db) },
+		func() error { return listingdb.Init(t.Context(), db) },
+		func() error { return photodb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
 		func() error { return inboxdb.Init(t.Context(), db) },
 		func() error { return inboxdb.Init(t.Context(), db) }, // at every startup
@@ -69,13 +81,26 @@ func setup(t *testing.T) *garden {
 		t.Fatal(err)
 	}
 
+	photoFiles, err := photofs.NewStore(filepath.Join(t.TempDir(), "photo-files"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	clock := time.Date(2026, 10, 5, 9, 0, 0, 0, time.UTC)
+	now := func() time.Time { return clock }
 
 	g := &garden{
-		inbox:  inboxbus.NewBusiness(inboxdb.NewStore(db), files, func() time.Time { return clock }),
-		places: placebus.NewBusiness(placedb.NewStore(db), nil),
-		dir:    dir,
-		clock:  &clock,
+		places:   placebus.NewBusiness(placedb.NewStore(db), nil),
+		photos:   photobus.NewBusiness(photodb.NewStore(db), photoFiles, now),
+		listings: listingbus.NewBusiness(listingdb.NewStore(db), now),
+		dir:      dir,
+		clock:    &clock,
+	}
+	g.inbox = inboxbus.NewBusiness(inboxdb.NewStore(db), files, g.photos, g.listings, now)
+
+	species := speciesbus.NewBusiness(speciesdb.NewStore(db), nil)
+	if g.penstemon, err = species.Create(t.Context(), speciesbus.Fields{Slug: "brazos-penstemon", Common: types.Text{EN: "Brazos penstemon"}}); err != nil {
+		t.Fatal(err)
 	}
 
 	email, err := types.ParseEmail("steward@example.org")
@@ -362,5 +387,265 @@ func TestAPlaceWithAnInboxPhotoIsKept(t *testing.T) {
 	err := g.places.Delete(t.Context(), g.inflow.ID)
 	if invalid, ok := errors.AsType[placebus.Invalid](err); !ok || !strings.Contains(invalid.Problem, "inbox") {
 		t.Errorf("deleting the place: %v", err)
+	}
+}
+
+// ------------------------------------------------------------------ sorting
+
+func (g *garden) sent(t *testing.T, f inboxbus.Fields, shade uint8) inboxbus.Item {
+	t.Helper()
+
+	it, err := g.inbox.Add(t.Context(), f, dated(photo(t, shade), "2026:04:18 09:30:00"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return it
+}
+
+func (g *garden) atInflow() inboxbus.Fields {
+	f := g.property()
+	f.PlaceID = g.inflow.ID
+
+	return f
+}
+
+// A flower not often seen: the photo becomes the plant's, unchecked, with the
+// place it was sent with and the camera's month, and leaves the inbox.
+func TestAPhotoBecomesThePlantsUnchecked(t *testing.T) {
+	g := setup(t)
+	it := g.sent(t, g.atInflow(), 20)
+
+	res, err := g.inbox.Sort(t.Context(), it.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsPhoto, SpeciesID: g.penstemon.ID, Kind: photobus.Flower})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := g.photos.ByID(t.Context(), res.Photo.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	switch {
+	case p.SpeciesID != g.penstemon.ID, p.Kind != photobus.Flower, p.PlaceID != g.inflow.ID, p.Source != photobus.Ours:
+		t.Errorf("the plant's photo is %+v", p)
+	case p.Checked:
+		t.Error("a sorted photo arrived checked: a steward checks it on the plant's photos screen")
+	case p.TakenYear != 2026 || p.TakenMonth != 4:
+		t.Errorf("taken %d/%d, want the camera's April 2026", p.TakenMonth, p.TakenYear)
+	}
+
+	got, _ := g.inbox.ByID(t.Context(), it.ID)
+	if got.Status != inboxbus.Sorted || got.Outcome != inboxbus.AsPhoto || got.PhotoID != p.ID || got.SortedBy != g.steward.ID || got.SortedAt.IsZero() {
+		t.Errorf("the inbox remembers %+v", got)
+	}
+
+	if names := g.files(t); len(names) != 0 {
+		t.Errorf("the inbox still keeps %v", names)
+	}
+
+	if _, _, err := g.inbox.Open(t.Context(), it.ID, photobus.Small); !errors.Is(err, inboxbus.ErrNotFound) {
+		t.Errorf("a sorted photo's picture: %v", err)
+	}
+
+	if n, _ := g.inbox.Count(t.Context()); n != 0 {
+		t.Errorf("%d still to sort", n)
+	}
+}
+
+// Just planted: it is protected there, off the To plant list, and the photo
+// is its young plant at that place.
+func TestAPlantingIsListedAndPhotographed(t *testing.T) {
+	g := setup(t)
+
+	// It was on the place's To plant list.
+	if _, err := g.listings.Set(t.Context(), g.inflow.ID, g.penstemon.ID, listingbus.Fields{Action: listingbus.Protect, Planned: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	it := g.sent(t, g.property(), 21)
+
+	res, err := g.inbox.Sort(t.Context(), it.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsPlanted, SpeciesID: g.penstemon.ID, PlaceID: g.inflow.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if res.Listing.Action != listingbus.Protect || res.Listing.Planned {
+		t.Errorf("listed as %+v, want protected and planted", res.Listing)
+	}
+
+	if res.Photo.Kind != photobus.Young || res.Photo.PlaceID != g.inflow.ID {
+		t.Errorf("the photo is %+v, want a young plant at the inflow", res.Photo)
+	}
+}
+
+// A plant listed careful stays careful, with its note, when it is planted.
+func TestAPlantingKeepsHowItWasListed(t *testing.T) {
+	g := setup(t)
+
+	note := types.Text{EN: "gloves: it seeds everywhere"}
+	if _, err := g.listings.Set(t.Context(), g.inflow.ID, g.penstemon.ID, listingbus.Fields{Action: listingbus.Careful, Note: note}); err != nil {
+		t.Fatal(err)
+	}
+
+	it := g.sent(t, g.atInflow(), 22)
+
+	res, err := g.inbox.Sort(t.Context(), it.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsPlanted, SpeciesID: g.penstemon.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if res.Listing.Action != listingbus.Careful || res.Listing.Note != note {
+		t.Errorf("listed as %+v", res.Listing)
+	}
+}
+
+// What cannot be sorted leaves the photo where it was, files and all, for
+// another try.
+func TestASortThatCannotBeMadeLeavesThePhotoInTheInbox(t *testing.T) {
+	g := setup(t)
+
+	if _, err := g.listings.Set(t.Context(), g.inflow.ID, g.penstemon.ID, listingbus.Fields{Action: listingbus.Pull}); err != nil {
+		t.Fatal(err)
+	}
+
+	it := g.sent(t, g.atInflow(), 23)
+	nursery := g.sent(t, inboxbus.Fields{FromID: g.steward.ID, At: inboxbus.Nursery}, 24)
+
+	for name, tc := range map[string]struct {
+		id    types.ID
+		s     inboxbus.Sorting
+		field string
+	}{
+		"no plant":           {it.ID, inboxbus.Sorting{Outcome: inboxbus.AsPhoto, Kind: photobus.Leaf}, "species"},
+		"no kind":            {it.ID, inboxbus.Sorting{Outcome: inboxbus.AsPhoto, SpeciesID: g.penstemon.ID}, "kind"},
+		"no outcome":         {it.ID, inboxbus.Sorting{SpeciesID: g.penstemon.ID}, "outcome"},
+		"a plant not here":   {it.ID, inboxbus.Sorting{Outcome: inboxbus.AsPhoto, SpeciesID: types.NewID(), Kind: photobus.Leaf}, "place"},
+		"listed to pull":     {it.ID, inboxbus.Sorting{Outcome: inboxbus.AsPlanted, SpeciesID: g.penstemon.ID}, "species"},
+		"planted at nursery": {nursery.ID, inboxbus.Sorting{Outcome: inboxbus.AsPlanted, SpeciesID: g.penstemon.ID, PlaceID: g.inflow.ID}, "outcome"},
+		"planted nowhere":    {g.sent(t, g.property(), 25).ID, inboxbus.Sorting{Outcome: inboxbus.AsPlanted, SpeciesID: g.penstemon.ID}, "place"},
+		"a long question":    {it.ID, inboxbus.Sorting{Outcome: inboxbus.AsUnsure, Note: strings.Repeat("?", inboxbus.MaxNote+1)}, "note"},
+	} {
+		_, err := g.inbox.Sort(t.Context(), tc.id, g.steward.ID, tc.s)
+
+		if invalid, ok := errors.AsType[inboxbus.Invalid](err); !ok || invalid.Field != tc.field {
+			t.Errorf("%s: %v, want a problem with %s", name, err, tc.field)
+		}
+	}
+
+	if got, _ := g.inbox.ByID(t.Context(), it.ID); got.Status != inboxbus.New || got.Outcome != "" || !got.SpeciesID.Zero() {
+		t.Errorf("after the refusals the photo is %+v", got)
+	}
+
+	if n := len(g.files(t)); n != 9 {
+		t.Errorf("%d inbox files, want all three photos' three", n)
+	}
+}
+
+// Not sure yet: set aside with the question, out of the count, and still
+// sortable once somebody knows.
+func TestAPhotoSetAsideCanBeSortedLater(t *testing.T) {
+	g := setup(t)
+	it := g.sent(t, g.atInflow(), 26)
+
+	if _, err := g.inbox.Sort(t.Context(), it.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsUnsure, Note: "  frostweed or wingstem?  "}); err != nil {
+		t.Fatal(err)
+	}
+
+	aside, _ := g.inbox.SetAside(t.Context())
+	waiting, _ := g.inbox.Waiting(t.Context())
+
+	if len(aside) != 1 || aside[0].Note != "frostweed or wingstem?" || len(waiting) != 0 {
+		t.Errorf("aside %+v, waiting %d", aside, len(waiting))
+	}
+
+	if n, _ := g.inbox.Count(t.Context()); n != 0 {
+		t.Errorf("a photo set aside is counted as to sort: %d", n)
+	}
+
+	if _, err := g.inbox.Sort(t.Context(), it.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsPhoto, SpeciesID: g.penstemon.ID, Kind: photobus.Leaf}); err != nil {
+		t.Errorf("sorting it once known: %v", err)
+	}
+}
+
+// Discarded: the files go, and the same photo sent again is recognised
+// rather than coming back.
+func TestADiscardedPhotoStaysGone(t *testing.T) {
+	g := setup(t)
+	data := photo(t, 27)
+
+	it, err := g.inbox.Add(t.Context(), g.property(), data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := g.inbox.Sort(t.Context(), it.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsDiscard}); err != nil {
+		t.Fatal(err)
+	}
+
+	if names := g.files(t); len(names) != 0 {
+		t.Errorf("files left: %v", names)
+	}
+
+	if _, err := g.inbox.Add(t.Context(), g.property(), data); err == nil {
+		t.Error("a discarded photo came back when it was sent again")
+	}
+}
+
+// The same sort sent twice is the first answer again; a different one is
+// refused with what the photo became.
+func TestASortedPhotoIsSortedOnce(t *testing.T) {
+	g := setup(t)
+	it := g.sent(t, g.atInflow(), 28)
+	as := inboxbus.Sorting{Outcome: inboxbus.AsPhoto, SpeciesID: g.penstemon.ID, Kind: photobus.Leaf}
+
+	if _, err := g.inbox.Sort(t.Context(), it.ID, g.steward.ID, as); err != nil {
+		t.Fatal(err)
+	}
+
+	if res, err := g.inbox.Sort(t.Context(), it.ID, g.steward.ID, as); err != nil || !res.Unchanged {
+		t.Errorf("the same sort again: %+v, %v", res, err)
+	}
+
+	_, err := g.inbox.Sort(t.Context(), it.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsDiscard})
+	if already, ok := errors.AsType[inboxbus.AlreadySorted](err); !ok || already.Item.Outcome != inboxbus.AsPhoto {
+		t.Errorf("discarding a sorted photo: %v", err)
+	}
+}
+
+// Two stewards sorting the same photo at once: one makes something, the
+// other is told it is done.
+func TestTwoSortsAtOnceMakeOneThing(t *testing.T) {
+	g := setup(t)
+	it := g.sent(t, g.atInflow(), 29)
+
+	var (
+		wg   sync.WaitGroup
+		errs [2]error
+	)
+
+	for i, k := range []photobus.Kind{photobus.Leaf, photobus.Flower} {
+		wg.Go(func() {
+			_, errs[i] = g.inbox.Sort(t.Context(), it.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsPhoto, SpeciesID: g.penstemon.ID, Kind: k})
+		})
+	}
+
+	wg.Wait()
+
+	won := 0
+	for _, err := range errs {
+		_, lost := errors.AsType[inboxbus.AlreadySorted](err)
+
+		switch {
+		case err == nil:
+			won++
+		case !lost:
+			t.Errorf("unexpected: %v", err)
+		}
+	}
+
+	photos, _ := g.photos.ForSpecies(t.Context(), g.penstemon.ID)
+	if won != 1 || len(photos) != 1 {
+		t.Errorf("%d sorts succeeded and %d photos were made, want one of each", won, len(photos))
 	}
 }

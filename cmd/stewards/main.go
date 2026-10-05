@@ -143,6 +143,8 @@ func run() error {
 	}
 
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
+	photos := photobus.NewBusiness(photodb.NewStore(db), photoFiles, nil)
+	listings := listingbus.NewBusiness(listingdb.NewStore(db), nil)
 	subscribers := subscriberbus.NewBusiness(subscriberdb.NewStore(db), nil)
 	go prune(ctx, log, users, subscribers)
 
@@ -152,11 +154,11 @@ func run() error {
 		Expected: expected,
 		Places:   placebus.NewBusiness(placedb.NewStore(db), nil),
 		Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
-		Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
-		Photos:   photobus.NewBusiness(photodb.NewStore(db), photoFiles, nil),
+		Listings: listings,
+		Photos:   photos,
 		Users:    users,
 		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
-		Inbox:    inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, nil),
+		Inbox:    inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, photos, listings, nil),
 
 		Subscribers: subscribers,
 		BaseURL:     cfg.Server.BaseURL,

@@ -1,0 +1,76 @@
+{{define "title"}}Sort a photo · Garden stewards{{end}}
+{{define "content"}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow"><a href="/steward/inbox">Photo inbox</a></p>
+<h1>What is this photo?</h1>
+
+{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+{{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below and press the button again.</p>{{end}}
+
+{{if .Sorted}}
+<p class="lead">{{.Sorted}}</p>
+{{with .PhotosAt}}<a class="button button-block" href="{{.}}">See the plant's photos</a>{{end}}
+<a class="onward" href="/steward/inbox"><span>Back to the inbox</span><span aria-hidden="true">›</span></a>
+{{else}}
+
+<div class="card">
+  <a class="photo-large" href="/steward/inbox/{{.ID}}/large.jpg"><img src="/steward/inbox/{{.ID}}/large.jpg" width="{{.Width}}" height="{{.Height}}" alt=""></a>
+  <div>
+    <p class="row-tags">{{if .Nursery}}<span class="tag">At a nursery</span>{{else if .Where}}<span class="tag">{{.Where}}</span>{{else}}<span class="tag tag-open">Place not said</span>{{end}}{{if .Unsure}} <span class="tag tag-open">Not sure yet</span>{{end}}</p>
+    {{with .Taken}}<p class="row-note">{{.}}</p>{{end}}
+    {{if .Unsure}}<p class="row-note">Question: {{.Question}}</p>{{else}}{{with .Note}}<p class="row-note">{{.}}</p>{{end}}{{end}}
+  </div>
+</div>
+
+{{if not .As}}
+<a class="button button-block" href="/steward/inbox/{{.ID}}?as=photo">A plant: add it to the plant's photos</a>
+{{if not .Nursery}}<a class="button button-block" href="/steward/inbox/{{.ID}}?as=planted">Just planted: list it at its place</a>{{end}}
+<a class="button button-block button-quiet" href="/steward/inbox/{{.ID}}?as=unsure">Not sure yet: set it aside</a>
+<a class="button button-block button-quiet" href="/steward/inbox/{{.ID}}?as=discard">Discard</a>
+{{else}}
+
+<form class="card form" method="post" action="/steward/inbox/{{.ID}}">
+  <input type="hidden" name="as" value="{{.As}}">
+  {{with index .Problems "outcome"}}<p class="field-problem">{{.}}</p>{{end}}
+
+  {{if or (eq .As "photo") (eq .As "planted")}}
+  <label for="species">Which plant</label>
+  {{if .NoPlants}}<p class="help">There are no plants yet. <a href="/steward/species/new">Add the plant</a>, then come back to this photo.</p>{{else}}<p class="help" id="species-help">Not in the list? <a href="/steward/species/new">Add the plant</a>, then come back to this photo.</p>{{end}}
+  {{with index .Problems "species"}}<p class="field-problem">{{.}}</p>{{end}}
+  <select id="species" name="species" required aria-describedby="species-help">{{range .Species}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+
+  <label for="kind">What it shows</label>
+  {{with index .Problems "kind"}}<p class="field-problem">{{.}}</p>{{end}}
+  <select id="kind" name="kind" required>{{range .Kinds}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+
+  {{if not .Nursery}}
+  <label for="place">{{if eq .As "planted"}}Where it was planted{{else}}Where it was taken <span class="optional">optional</span>{{end}}</label>
+  {{with index .Problems "place"}}<p class="field-problem">{{.}}</p>{{end}}
+  <select id="place" name="place"{{if eq .As "planted"}} required{{end}}>{{range .Places}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+  {{end}}
+
+  {{if eq .As "planted"}}<p class="help">It is listed there to protect, and comes off the To plant list if it was on it.</p>{{end}}
+  <p class="help">The photo goes to the plant's photos not yet checked. Volunteers see it once a steward checks it there.</p>
+  <button class="button" type="submit">{{if eq .As "planted"}}Save the planting{{else}}Add the photo{{end}}</button>
+  {{end}}
+
+  {{if eq .As "unsure"}}
+  <label for="note">The question <span class="optional">optional</span></label>
+  <p class="help" id="note-help">What would settle it, such as "frostweed or wingstem? check the leaf base".</p>
+  {{with index .Problems "note"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="note" name="note" type="text" value="{{.Question}}" maxlength="300" aria-describedby="note-help">
+  <button class="button" type="submit">Set it aside</button>
+  {{end}}
+
+  {{if eq .As "discard"}}
+  <p class="help">The photo is deleted. This cannot be undone.</p>
+  {{with index .Problems "confirm"}}<p class="field-problem">{{.}}</p>{{end}}
+  <label class="check"><input type="checkbox" name="confirm" value="yes"> Yes, discard this photo</label>
+  <button class="button" type="submit">Discard</button>
+  {{end}}
+</form>
+<a class="onward" href="/steward/inbox/{{.ID}}"><span>Choose something else</span><span aria-hidden="true">›</span></a>
+{{end}}
+{{end}}
+</div>
+{{end}}{{end}}

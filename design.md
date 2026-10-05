@@ -168,6 +168,14 @@ The phase 1 mockups are at <https://claude.ai/artifact/EZV9C92thqqWH5drvW2AQr>.
 | **Species** | What is it, and will it look right here? | Planting and Weeding tabs on one record · close-up and in-context photos · color, bloom strip, mature size against a person, light · weeding: seedling photo, look-alikes, action for this place |
 | **What is this?** | I'm not sure | Photo · place picker (from the map) · "I don't know / It's one of ours / Something to fix" · note · Send (yellow) · "Your photos" with ID status and the stewards' reply |
 
+**The stewards' photo inbox** sits behind sign-in, and is the stewards' half of "What is this?". The same principles apply: sunlight, thumbs, and one job per screen.
+
+| Screen | Its job | Key components |
+|---|---|---|
+| **Send photos** | Get the photos off the phone, now | Many photos at once · one toggle, *On the property* (always the default) or *At a nursery* · optional place and one-line note for the whole batch · nothing asked per photo |
+| **Photo inbox** | What is waiting to be sorted? | Waiting photos by the day they were taken · "Sort, starting with the newest" · *Not sure yet*, with each photo's question · the count on the stewards' front page is the only reminder |
+| **Sort a photo** | What is this one? | The photo, large · four choices: *a plant's photo*, *just planted* (not for a nursery photo), *not sure yet*, *discard* (with a tick to confirm) · each opens one short form · after saving, on to the next photo |
+
 **Keep from the first mockups** (reviewed 2026-09-30): the **month-by-month bloom color map** on the place card, and the species card's **list of the places it grows** ("Where it grows here"). A species links to every place it's in, and each place links back.
 
 **Shared components**
