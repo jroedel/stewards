@@ -553,6 +553,99 @@ $(backup_script)"
 	remote_in_app "./supervise.sh start"
 }
 
+# ------------------------------------------------------------------ uploads
+
+# cmd_upload_check asks whether Apache, in front of the app, lets through an
+# upload of each size the app takes: one photo as the send screen's script
+# sends it, and a whole batch as the form sends it without the script. The
+# .htaccess sets no LimitRequestBody, so the limit is whatever the host set,
+# and nothing on this side can read the host's configuration. Asking is the
+# only way to know.
+#
+# Each probe is a signed-out post of that many bytes, all zeros. The app turns
+# it away (nobody is signed in) and keeps nothing, so this changes nothing on
+# the live site; what it shows is who answered.
+#
+#   - The app answered, or logged the request: Apache passed it on. Passed.
+#   - Apache answered 413: its limit is lower than that size. Refused.
+#   - Anything else: unknown, and said so rather than guessed.
+#
+# The log is part of it because a pass is often not a clean answer. The app
+# refuses a signed-out post without reading the body, and closes the
+# connection while Apache is still sending it; Apache then reports a 502 for
+# an upload that in fact reached the app. A 413 cannot be mistaken for that:
+# without "Expect: 100-continue" (the empty Expect header below; curl adds it
+# to any large body otherwise) Apache reads the start of the body before it
+# contacts the app, and refuses on the declared length right there.
+#
+# The sizes are the app's own limits: inboxapp.MaxSendBytes and
+# inboxapp.MaxBytes. inboxapp's tests check that they still match.
+cmd_upload_check() {
+	load_config; need_app_dir; ssh_setup
+	require curl
+	require truncate
+
+	log "the app is up"
+	health_public || die "the public check failed, so this would say nothing about uploads. Look at 'make prod-status' first"
+
+	local tmp failed=0 size path label before after code by_app saw
+	tmp="$(mktemp -d)"
+	# shellcheck disable=SC2064 # $tmp is meant to be expanded now
+	trap "rm -rf '$tmp'" EXIT
+
+	while read -r size path label; do
+		log "$label"
+
+		before="$(app_logged "$path")"
+
+		# Sparse: as many bytes as a photo, taking no room on this disk.
+		truncate -s 0 "$tmp/body"
+		truncate -s "$size" "$tmp/body"
+		: >"$tmp/headers"
+		code="$(curl -s -o /dev/null -D "$tmp/headers" -w '%{http_code}' --max-time 600 \
+			-X POST -H 'Content-Type: multipart/form-data; boundary=upload-check' -H 'Expect:' \
+			--upload-file "$tmp/body" "https://$APP_HOST$path" 2>/dev/null)" || true
+
+		after="$(app_logged "$path")"
+
+		by_app=no
+		answered_by_app <"$tmp/headers" && by_app=yes
+		saw=no
+		[ "${after:-0}" -gt "${before:-0}" ] && saw=yes
+
+		case "$(upload_verdict "$code" "$by_app" "$saw")" in
+		passed)
+			ok "Apache passed it to the app (Apache answered ${code:-nothing}; the app turned it away, as it should with nobody signed in)" ;;
+		refused)
+			bad "Apache refused it with 413: the host's upload limit is below $((size >> 20)) MB, so uploads this size never reach the app"
+			failed=1 ;;
+		*)
+			bad "Apache answered ${code:-nothing}, and the app did not log it. Run this again; if it says the same, look at 'make prod-logs'"
+			failed=1 ;;
+		esac
+	done <<-SIZES
+		27262976 /steward/inbox/send one photo, as the send screen sends it (26 MB)
+		167772160 /steward/inbox a whole batch, as the form sends it without its script (160 MB)
+	SIZES
+
+	return "$failed"
+}
+
+# app_logged counts the app's log lines for posts to a path.
+app_logged() { remote_in_app "grep -c 'method=POST path=$1 status=' $APP.log 2>/dev/null || true"; }
+
+# upload_verdict is what one probe found, from Apache's status code, whether
+# the app answered, and whether the app logged it: passed, refused or unknown.
+upload_verdict() {
+	if [ "$2" = yes ] || [ "$3" = yes ]; then
+		echo passed
+	elif [ "$1" = 413 ]; then
+		echo refused
+	else
+		echo unknown
+	fi
+}
+
 # ------------------------------------------------------------------ mail
 
 # cmd_mail_report is how cron and mail are set up on the account, and what the
@@ -652,6 +745,7 @@ usage() {
 		  backup           back up the database now (stops the app for a moment)
 		  restart          restart the app
 		  mail-report      how cron and mail are set up, and what the domains publish; no secrets
+		  upload-check     whether Apache lets uploads of the app's sizes through; stores nothing
 		  htaccess         install the Apache front end only, then check it from outside
 		  render-htaccess  print the .htaccess that would be installed, touch nothing
 	USAGE
@@ -664,6 +758,7 @@ logs)            shift; cmd_logs "$@" ;;
 backup)          shift; cmd_backup "$@" ;;
 restart)         shift; cmd_restart "$@" ;;
 mail-report)     shift; cmd_mail_report "$@" ;;
+upload-check)    shift; cmd_upload_check "$@" ;;
 htaccess)        shift; cmd_htaccess "$@" ;;
 render-htaccess) shift; load_config; render_htaccess ;;
 *)               usage; exit 2 ;;

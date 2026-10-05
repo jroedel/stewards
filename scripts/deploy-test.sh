@@ -357,6 +357,95 @@ wait
 watchdog_free() { ( cd "$APP_DIR" && flock -n stewards.lock true ); }
 check "and can once the swap is over" watchdog_free
 
+# ------------------------------------------------------------------ uploads
+
+echo
+echo "the upload check"
+
+eval "$(body cmd_upload_check)"
+eval "$(body app_logged)"
+eval "$(body upload_verdict)"
+eval "$(body answered_by_app)"
+
+# Apache and the app, faked as one curl. FAKE_LIMIT is Apache's upload limit in
+# bytes: past it, Apache's own 413, and the app never hears of it. Under it the
+# app logs the post and refuses it, signed out; FAKE_APP says how that reaches
+# curl: "answer" is the app's 403, "close" is Apache's 502 after the app hung
+# up mid-upload, and "down" is a 503 the app never logged.
+mkdir -p "$TMP/upcurl"
+cat > "$TMP/upcurl/curl" <<'FAKE'
+#!/usr/bin/env bash
+headers= file= url= expect=sent
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-D) headers="$2"; shift ;;
+	--upload-file) file="$2"; shift ;;
+	-H) [ "$2" = "Expect:" ] && expect=empty; shift ;;
+	https://*) url="$1" ;;
+	esac
+	shift
+done
+echo "$expect" >> "$FAKE_EXPECTS"
+size="$(stat -c %s "$file")"
+path="/${url#https://*/}"
+if [ "$size" -gt "$FAKE_LIMIT" ]; then
+	printf 'HTTP/1.1 413 Request Entity Too Large\r\nServer: Apache\r\n\r\n' > "$headers"; printf 413; exit 0
+fi
+case "$FAKE_APP" in
+down)   printf 'HTTP/1.1 503 Service Unavailable\r\n\r\n' > "$headers"; printf 503; exit 0 ;;
+esac
+echo "msg=request method=POST path=$path status=403 bytes=50" >> "$FAKE_LOG"
+case "$FAKE_APP" in
+answer) printf "HTTP/1.1 403 Forbidden\r\nContent-Security-Policy: default-src 'none'; script-src 'self'\r\n\r\n" > "$headers"; printf 403 ;;
+close)  printf 'HTTP/1.1 502 Proxy Error\r\n\r\n' > "$headers"; printf 502 ;;
+esac
+FAKE
+chmod +x "$TMP/upcurl/curl"
+
+export FAKE_LOG="$APP_DIR/stewards.log" FAKE_EXPECTS="$TMP/expects"
+APP_HOST=stewards.example.invalid
+
+upload_check() {
+	export FAKE_LIMIT="$1" FAKE_APP="$2"
+	: > "$FAKE_LOG"
+	(
+		load_config() { :; }; need_app_dir() { :; }; ssh_setup() { :; }; require() { :; }
+		health_public() { :; }
+		ok()  { echo "ok: $*"; }
+		bad() { echo "bad: $*"; }
+		PATH="$TMP/upcurl:$PATH"
+		cmd_upload_check
+	) 2>&1
+}
+
+GB=1073741824
+
+out="$(upload_check $GB answer)"; status=$?
+check "under the host's limit, both sizes pass" test "$(grep -c '^ok: Apache passed it' <<<"$out")" -eq 2
+check "and the check succeeds" test "$status" -eq 0
+
+out="$(upload_check $GB close)"; status=$?
+check "a 502 for an upload the app logged is still a pass" test "$(grep -c '^ok: Apache passed it' <<<"$out")" -eq 2
+check "and the check succeeds" test "$status" -eq 0
+
+set +e
+out="$(upload_check $((100 << 20)) close)"; status=$?
+set -e
+photo_passes()   { grep -q '^ok: Apache passed it' <<<"$out"; }
+batch_refused()  { grep -q '^bad: Apache refused it with 413: the host.s upload limit is below 160 MB' <<<"$out"; }
+check "a 100 MB limit passes one photo" photo_passes
+check "and refuses the batch, naming its size" batch_refused
+check "and the check fails" test "$status" -ne 0
+
+set +e
+out="$(upload_check $GB down)"; status=$?
+set -e
+check "an answer the app never logged is not called a pass" grep -q '^bad: Apache answered 503, and the app did not log it' <<<"$out"
+check "and the check fails" test "$status" -ne 0
+
+check "every probe sends an empty Expect, so Apache checks the size first" test "$(sort -u "$FAKE_EXPECTS")" = empty
+rm -f "$FAKE_LOG"
+
 echo
 printf '%d passed, %d failed\n' "$pass" "$fail"
 test "$fail" -eq 0

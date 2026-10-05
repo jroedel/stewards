@@ -161,6 +161,10 @@ prod-backup: ## Back up the live database and snapshot the photos now (stops the
 prod-mail-report: ## How cron and mail are set up on the server, and the domains' SPF, DKIM and DMARC. No secrets (SELECTOR= to try a DKIM selector)
 	@SELECTOR=$(SELECTOR) deploy/deploy.sh mail-report
 
+.PHONY: prod-upload-check
+prod-upload-check: ## Does Apache let a 26 MB photo and a 160 MB batch through to the app? Stores nothing
+	@deploy/deploy.sh upload-check
+
 .PHONY: prod-restart
 prod-restart: ## Restart the live app
 	@deploy/deploy.sh restart
