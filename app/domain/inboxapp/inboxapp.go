@@ -1013,7 +1013,46 @@ func (a app) loadItem(w http.ResponseWriter, r *http.Request) (inboxbus.Item, bo
 
 // ------------------------------------------------------------------ the pictures
 
+type zoomView struct {
+	ID             string
+	LargeW, LargeH int
+	Full           string // full.jpg, or full.png for a PNG
+}
+
+// zoom is a photo on a page of its own at full size, the way a plant card's
+// photo opens: the large picture under the full one while that arrives, and
+// the phone's own pinch to look closer. A grass's seed head or the hairs on a
+// stem are what decides a sort, and 1600 pixels blur them.
+func (a app) zoom(w http.ResponseWriter, r *http.Request) {
+	it, ok := a.loadItem(w, r)
+	if !ok {
+		return
+	}
+
+	// Sorted or thrown away since the link was drawn: the sort screen says
+	// which.
+	if !it.HasPictures() {
+		http.Redirect(w, r, IndexPath+"/"+it.ID.String(), http.StatusFound)
+
+		return
+	}
+
+	a.render.Render(w, r, http.StatusOK, "steward-inbox-zoom", zoomView{
+		ID: it.ID.String(), LargeW: it.Large.Width, LargeH: it.Large.Height,
+		Full: photobus.ServedName(photobus.Full, it.Format),
+	})
+}
+
 func (a app) file(w http.ResponseWriter, r *http.Request) {
+	// The page that zooms in shares this route rather than having its own:
+	// a pattern ending in /{id}/zoom and the scripts' /static/{file} would
+	// both match /steward/inbox/static/zoom, which the mux refuses.
+	if r.PathValue("file") == "zoom" {
+		a.zoom(w, r)
+
+		return
+	}
+
 	id, err := types.ParseID(r.PathValue("id"))
 	if err != nil {
 		http.NotFound(w, r)

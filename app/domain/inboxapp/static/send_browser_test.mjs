@@ -14,78 +14,29 @@
 // the files it kept are read rather than the page's last word.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { createServer as createNetServer } from "node:net";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { launch, skip, stage } from "../../../../scripts/browser.mjs";
+import { sessionCookie, startServer } from "../../../../scripts/testserver.mjs";
 import { exifSegment, jpegSize, orientationOf } from "./jpeg.mjs";
 import { has } from "./testjpeg.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const repo = resolve(here, "../../../..");
 
-let tmp, app, appLog = "", base, cookie, fixtures, browser, page;
+let server, tmp, base, fixtures, browser, page;
 
 const sha = (b) => createHash("sha256").update(b).digest("hex");
-
-const freePort = () =>
-  new Promise((done) => {
-    const s = createNetServer();
-    s.listen(0, "127.0.0.1", () => {
-      const { port } = s.address();
-      s.close(() => done(port));
-    });
-  });
 
 before(async () => {
   if (skip()) return;
 
-  tmp = mkdtempSync(join(tmpdir(), "stewards-send-"));
-
-  // The server, as it ships.
-  stage("building the server");
-  execFileSync("go", ["build", "-o", join(tmp, "stewards"), "./cmd/stewards"], { cwd: repo, stdio: "inherit", timeout: 180_000 });
-
-  const port = await freePort();
-  base = `http://127.0.0.1:${port}`;
-  const secret = randomBytes(24).toString("hex");
-  writeFileSync(
-    join(tmp, "config.toml"),
-    `[server]\naddr = "127.0.0.1:${port}"\nbase_url = "${base}"\n[db]\npath = "${join(tmp, "stewards.db")}"\n[auth]\nbootstrap_secret = "${secret}"\n`,
-  );
-
-  stage("starting it");
-  app = spawn(join(tmp, "stewards"), ["-config", join(tmp, "config.toml")], { stdio: ["ignore", "pipe", "pipe"] });
-  app.stdout.on("data", (d) => (appLog += d));
-  app.stderr.on("data", (d) => (appLog += d));
-
-  for (let i = 0; ; i++) {
-    try {
-      if ((await fetch(`${base}/healthz`, { signal: AbortSignal.timeout(2000) })).ok) break;
-    } catch {
-      // not listening yet
-    }
-    if (i > 100) throw new Error(`the server did not start:\n${appLog}`);
-    await new Promise((done) => setTimeout(done, 100));
-  }
-
-  stage("signing in");
-  const signIn = await fetch(`${base}/sign-in/first`, {
-    method: "POST",
-    redirect: "manual",
-    signal: AbortSignal.timeout(10_000),
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ email: "steward@example.org", secret }),
-  });
-  cookie = signIn.headers.getSetCookie().map((c) => /^__Host-session=([^;]+)/.exec(c)).find(Boolean)?.[1];
-  if (!cookie) throw new Error(`the bootstrap sign-in gave no session: ${signIn.status}\n${appLog}`);
+  server = await startServer("send");
+  ({ base, dir: tmp } = server);
 
   // The photos, drawn in a page of their own and written out as files.
   const statics = createServer(async (req, res) => {
@@ -132,19 +83,18 @@ before(async () => {
 
   stage("opening the send screen's tab");
   page = await browser.page();
-  await page.setCookie({ name: "__Host-session", value: cookie, url: `${base}/`, secure: true, httpOnly: true, path: "/" });
+  await page.setCookie(sessionCookie(base, server.cookie));
   stage("ready");
 }, { timeout: 300_000 });
 
 after(async () => {
   await browser?.close();
-  app?.kill();
-  if (tmp) rmSync(tmp, { recursive: true, force: true });
+  server?.stop();
 });
 
 const opts = { skip: skip() };
 
-const posts = (path) => appLog.split("\n").filter((l) => l.includes("method=POST") && l.includes(`path=${path} `)).length;
+const posts = (path) => server.log().split("\n").filter((l) => l.includes("method=POST") && l.includes(`path=${path} `)).length;
 
 // sendBatch chooses files on the send screen, presses Send, and gives back
 // where the page went once it had finished.
@@ -201,5 +151,5 @@ test("the same batch sent again is recognised, the shrunk photo too", opts, asyn
 
 test("the page ran with nothing blocked and nothing thrown", opts, () => {
   assert.deepEqual(page.errors, []);
-  assert.doesNotMatch(appLog, /level=ERROR/);
+  assert.doesNotMatch(server.log(), /level=ERROR/);
 });

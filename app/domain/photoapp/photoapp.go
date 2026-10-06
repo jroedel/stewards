@@ -371,7 +371,7 @@ type editView struct {
 	Kind                string
 	Width, Height       int
 	Original            string
-	Full                string // full.jpg or full.png
+	Slug                string // the plant's, for the page that zooms in
 	Fields              fieldsView
 	Problems            map[string]string
 	DeleteProblem       string
@@ -469,8 +469,8 @@ func (a app) showEdit(w http.ResponseWriter, r *http.Request, status int, p phot
 	v.ID, v.SpeciesID, v.Name = p.ID.String(), sp.ID.String(), sp.Common.EN
 	v.Kind = p.Kind.Label()
 	v.Width, v.Height = p.Small.Width, p.Small.Height
-	v.Original = fmt.Sprintf("%d × %d kept for the cards. The full size is the photo as it was sent, with where it was taken and the camera's details taken out.", p.Large.Width, p.Large.Height)
-	v.Full = photobus.ServedName(photobus.Full, p.Format)
+	v.Original = fmt.Sprintf("%d × %d kept for the cards. Zoomed in, it is the photo as it was sent, with where it was taken and the camera's details taken out.", p.Large.Width, p.Large.Height)
+	v.Slug = sp.Slug
 	v.Fields = fieldsOf(f, places)
 
 	a.render.Render(w, r, status, "photo-form", v)

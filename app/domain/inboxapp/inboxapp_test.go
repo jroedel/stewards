@@ -591,6 +591,26 @@ func TestAnInboxPictureIsAStewardsAlone(t *testing.T) {
 		}
 	}
 
+	// Closer, on a page of its own, from the sort screen.
+	if sort := s.get("/steward/inbox/"+m[1], true).Body.String(); !strings.Contains(sort, `href="/steward/inbox/`+m[1]+`/zoom"`) {
+		t.Error("the sort screen does not zoom in")
+	}
+
+	zoom := s.get("/steward/inbox/"+m[1]+"/zoom", true)
+	for _, want := range []string{
+		`src="/steward/inbox/` + m[1] + `/large.jpg"`,
+		`class="zoom-full" src="/steward/inbox/` + m[1] + `/full.jpg"`,
+		`href="/steward/inbox/` + m[1] + `"`,
+	} {
+		if zoom.Code != http.StatusOK || !strings.Contains(zoom.Body.String(), want) {
+			t.Errorf("the zoomed page: %d, without %q", zoom.Code, want)
+		}
+	}
+
+	if w := s.get("/steward/inbox/"+m[1]+"/zoom", false); w.Code == http.StatusOK {
+		t.Error("the zoomed page was shown to somebody signed out")
+	}
+
 	if w := s.get("/steward/inbox", false); w.Code == http.StatusOK {
 		t.Error("the inbox was shown to somebody signed out")
 	}
@@ -706,6 +726,12 @@ func TestADiscardAsksFirst(t *testing.T) {
 
 	if w := s.get("/steward/inbox/"+ids[0]+"/small.jpg", true); w.Code != http.StatusNotFound {
 		t.Errorf("a discarded photo's picture: %d", w.Code)
+	}
+
+	// A zoomed page left open on another tab goes to the sort screen,
+	// which says what became of it.
+	if w := s.get("/steward/inbox/"+ids[0]+"/zoom", true); w.Code != http.StatusFound || w.Header().Get("Location") != "/steward/inbox/"+ids[0] {
+		t.Errorf("a discarded photo, zoomed: %d %q", w.Code, w.Header().Get("Location"))
 	}
 }
 

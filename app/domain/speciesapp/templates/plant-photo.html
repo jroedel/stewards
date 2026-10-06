@@ -1,0 +1,24 @@
+{{define "title"}}{{.Data.Name.In .Lang}}: {{.Data.Figure.Kind.In .Lang}} · Garden stewards{{end}}
+{{define "masthead"}}<a class="back" href="/plants/{{.Data.Slug}}{{if .Data.Weeding}}?view=weeding{{end}}"><span>‹ {{say .Lang .Data.Name}}</span></a>{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<h1>{{say $l .Name}}</h1>
+{{if .NotChecked}}<p class="row-tags" lang="en"><span class="tag tag-open">Not checked: volunteers don't see it</span></p>{{end}}
+
+{{with .Figure}}
+<figure class="zoom">
+  {{/* The large picture first, and the full one over it in the same box,
+  which shows as soon as it arrives. The same photo at two sizes, so the
+  same shape: the attributes give both the large one's. */}}
+  <div class="zoom-frame">
+    <img src="/photos/{{.ID}}/large.jpg" width="{{$.Data.LargeW}}" height="{{$.Data.LargeH}}" alt="">
+    <img class="zoom-full" src="/photos/{{.ID}}/{{$.Data.Full}}" width="{{$.Data.LargeW}}" height="{{$.Data.LargeH}}" alt="{{.Alt.In $l}}">
+  </div>
+  <figcaption><strong>{{say $l .Kind}}</strong>
+    <span class="photo-credit">{{if .SourceURL}}{{say $l $.Data.Copy.PhotoBy}} {{say $l .Credit}}, {{.License}} · <a href="{{.SourceURL}}" rel="noopener">{{say $l $.Data.Copy.Source}}</a>{{else}}{{say $l .Credit}}{{if .Where.EN}} · {{say $l .Where}}{{end}}{{end}}{{with .When}} · {{.}}{{end}}</span>
+  </figcaption>
+</figure>
+<p class="help">{{say $l $.Data.Copy.Pinch}}</p>
+<a class="onward" href="/photos/{{.ID}}/{{$.Data.Full}}"><span>{{say $l $.Data.Copy.ByItself}}</span><span aria-hidden="true">›</span></a>
+{{end}}
+{{with .EditURL}}<a class="onward" href="{{.}}" lang="en"><span>Edit or check this photo</span><span aria-hidden="true">›</span></a>{{end}}
+{{end}}{{end}}

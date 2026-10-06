@@ -243,6 +243,21 @@ func TestAStewardAddsAPhotoAndChecksIt(t *testing.T) {
 		t.Error("an unchecked photo is on the card")
 	}
 
+	// Its page of its own is a steward's too. Anybody else is sent back
+	// to the card, with nothing to say there is a photo they cannot see.
+	zoom := "/plants/brazos-penstemon/photos/" + id + "?view=weeding"
+	if w := s.get(zoom, false); w.Code != http.StatusFound || w.Header().Get("Location") != "/plants/brazos-penstemon?view=weeding" {
+		t.Errorf("signed out, the page of an unchecked photo: %d %q", w.Code, w.Header().Get("Location"))
+	}
+
+	if w := s.get(zoom, true); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Not checked: volunteers don't see it") || !strings.Contains(w.Body.String(), `href="/steward/photos/`+id+`/edit"`) {
+		t.Errorf("a steward's page of an unchecked photo: %d\n%s", w.Code, w.Body.String())
+	}
+
+	if edit := s.get("/steward/photos/"+id+"/edit", true).Body.String(); !strings.Contains(edit, `href="/plants/brazos-penstemon/photos/`+id+`"`) {
+		t.Error("the edit screen does not zoom in")
+	}
+
 	// Checked.
 	f := leaf()
 	f.Set("checked", "yes")
@@ -278,6 +293,7 @@ func TestAStewardAddsAPhotoAndChecksIt(t *testing.T) {
 	card = s.get("/plants/brazos-penstemon?view=weeding", false).Body.String()
 	for _, want := range []string{
 		`src="/photos/` + id + `/small.jpg"`,
+		`href="/plants/brazos-penstemon/photos/` + id + `?view=weeding"`,
 		`alt="Brazos penstemon: leaf"`,
 		"Our photo · April 2027",
 		"No young-plant photo yet.",
@@ -289,6 +305,38 @@ func TestAStewardAddsAPhotoAndChecksIt(t *testing.T) {
 
 	if strings.Contains(card, "No leaf photo yet.") {
 		t.Error("the card still says there is no leaf photo")
+	}
+
+	// Tapped, it opens on a page of its own: the large picture under the
+	// full one, credited as on the card, and back to the view it came from.
+	w = s.get(zoom, false)
+	page := w.Body.String()
+	for _, want := range []string{
+		`src="/photos/` + id + `/large.jpg"`,
+		`class="zoom-full" src="/photos/` + id + `/full.jpg"`,
+		`alt="Brazos penstemon: leaf"`,
+		"Our photo · April 2027",
+		"Pinch to zoom in.",
+		`href="/photos/` + id + `/full.jpg"`,
+		`href="/plants/brazos-penstemon?view=weeding"`,
+	} {
+		if w.Code != http.StatusOK || !strings.Contains(page, want) {
+			t.Errorf("the photo's page: %d, without %q", w.Code, want)
+		}
+	}
+
+	if strings.Contains(page, "/steward/") {
+		t.Error("the photo's page shows a volunteer a steward's link")
+	}
+
+	for _, path := range []string{"/plants/brazos-penstemon/photos/not-an-id", "/plants/brazos-penstemon/photos/" + strings.Repeat("0", 32)} {
+		if w := s.get(path, false); w.Code != http.StatusFound || w.Header().Get("Location") != "/plants/brazos-penstemon" {
+			t.Errorf("%s: %d %q", path, w.Code, w.Header().Get("Location"))
+		}
+	}
+
+	if w := s.get("/plants/no-such-plant/photos/"+id, false); w.Code != http.StatusNotFound {
+		t.Errorf("a photo of a plant that is not there: %d", w.Code)
 	}
 
 	// The planting view shows flowers and the grown plant, not leaves.

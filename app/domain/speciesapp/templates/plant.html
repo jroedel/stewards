@@ -12,7 +12,8 @@
 
 {{range .Figures}}
 <figure class="photo">
-  <img src="/photos/{{.ID}}/small.jpg" srcset="/photos/{{.ID}}/small.jpg {{.SmallW}}w, /photos/{{.ID}}/large.jpg {{.LargeW}}w" sizes="(max-width: 640px) 100vw, 600px" width="{{.Width}}" height="{{.Height}}" alt="{{.Alt.In $l}}"{{if gt (len $.Data.Figures) 1}} loading="lazy"{{end}}>
+  <a class="photo-zoom" href="/plants/{{$.Data.Slug}}/photos/{{.ID}}{{if $.Data.Weeding}}?view=weeding{{end}}"><span class="sr-only">{{say $l $.Data.Copy.ZoomIn}}</span>
+  <img src="/photos/{{.ID}}/small.jpg" srcset="/photos/{{.ID}}/small.jpg {{.SmallW}}w, /photos/{{.ID}}/large.jpg {{.LargeW}}w" sizes="(max-width: 640px) 100vw, 600px" width="{{.Width}}" height="{{.Height}}" alt="{{.Alt.In $l}}"{{if gt (len $.Data.Figures) 1}} loading="lazy"{{end}}></a>
   <figcaption><strong>{{say $l .Kind}}</strong>
     <span class="photo-credit">{{if .SourceURL}}{{say $l $.Data.Copy.PhotoBy}} {{say $l .Credit}}, {{.License}} · <a href="{{.SourceURL}}" rel="noopener">{{say $l $.Data.Copy.Source}}</a>{{else}}{{say $l .Credit}}{{if .Where.EN}} · {{say $l .Where}}{{end}}{{end}}{{with .When}} · {{.}}{{end}}</span>
   </figcaption>
