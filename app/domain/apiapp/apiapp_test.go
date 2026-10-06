@@ -537,6 +537,20 @@ func TestAPhotoIsCorrectedAndLosesItsCheck(t *testing.T) {
 		t.Errorf("place taken away: %+v", got)
 	}
 
+	// The day, for the flowering record, with the month and year following
+	// it; then a month alone, which says the day is not known.
+	got = decode[answer](t, patch(`{"taken_on": "2026-05-02", "in_flower": true}`))
+	if got.Photo.TakenOn != "2026-05-02" || got.Photo.TakenMonth != 5 || got.Photo.TakenYear != 2026 || !got.Photo.InFlower {
+		t.Errorf("a day, in flower: %+v", got.Photo)
+	}
+	if got := decode[answer](t, patch(`{"taken_on": "2026-05-02"}`)); got.Outcome != "unchanged" {
+		t.Errorf("the same day again: %+v", got)
+	}
+	got = decode[answer](t, patch(`{"taken_month": 6}`))
+	if got.Photo.TakenOn != "" || got.Photo.TakenMonth != 6 || got.Photo.TakenYear != 2026 {
+		t.Errorf("a month alone: %+v", got.Photo)
+	}
+
 	for name, tc := range map[string]struct {
 		body, field string
 		code        int
@@ -545,6 +559,7 @@ func TestAPhotoIsCorrectedAndLosesItsCheck(t *testing.T) {
 		"not a kind":          {`{"kind": "bark"}`, "kind", http.StatusUnprocessableEntity},
 		"not a place":         {`{"place": "moon"}`, "place", http.StatusUnprocessableEntity},
 		"not a month":         {`{"taken_month": 13}`, "taken_month", http.StatusUnprocessableEntity},
+		"not a day":           {`{"taken_on": "May 2"}`, "taken_on", http.StatusUnprocessableEntity},
 	} {
 		w := patch(tc.body)
 		if p := decode[problem](t, w); w.Code != tc.code || p.Error.Field != tc.field {

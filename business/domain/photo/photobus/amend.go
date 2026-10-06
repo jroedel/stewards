@@ -3,6 +3,7 @@ package photobus
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jroedel/stewards/business/types"
 )
@@ -48,6 +49,8 @@ func (b *Business) Amend(ctx context.Context, id types.ID, f Fields) (Amended, e
 		return Amended{}, err
 	}
 
+	f = keepMoment(f, existing)
+
 	was := FieldsOf(existing)
 	was.Checked = false
 	if tidy(f) == tidy(was) {
@@ -67,8 +70,54 @@ func (b *Business) Amend(ctx context.Context, id types.ID, f Fields) (Amended, e
 func FieldsOf(p Photo) Fields {
 	return Fields{
 		Kind: p.Kind, PlaceID: p.PlaceID, Elsewhere: p.Elsewhere, TakenWhere: p.TakenWhere,
-		TakenYear: p.TakenYear, TakenMonth: p.TakenMonth,
+		TakenYear: p.TakenYear, TakenMonth: p.TakenMonth, TakenAt: p.TakenAt, InFlower: p.InFlower,
 		Source: p.Source, Credit: p.Credit, SourceURL: p.SourceURL, License: p.License,
 		Checked: p.Checked,
 	}
+}
+
+// DayLayout is how a day is written to and read from a person or a program:
+// an HTML date input's value, and the API's taken_on.
+const DayLayout = "2006-01-02"
+
+// Day is the day s names, at noon in the garden's time: a day said by a
+// person has no hour, and noon keeps it the same day in any zone a reader is
+// apt to be in. The zero time for "".
+func Day(s string) (time.Time, error) {
+	if s == "" {
+		return time.Time{}, nil
+	}
+
+	d, err := time.ParseInLocation(DayLayout, s, types.Garden)
+	if err != nil {
+		return time.Time{}, Invalid{Field: "taken_on", Problem: "write the day as year, month and day, such as 2027-04-03"}
+	}
+
+	return d.Add(12 * time.Hour), nil
+}
+
+// DayOf is t's day in the garden's time, as Day reads it; "" for none.
+func DayOf(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+
+	return t.In(types.Garden).Format(DayLayout)
+}
+
+// keepMoment keeps the camera's moment when what was sent is a bare day, as
+// Day makes one, and the same day: a form or a program that can only say the
+// day, sending back the day it was shown, has not changed when the photo was
+// taken, and must not round the camera's 9:41 to noon. A moment sent -- the
+// camera's, through a sort -- replaces a bare day as it should.
+func keepMoment(f Fields, existing Photo) Fields {
+	if f.TakenAt.IsZero() || DayOf(f.TakenAt) != DayOf(existing.TakenAt) {
+		return f
+	}
+
+	if bare, _ := Day(DayOf(f.TakenAt)); bare.Equal(f.TakenAt) {
+		f.TakenAt = existing.TakenAt
+	}
+
+	return f
 }

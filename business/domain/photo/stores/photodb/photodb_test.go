@@ -95,6 +95,57 @@ func TestInitBringsTheFirstPhotosTableForward(t *testing.T) {
 	if all[0].Elsewhere || all[0].TakenWhere != "" {
 		t.Errorf("an old photo reads back as taken elsewhere: %+v", all[0])
 	}
+
+	// With no day, and not in flower: neither was a flower.
+	if !all[0].TakenAt.IsZero() || all[0].InFlower {
+		t.Errorf("an old photo reads back dated or in flower: %+v", all[0])
+	}
+}
+
+// A photo from before in_flower is in flower if it was filed as a flower --
+// once: one a steward has since said is not stays not.
+func TestAnOldFlowerPhotoIsInFlowerOnce(t *testing.T) {
+	db, err := sqldb.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	for _, init := range []func() error{
+		func() error { return placedb.Init(t.Context(), db) },
+		func() error { return speciesdb.Init(t.Context(), db) },
+	} {
+		if err := init(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := db.ExecContext(t.Context(), before+`UPDATE photos SET kind = 'flower' WHERE id = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := photodb.Init(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+
+	s := photodb.NewStore(db)
+	flower := mustID(t, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	if p, err := s.ByID(t.Context(), flower); err != nil || !p.InFlower {
+		t.Fatalf("the old flower photo: %+v %v", p, err)
+	}
+	if p, _ := s.ByID(t.Context(), mustID(t, "cccccccccccccccccccccccccccccccc")); p.InFlower {
+		t.Error("an old photo of no kind is in flower")
+	}
+
+	if _, err := db.ExecContext(t.Context(), `UPDATE photos SET in_flower = 0`); err != nil {
+		t.Fatal(err)
+	}
+	if err := photodb.Init(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := s.ByID(t.Context(), flower); p.InFlower {
+		t.Error("a flower a steward un-ticked was ticked again at the next startup")
+	}
 }
 
 func mustID(t *testing.T, s string) types.ID {

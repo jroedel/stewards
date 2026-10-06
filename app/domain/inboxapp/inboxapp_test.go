@@ -849,6 +849,9 @@ func TestABatchIsSortedOneAfterAnother(t *testing.T) {
 	if !strings.Contains(form, "Brazos penstemon (Penstemon tenuis)") || !strings.Contains(form, "Flower close-up") {
 		t.Error("the photo form does not list the plants and the kinds")
 	}
+	if !strings.Contains(form, `name="in_flower"`) {
+		t.Error("the photo form does not ask whether it is in flower")
+	}
 
 	w := s.post("/steward/inbox/"+ids[0], url.Values{"as": {"photo"}, "species": {s.penstemon.ID.String()}, "kind": {"flower"}})
 	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/steward/inbox/"+ids[1]+"?done=photo" {
@@ -859,7 +862,7 @@ func TestABatchIsSortedOneAfterAnother(t *testing.T) {
 		t.Error("the next photo's screen does not say the last was added")
 	}
 
-	w = s.post("/steward/inbox/"+ids[1], url.Values{"as": {"planted"}, "species": {s.penstemon.ID.String()}, "kind": {"young"}, "place": {s.inflow.ID.String()}})
+	w = s.post("/steward/inbox/"+ids[1], url.Values{"as": {"planted"}, "species": {s.penstemon.ID.String()}, "kind": {"young"}, "place": {s.inflow.ID.String()}, "in_flower": {"yes"}})
 	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/steward/inbox?done=planted" {
 		t.Fatalf("sorting the last: %d %s\n%s", w.Code, w.Header().Get("Location"), w.Body.String())
 	}
@@ -869,6 +872,14 @@ func TestABatchIsSortedOneAfterAnother(t *testing.T) {
 
 	if len(photos) != 2 || photos[0].Checked || photos[1].Checked {
 		t.Errorf("the plant has %d photos, %+v; want two, unchecked", len(photos), photos)
+	}
+
+	// Both in flower: the close-up because it is one, the young plant
+	// because the box said so.
+	for _, p := range photos {
+		if !p.InFlower {
+			t.Errorf("a %s photo is not in flower", p.Kind)
+		}
 	}
 
 	if len(listed) != 1 || listed[0].Action != listingbus.Protect || listed[0].Planned {

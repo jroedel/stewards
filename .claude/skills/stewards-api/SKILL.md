@@ -56,6 +56,9 @@ to be read at all (CLAUDE.md §6).
   agreed is to come out *at that place* (pull or protect belongs to a plant
   and a place, not to the plant: poison ivy is native), and always say why in
   the note ("Invasive: take it out, root and all, before it seeds").
+- **A photo's day and flower can be corrected** with the same PATCH:
+  `taken_on` (`"2026-04-03"`, for a photo whose camera did not record it)
+  and `in_flower`.
 - **A change to a checked photo clears its check.** Correct a photo's kind,
   month or place with `PATCH /api/v1/photos/<id>`, sending only what changes.
   The answer says `"check_cleared": true` when it took a check away; tell
@@ -233,7 +236,13 @@ inbox in batches, and sorts them later. "Sort my inbox" means this:
    identification: name the look-alikes when there are any (frostweed and
    wingstem, again), and say "not sure" freely. The outcomes are:
    - `photo` — a photo of the plant, for its photos: something to find out
-     about, or a flower not often seen. Choose the `kind`.
+     about, or a flower not often seen. Choose the `kind`, and send
+     `"in_flower": true` whenever the plant is in bloom in it, whatever the
+     kind (a flower close-up always is). The steward keeps a **flowering
+     record** -- each plant's first and last flowering day every year, and
+     its first sighting -- from these and the day the camera recorded, so
+     every plant photo is worth sorting, not only the best: say in your
+     table which ones are in flower.
    - `stock` — a plant for sale, from a nursery photo: see below.
    - `planted` — the plant was just planted at the `place`. It is listed
      there to protect and taken off the To plant list; the photo becomes its
