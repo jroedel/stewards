@@ -542,9 +542,10 @@ type Sorting struct {
 	// be left empty, for a young plant.
 	Kind photobus.Kind
 
-	// InFlower is the plant in flower in the photo, for the flowering
-	// record: whatever its kind, and always for a flower.
-	InFlower bool
+	// InFlower and InFruit are the plant in flower, or in fruit or seed,
+	// in the photo, for the flowering record: whatever its kind, and always
+	// for a flower or a fruit.
+	InFlower, InFruit bool
 
 	// PlaceID is where it was taken or planted. Empty means the place the
 	// photo was sent with, if any. Required for a planting.
@@ -799,7 +800,7 @@ func (b *Business) make(ctx context.Context, it Item, s Sorting, listed *listing
 	// elsewhere, under the name the batch was sent with, if any: never as
 	// one of this garden's.
 	res.Photo, err = b.deps.Photos.Add(ctx, s.SpeciesID, photobus.Fields{
-		Kind: s.Kind, InFlower: s.InFlower, PlaceID: s.PlaceID, Source: photobus.Ours,
+		Kind: s.Kind, InFlower: s.InFlower, InFruit: s.InFruit, PlaceID: s.PlaceID, Source: photobus.Ours,
 		Elsewhere: !it.At.Here(), TakenWhere: it.Site,
 	}, data)
 

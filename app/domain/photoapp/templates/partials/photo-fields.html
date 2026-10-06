@@ -28,7 +28,8 @@ edit form ask for. */}}
   </fieldset>
 
   <label class="check"><input type="checkbox" name="in_flower" value="yes"{{if .InFlower}} checked{{end}}> In flower</label>
-  <p class="help">Tick it for the plant in bloom, whatever the photo shows; a flower photo always counts. The plant's first and last flowering days each year are kept from these.</p>
+  <label class="check"><input type="checkbox" name="in_fruit" value="yes"{{if .InFruit}} checked{{end}}> In fruit or seed</label>
+  <p class="help">Tick what the plant is doing, whatever the photo shows; a flower or a fruit photo always counts. The plant's first and last days in flower and in fruit each year are kept from these.</p>
 
   <fieldset>
     <legend>When and where</legend>

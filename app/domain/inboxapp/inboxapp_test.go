@@ -849,8 +849,8 @@ func TestABatchIsSortedOneAfterAnother(t *testing.T) {
 	if !strings.Contains(form, "Brazos penstemon (Penstemon tenuis)") || !strings.Contains(form, "Flower close-up") {
 		t.Error("the photo form does not list the plants and the kinds")
 	}
-	if !strings.Contains(form, `name="in_flower"`) {
-		t.Error("the photo form does not ask whether it is in flower")
+	if !strings.Contains(form, `name="in_flower"`) || !strings.Contains(form, `name="in_fruit"`) || !strings.Contains(form, "Fruit or seed") {
+		t.Error("the photo form does not ask whether it is in flower or in fruit")
 	}
 
 	w := s.post("/steward/inbox/"+ids[0], url.Values{"as": {"photo"}, "species": {s.penstemon.ID.String()}, "kind": {"flower"}})

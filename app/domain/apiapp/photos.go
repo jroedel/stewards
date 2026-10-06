@@ -29,6 +29,7 @@ type PhotoPatch struct {
 	TakenYear  *int    `json:"taken_year"`
 	TakenOn    *string `json:"taken_on"`
 	InFlower   *bool   `json:"in_flower"`
+	InFruit    *bool   `json:"in_fruit"`
 	Place      *string `json:"place"`
 	Elsewhere  *bool   `json:"elsewhere"`
 	TakenWhere *string `json:"taken_where"`
@@ -119,6 +120,9 @@ func (a app) patchPhoto(w http.ResponseWriter, r *http.Request) {
 	if in.InFlower != nil {
 		f.InFlower = *in.InFlower
 	}
+	if in.InFruit != nil {
+		f.InFruit = *in.InFruit
+	}
 	if in.Elsewhere != nil {
 		f.Elsewhere = *in.Elsewhere
 		if !f.Elsewhere {
@@ -189,8 +193,11 @@ type SeasonJSON struct {
 	Year        int           `json:"year"`
 	FirstFlower *SightingJSON `json:"first_flower,omitempty"`
 	LastFlower  *SightingJSON `json:"last_flower,omitempty"`
+	FirstFruit  *SightingJSON `json:"first_fruit,omitempty"`
+	LastFruit   *SightingJSON `json:"last_fruit,omitempty"`
 	FirstSeen   *SightingJSON `json:"first_seen,omitempty"`
 	InFlower    int           `json:"in_flower"`
+	InFruit     int           `json:"in_fruit"`
 	Seen        int           `json:"seen"`
 }
 
@@ -243,7 +250,8 @@ func (a app) flowering(w http.ResponseWriter, r *http.Request) {
 	years := []SeasonJSON{}
 	for _, s := range photobus.Flowering(photos, false) {
 		years = append(years, SeasonJSON{
-			Year: s.Year, InFlower: s.InFlower, Seen: s.Seen,
+			Year: s.Year, InFlower: s.InFlower, InFruit: s.InFruit, Seen: s.Seen,
+			FirstFruit: sighting(s.FirstFruit), LastFruit: sighting(s.LastFruit),
 			FirstFlower: sighting(s.FirstFlower), LastFlower: sighting(s.LastFlower), FirstSeen: sighting(s.FirstSeen),
 		})
 	}

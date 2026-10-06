@@ -194,3 +194,29 @@ func TestAVolunteerReadsWhenItWasSeenInFlower(t *testing.T) {
 		t.Error("the card shows a day from an unchecked photo")
 	}
 }
+
+// A fruit photo is shown in both views, and when the plant was seen in fruit
+// is said beside when it was seen in flower.
+func TestAVolunteerSeesItsFruit(t *testing.T) {
+	s := serve(t)
+	s.post("/steward/species", penstemon())
+	sp, _ := s.species.BySlug(t.Context(), "brazos-penstemon")
+
+	for i, day := range []string{"2026-08-12", "2026-10-03"} {
+		on, _ := photobus.Day(day)
+		f := photobus.Fields{Kind: photobus.Fruit, Source: photobus.Ours, TakenAt: on, Checked: true}
+		if _, err := s.photos.Add(t.Context(), sp.ID, f, picture(t, uint8(30+40*i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	planting := s.do(http.MethodGet, "/plants/brazos-penstemon", nil, false).Body.String()
+	if !strings.Contains(planting, "Seen in fruit: 2026: 12 Aug – 3 Oct") || !strings.Contains(planting, "<strong>Fruit or seed</strong>") {
+		t.Error("the planting view does not show the fruit")
+	}
+
+	weeding := s.do(http.MethodGet, "/plants/brazos-penstemon?view=weeding", nil, false).Body.String()
+	if !strings.Contains(weeding, "<strong>Fruit or seed</strong>") || !strings.Contains(weeding, "No young-plant photo yet.") {
+		t.Error("the weeding view does not show the fruit")
+	}
+}

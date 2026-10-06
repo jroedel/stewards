@@ -70,7 +70,7 @@ func (b *Business) Amend(ctx context.Context, id types.ID, f Fields) (Amended, e
 func FieldsOf(p Photo) Fields {
 	return Fields{
 		Kind: p.Kind, PlaceID: p.PlaceID, Elsewhere: p.Elsewhere, TakenWhere: p.TakenWhere,
-		TakenYear: p.TakenYear, TakenMonth: p.TakenMonth, TakenAt: p.TakenAt, InFlower: p.InFlower,
+		TakenYear: p.TakenYear, TakenMonth: p.TakenMonth, TakenAt: p.TakenAt, InFlower: p.InFlower, InFruit: p.InFruit,
 		Source: p.Source, Credit: p.Credit, SourceURL: p.SourceURL, License: p.License,
 		Checked: p.Checked,
 	}

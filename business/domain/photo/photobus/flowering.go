@@ -8,7 +8,8 @@ import (
 )
 
 // The flowering record is each plant's first and last flowering day every
-// year, and the first day it was seen at all, read from its photos. The
+// year, its first and last day in fruit (fruit or seed, added with the fruit
+// kind), and the first day it was seen at all, read from its photos. The
 // stewards asked for it on 2026-10-06: they photograph the plants all season
 // and want to know, year on year, when each one starts and stops flowering,
 // and which plants turn up new.
@@ -31,13 +32,14 @@ type Season struct {
 	Year int
 
 	// FirstSeen is the year's earliest photo of the plant, in flower or
-	// not; FirstFlower and LastFlower the earliest and latest in flower.
-	// A zero Photo for none: a plant seen only in leaf has no flowering.
-	FirstSeen, FirstFlower, LastFlower Photo
+	// not; FirstFlower and LastFlower the earliest and latest in flower,
+	// and FirstFruit and LastFruit in fruit. A zero Photo for none: a plant
+	// seen only in leaf has no flowering.
+	FirstSeen, FirstFlower, LastFlower, FirstFruit, LastFruit Photo
 
-	// Seen is how many of the year's photos are dated, and InFlower how
-	// many of those show it in flower.
-	Seen, InFlower int
+	// Seen is how many of the year's photos are dated, and InFlower and
+	// InFruit how many of those show it in flower and in fruit.
+	Seen, InFlower, InFruit int
 }
 
 // Flowering is the record from photos, newest year first. checkedOnly counts
@@ -61,15 +63,21 @@ func Flowering(photos []Photo, checkedOnly bool) []Season {
 
 		s.Seen++
 
-		if !p.InFlower {
-			continue
+		if p.InFlower {
+			s.InFlower++
+			if s.FirstFlower.ID.Zero() {
+				s.FirstFlower = p
+			}
+			s.LastFlower = p
 		}
 
-		s.InFlower++
-		if s.FirstFlower.ID.Zero() {
-			s.FirstFlower = p
+		if p.InFruit {
+			s.InFruit++
+			if s.FirstFruit.ID.Zero() {
+				s.FirstFruit = p
+			}
+			s.LastFruit = p
 		}
-		s.LastFlower = p
 	}
 
 	out := make([]Season, 0, len(byYear))

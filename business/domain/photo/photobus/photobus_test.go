@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -757,8 +758,35 @@ func TestTheFloweringRecord(t *testing.T) {
 		t.Errorf("2026, checked only: %+v", checked[0])
 	}
 
+	// Fruit: its own first and last days, from photos in fruit.
+	berries := photo("aaaaaaaa000000000000000000000006", at(2026, 8, 12), false, true)
+	seeds := photo("aaaaaaaa000000000000000000000007", at(2026, 10, 3), false, true)
+	berries.InFruit, seeds.InFruit = true, true
+	if y := photobus.Flowering(append(slices.Clone(photos), seeds, berries), false)[0]; y.FirstFruit.ID != berries.ID || y.LastFruit.ID != seeds.ID || y.InFruit != 2 || y.LastFlower.ID != photos[0].ID {
+		t.Errorf("2026 with fruit: first %s last %s, %d in fruit", y.FirstFruit.ID, y.LastFruit.ID, y.InFruit)
+	}
+
 	// Seen, never in flower: no flowering days.
 	if got := photobus.Flowering(photos[1:2], false); len(got) != 1 || !got[0].FirstFlower.ID.Zero() || got[0].Seen != 1 {
 		t.Errorf("seen in leaf only: %+v", got)
+	}
+}
+
+// A fruit photo is a sixth kind, and always in fruit.
+func TestAFruitPhotoIsInFruit(t *testing.T) {
+	g := setup(t)
+
+	p, err := g.photos.Add(t.Context(), g.penstemon.ID, ours(photobus.Fruit), photo(t, 600, 400))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	back, _ := g.photos.ByID(t.Context(), p.ID)
+	if back.Kind != photobus.Fruit || !back.InFruit || back.InFlower {
+		t.Errorf("a fruit photo: %+v", back)
+	}
+
+	if photobus.Fruit.Label() != "Fruit or seed" || photobus.Winter.Label() != "In winter" {
+		t.Error("the kinds are not named as the screens say them")
 	}
 }
