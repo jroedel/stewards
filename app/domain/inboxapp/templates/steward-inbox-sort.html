@@ -44,6 +44,9 @@
   {{with index .Problems "kind"}}<p class="field-problem">{{.}}</p>{{end}}
   <select id="kind" name="kind" required>{{range .Kinds}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
 
+  <label class="check"><input type="checkbox" name="in_flower" value="yes"{{if .InFlower}} checked{{end}}> In flower</label>
+  <p class="help">Tick it for a plant in bloom, whatever the photo shows; a flower photo always counts. The plant's first and last flowering days each year are kept from these.</p>
+
   {{if .Here}}
   <label for="place">{{if eq .As "planted"}}Where it was planted{{else}}Where it was taken <span class="optional">optional</span>{{end}}</label>
   {{with index .Problems "place"}}<p class="field-problem">{{.}}</p>{{end}}

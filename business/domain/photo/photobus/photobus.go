@@ -139,6 +139,18 @@ type Photo struct {
 	// says the year and not the month, or neither.
 	TakenYear, TakenMonth int
 
+	// TakenAt is when it was taken, as the camera said, or as a steward said
+	// to the day; zero for not known. When it is known, TakenYear and
+	// TakenMonth are its, in the garden's time. The flowering record's
+	// first and last days are read from it.
+	TakenAt time.Time
+
+	// InFlower is a steward's word that the plant is in flower in the photo,
+	// whatever its kind: a mature plant in bloom is in flower as much as a
+	// close-up of one. A flower photo always is. The flowering record counts
+	// these.
+	InFlower bool
+
 	Source Source
 
 	// Credit is the author, for a borrowed photo; for ours it may be empty,
@@ -173,6 +185,8 @@ type Fields struct {
 	Elsewhere             bool
 	TakenWhere            string
 	TakenYear, TakenMonth int
+	TakenAt               time.Time
+	InFlower              bool
 	Source                Source
 	Credit                string
 	SourceURL             string
@@ -288,8 +302,13 @@ func (b *Business) Add(ctx context.Context, speciesID types.ID, f Fields, data [
 		return Photo{}, err
 	}
 
-	if f.TakenYear == 0 && f.TakenMonth == 0 {
+	if f.TakenYear == 0 && f.TakenMonth == 0 && f.TakenAt.IsZero() {
 		f.TakenYear, f.TakenMonth = prepared.Taken.Year, prepared.Taken.Month
+
+		if at, ok := prepared.Taken.Time(types.Garden); ok {
+			f.TakenAt = at
+			f = tidy(f)
+		}
 	}
 
 	now := b.now().UTC().Truncate(time.Millisecond)
@@ -374,7 +393,7 @@ func (b *Business) Update(ctx context.Context, id types.ID, f Fields) (Photo, er
 		return Photo{}, err
 	}
 
-	f = tidy(f)
+	f = tidy(keepMoment(f, p))
 	if err := b.check(f); err != nil {
 		return Photo{}, err
 	}
@@ -731,6 +750,7 @@ func (b *Business) remove(names []string) {
 func (p *Photo) apply(f Fields) {
 	p.Kind, p.PlaceID, p.Elsewhere, p.TakenWhere = f.Kind, f.PlaceID, f.Elsewhere, f.TakenWhere
 	p.TakenYear, p.TakenMonth = f.TakenYear, f.TakenMonth
+	p.TakenAt, p.InFlower = f.TakenAt, f.InFlower
 	p.Source, p.Credit, p.SourceURL, p.License = f.Source, f.Credit, f.SourceURL, f.License
 	p.Checked = f.Checked
 }
@@ -761,6 +781,20 @@ func tidy(f Fields) Fields {
 		f.SourceURL, f.License = "", ""
 	}
 
+	// A day said is the month and year said too, in the garden's time,
+	// which is the calendar a flowering date is read against. Kept to the
+	// millisecond, as the store keeps it, so that a photo read back compares
+	// equal to the one written.
+	if !f.TakenAt.IsZero() {
+		f.TakenAt = f.TakenAt.UTC().Truncate(time.Millisecond)
+		local := f.TakenAt.In(types.Garden)
+		f.TakenYear, f.TakenMonth = local.Year(), int(local.Month())
+	}
+
+	if f.Kind == Flower {
+		f.InFlower = true
+	}
+
 	return f
 }
 
@@ -774,6 +808,8 @@ func (b *Business) check(f Fields) error {
 		return Invalid{Field: "taken_month", Problem: "choose the month from the list"}
 	case f.TakenYear != 0 && (f.TakenYear < 1990 || f.TakenYear > b.now().Year()+1):
 		return Invalid{Field: "taken_year", Problem: "the year needs to be four figures, such as 2027, or empty"}
+	case f.TakenAt.After(b.now().Add(36 * time.Hour)):
+		return Invalid{Field: "taken_on", Problem: "that day has not come yet. Check the date"}
 	case utf8.RuneCountInString(f.Credit) > 200:
 		return Invalid{Field: "credit", Problem: "the credit is longer than 200 characters. Shorten it"}
 	case utf8.RuneCountInString(f.License) > 100:

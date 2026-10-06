@@ -62,11 +62,12 @@ type InboxItemJSON struct {
 
 // SortIn is the body of a POST to sort an inbox photo.
 type SortIn struct {
-	Outcome string `json:"outcome"`
-	Species string `json:"species"`
-	Kind    string `json:"kind"`
-	Place   string `json:"place"`
-	Note    string `json:"note"`
+	Outcome  string `json:"outcome"`
+	Species  string `json:"species"`
+	Kind     string `json:"kind"`
+	InFlower bool   `json:"in_flower"`
+	Place    string `json:"place"`
+	Note     string `json:"note"`
 
 	// For stock.
 	Nursery   string `json:"nursery"`
@@ -96,6 +97,7 @@ func (a app) inboxEndpoints() []Endpoint {
 				{Name: "outcome", Type: "string", Required: true, Values: a.sortOutcomes(), Description: "photo: a photo of the plant, to add to its photos. planted: the plant was just planted at the place; it is listed there to protect, off the To plant list, and the photo is added as its young plant. stock: a plant for sale, from a photo taken at a nursery; a line of that nursery's stock on the day, keeping the photo for three months. unsure: set aside, with a question in the note."},
 				{Name: "species", Type: "string", Description: "The plant's slug, for photo and planted. It must already be added: PUT /api/v1/species/{slug} first."},
 				{Name: "kind", Type: "string", Values: kindNames(), Description: "What it shows, for photo; for planted, leave it out for young."},
+				{Name: "in_flower", Type: "boolean", Description: "For photo and planted: true when the plant is in flower in the photo, whatever the kind -- a mature plant in bloom too. A flower photo always is. The plant's flowering record (first and last flowering days each year) is kept from these, with the day the camera recorded."},
 				{Name: "place", Type: "string", Description: "A place slug: where it was taken, for photo, or planted, for planted. Leave it out to keep the place the photo was sent with. Only for a photo taken on the property."},
 				{Name: "note", Type: "string", Description: fmt.Sprintf("For unsure: the question, or why it should go, at most %d characters. For stock: a note on the line.", inboxbus.MaxNote)},
 				{Name: "nursery", Type: "string", Description: "For stock: the nursery's name, from GET /api/v1/nurseries. A name not there is added to the register as written."},
@@ -244,7 +246,7 @@ func (a app) sortInbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s := inboxbus.Sorting{Outcome: outcome, Kind: photobus.Kind(in.Kind), Note: in.Note}
+	s := inboxbus.Sorting{Outcome: outcome, Kind: photobus.Kind(in.Kind), InFlower: in.InFlower, Note: in.Note}
 
 	if outcome == inboxbus.AsStock {
 		price, err := nurserybus.ParsePrice(in.Price)

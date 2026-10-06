@@ -300,7 +300,9 @@ func (a app) endpoints() []Endpoint {
 				{Name: "credit", Type: "string", Description: "The author, as the photo's page gives it. Required when borrowed; for ours, leave it out unless the photographer wants to be named."},
 				{Name: "source_url", Type: "string", Description: "The photo's own page, https. Required when borrowed."},
 				{Name: "license", Type: "string", Description: `Its licence's short name, such as "CC BY-SA 4.0". Required when borrowed.`},
-				{Name: "taken_month", Type: "integer", Description: "1 to 12. Leave it and taken_year out to use the date the camera recorded."},
+				{Name: "taken_month", Type: "integer", Description: "1 to 12. Leave it, taken_year and taken_on out to use the date the camera recorded."},
+				{Name: "taken_on", Type: "string", Description: "The day it was taken, such as 2026-04-03, for the flowering record, when the camera did not record it. The month and year follow it."},
+				{Name: "in_flower", Type: "boolean", Description: "True when the plant is in flower in the photo, whatever the kind. A flower photo always is."},
 				{Name: "taken_year", Type: "integer", Description: "Four figures."},
 				{Name: "place", Type: "string", Description: "Where it was taken, as a place slug from /api/v1/places. For ours, taken on the property."},
 				{Name: "taken_where", Type: "string", Description: "For ours taken off the property: where, by name, such as a park. The card names it, and shows a photo taken here before it. Not with place."},
@@ -320,6 +322,8 @@ func (a app) endpoints() []Endpoint {
 				{Name: "license", Type: "string", Description: "Its licence's short name, for a borrowed one."},
 				{Name: "taken_month", Type: "integer", Description: "1 to 12, or 0 for not known."},
 				{Name: "taken_year", Type: "integer", Description: "Four figures, or 0 for not known."},
+				{Name: "taken_on", Type: "string", Description: `The day it was taken, such as "2026-04-03"; "" for not known. Sending only taken_month or taken_year says the day is not known.`},
+				{Name: "in_flower", Type: "boolean", Description: "The plant in flower in the photo, whatever its kind. A flower photo always is."},
 				{Name: "place", Type: "string", Description: `Where on the property it was taken, as a place slug; "" for not said.`},
 				{Name: "elsewhere", Type: "boolean", Description: "Taken off the property."},
 				{Name: "taken_where", Type: "string", Description: "Where off the property, such as a park's name."},
@@ -648,6 +652,8 @@ type PhotoJSON struct {
 	License    string    `json:"license,omitempty"`
 	TakenYear  int       `json:"taken_year,omitempty"`
 	TakenMonth int       `json:"taken_month,omitempty"`
+	TakenOn    string    `json:"taken_on,omitempty"`
+	InFlower   bool      `json:"in_flower"`
 	Place      string    `json:"place,omitempty"`
 	Elsewhere  bool      `json:"elsewhere"`
 	TakenWhere string    `json:"taken_where,omitempty"`
@@ -665,6 +671,7 @@ func (a app) photoOf(p photobus.Photo, places map[types.ID]string) PhotoJSON {
 		ID: p.ID.String(), Kind: string(p.Kind), Source: string(p.Source),
 		Credit: p.Credit, SourceURL: p.SourceURL, License: p.License,
 		TakenYear: p.TakenYear, TakenMonth: p.TakenMonth, Place: places[p.PlaceID],
+		TakenOn: photobus.DayOf(p.TakenAt), InFlower: p.InFlower,
 		Elsewhere: p.Elsewhere, TakenWhere: p.TakenWhere,
 		Checked: p.Checked, SHA256: p.SHA256,
 		LargeURL:  a.base + "/photos/" + p.ID.String() + "/large.jpg",
@@ -769,7 +776,15 @@ func photoFieldsOf(r *http.Request, places []placebus.Place) (photobus.Fields, s
 
 		// Read so that sending it is refused with photobus.Import's reason.
 		Checked: r.PostFormValue("checked") != "" && r.PostFormValue("checked") != "false",
+
+		InFlower: r.PostFormValue("in_flower") != "" && r.PostFormValue("in_flower") != "false",
 	}
+
+	day, err := photobus.Day(strings.TrimSpace(r.PostFormValue("taken_on")))
+	if err != nil {
+		return f, "taken_on", "taken_on is a day, such as 2026-04-03."
+	}
+	f.TakenAt = day
 
 	for name, dst := range map[string]*int{"taken_month": &f.TakenMonth, "taken_year": &f.TakenYear} {
 		if s := strings.TrimSpace(r.PostFormValue(name)); s != "" {

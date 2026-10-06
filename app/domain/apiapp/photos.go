@@ -3,6 +3,7 @@ package apiapp
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
@@ -26,6 +27,8 @@ type PhotoPatch struct {
 	License    *string `json:"license"`
 	TakenMonth *int    `json:"taken_month"`
 	TakenYear  *int    `json:"taken_year"`
+	TakenOn    *string `json:"taken_on"`
+	InFlower   *bool   `json:"in_flower"`
 	Place      *string `json:"place"`
 	Elsewhere  *bool   `json:"elsewhere"`
 	TakenWhere *string `json:"taken_where"`
@@ -95,11 +98,26 @@ func (a app) patchPhoto(w http.ResponseWriter, r *http.Request) {
 	set(&f.SourceURL, in.SourceURL)
 	set(&f.License, in.License)
 	set(&f.TakenWhere, in.TakenWhere)
+	// A month or a year sent without a day says the day is not known: it
+	// would otherwise be overruled by the day the photo has, which they
+	// follow.
 	if in.TakenMonth != nil {
-		f.TakenMonth = *in.TakenMonth
+		f.TakenMonth, f.TakenAt = *in.TakenMonth, time.Time{}
 	}
 	if in.TakenYear != nil {
-		f.TakenYear = *in.TakenYear
+		f.TakenYear, f.TakenAt = *in.TakenYear, time.Time{}
+	}
+	if in.TakenOn != nil {
+		day, err := photobus.Day(*in.TakenOn)
+		if err != nil {
+			web.WriteJSON(w, http.StatusUnprocessableEntity, web.Problem("taken_on", `taken_on is a day, such as "2026-04-03", or "" for not known.`))
+
+			return
+		}
+		f.TakenAt = day
+	}
+	if in.InFlower != nil {
+		f.InFlower = *in.InFlower
 	}
 	if in.Elsewhere != nil {
 		f.Elsewhere = *in.Elsewhere

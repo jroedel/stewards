@@ -201,10 +201,11 @@ type fieldsView struct {
 	Kinds, Months, Places []option
 	Ours                  bool
 	TakenYear             string
+	TakenOn               string
 	TakenWhere            string
 	Credit, SourceURL     string
 	License               string
-	Checked               bool
+	Checked, InFlower     bool
 }
 
 type listView struct {
@@ -490,6 +491,13 @@ func fieldsFrom(r *http.Request, problems map[string]string) photobus.Fields {
 		SourceURL: r.PostFormValue("source_url"),
 		License:   r.PostFormValue("license"),
 		Checked:   r.PostFormValue("checked") == "yes",
+		InFlower:  r.PostFormValue("in_flower") == "yes",
+	}
+
+	if day, err := photobus.Day(strings.TrimSpace(r.PostFormValue("taken_on"))); err != nil {
+		problems["taken_on"] = "Choose the day, or leave it empty."
+	} else {
+		f.TakenAt = day
 	}
 
 	// "Somewhere else" is a choice in the place list rather than a box of
@@ -536,6 +544,7 @@ func fieldsOf(f photobus.Fields, places []option) fieldsView {
 	v := fieldsView{
 		Ours: f.Source != photobus.Borrowed, TakenWhere: f.TakenWhere,
 		Credit: f.Credit, SourceURL: f.SourceURL, License: f.License, Checked: f.Checked,
+		InFlower: f.InFlower, TakenOn: photobus.DayOf(f.TakenAt),
 	}
 
 	// The list from placeOptions, with "Somewhere else" after "Not said":

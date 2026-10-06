@@ -27,8 +27,15 @@ edit form ask for. */}}
     <input id="license" name="license" type="text" value="{{.License}}" maxlength="100" placeholder="CC BY-SA 4.0">
   </fieldset>
 
+  <label class="check"><input type="checkbox" name="in_flower" value="yes"{{if .InFlower}} checked{{end}}> In flower</label>
+  <p class="help">Tick it for the plant in bloom, whatever the photo shows; a flower photo always counts. The plant's first and last flowering days each year are kept from these.</p>
+
   <fieldset>
     <legend>When and where</legend>
+    <label for="taken_on">Day taken <span class="optional">optional</span></label>
+    <p class="help" id="taken-on-help">For the flowering record. Set it and the month and year below follow it.</p>
+    {{template "photo-problem" (index $p "taken_on")}}
+    <input id="taken_on" name="taken_on" type="date" value="{{.TakenOn}}" aria-describedby="taken-on-help">
     <div class="pair">
       <div>
         <label for="taken_month">Month</label>
@@ -41,7 +48,7 @@ edit form ask for. */}}
         <input id="taken_year" name="taken_year" type="text" inputmode="numeric" value="{{.TakenYear}}" maxlength="4" placeholder="2027">
       </div>
     </div>
-    <p class="help">Leave both empty and the date the camera recorded is used, when it recorded one.</p>
+    <p class="help">Leave the day, month and year empty and the date the camera recorded is used, when it recorded one.</p>
 
     <label for="place">Where it was taken <span class="optional">optional</span></label>
     {{template "photo-problem" (index $p "place")}}
