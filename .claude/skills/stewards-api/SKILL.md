@@ -155,11 +155,13 @@ its `spot` on the map -- so read it before saying anything about a place.
 
 ## Photos
 
-Each photo is one of five kinds, and the kind is what the card shows it as:
+Each photo is one of six kinds, and the kind is what the card shows it as:
 `young` (the seedling — what a weeder is deciding about), `leaf` (a close-up,
 for telling it from a look-alike out of bloom), `flower` (a close-up),
-`mature` (the grown plant at full size, in a garden, not a nursery pot) and
-`winter` (how it looks in winter, or its seed head). Leaf and flower are
+`fruit` (fruit or seed: berries, pods, winged seeds, seed heads), `mature`
+(the grown plant at full size, in a garden, not a nursery pot) and `winter`
+(how it looks in winter). Seed heads were `winter` before fruit came;
+re-file one with `PATCH /api/v1/photos/<id>` only when the person asks. Leaf and flower are
 separate on purpose; a photo showing both is the one that shows the leaf
 better.
 
@@ -237,10 +239,11 @@ inbox in batches, and sorts them later. "Sort my inbox" means this:
    wingstem, again), and say "not sure" freely. The outcomes are:
    - `photo` — a photo of the plant, for its photos: something to find out
      about, or a flower not often seen. Choose the `kind`, and send
-     `"in_flower": true` whenever the plant is in bloom in it, whatever the
-     kind (a flower close-up always is). The steward keeps a **flowering
-     record** -- each plant's first and last flowering day every year, and
-     its first sighting -- from these and the day the camera recorded, so
+     `"in_flower": true` whenever the plant is in bloom in it, and
+     `"in_fruit": true` whenever it carries fruit or seed, whatever the
+     kind (a flower or fruit close-up always is). The steward keeps a **flowering
+     record** -- each plant's first and last day in flower and in fruit
+     every year, and its first sighting -- from these and the day the camera recorded, so
      every plant photo is worth sorting, not only the best: say in your
      table which ones are in flower. `GET /api/v1/species/<slug>/flowering`
      reads the record back, for questions like "when did the winecup start

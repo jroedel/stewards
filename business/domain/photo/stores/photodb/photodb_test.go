@@ -97,7 +97,7 @@ func TestInitBringsTheFirstPhotosTableForward(t *testing.T) {
 	}
 
 	// With no day, and not in flower: neither was a flower.
-	if !all[0].TakenAt.IsZero() || all[0].InFlower {
+	if !all[0].TakenAt.IsZero() || all[0].InFlower || all[0].InFruit {
 		t.Errorf("an old photo reads back dated or in flower: %+v", all[0])
 	}
 }

@@ -898,6 +898,7 @@ func TestThePlantsFloweringRecordReadsFromItsPhotos(t *testing.T) {
 		{"kind": "leaf", "source": "ours", "taken_on": "2026-03-12"},
 		{"kind": "flower", "source": "ours", "taken_on": "2026-04-03"},
 		{"kind": "mature", "source": "ours", "taken_on": "2026-05-20", "in_flower": "true", "taken_where": "Pedernales Falls State Park"},
+		{"kind": "fruit", "source": "ours", "taken_on": "2026-08-12"},
 	} {
 		if w := s.upload("winecup", f, noisy(t, uint64(40+i))); w.Code != http.StatusCreated {
 			t.Fatalf("upload %d: %d %s", i, w.Code, w.Body.String())
@@ -915,7 +916,8 @@ func TestThePlantsFloweringRecordReadsFromItsPhotos(t *testing.T) {
 	}
 
 	y := got.Years[0]
-	if y.Year != 2026 || y.Seen != 3 || y.InFlower != 2 ||
+	if y.Year != 2026 || y.Seen != 4 || y.InFlower != 2 || y.InFruit != 1 ||
+		y.FirstFruit == nil || y.FirstFruit.TakenOn != "2026-08-12" || y.LastFruit == nil ||
 		y.FirstSeen == nil || y.FirstSeen.TakenOn != "2026-03-12" ||
 		y.FirstFlower == nil || y.FirstFlower.TakenOn != "2026-04-03" || y.FirstFlower.Checked ||
 		y.LastFlower == nil || y.LastFlower.TakenOn != "2026-05-20" || !y.LastFlower.Elsewhere || y.LastFlower.TakenWhere != "Pedernales Falls State Park" {

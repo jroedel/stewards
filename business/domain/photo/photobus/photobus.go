@@ -49,20 +49,28 @@ import (
 // being room for a video.
 const MaxBytes = 25 << 20
 
-// Kind is which of the five pictures of a plant this is.
+// Kind is which of the six pictures of a plant this is.
+//
+// There were five, with seed heads filed under winter. Fruit came sixth on
+// 2026-10-06, as "fruit or seed": berries, pods, winged seeds and seed
+// heads, whenever the plant carries them. It is what tells nandina by its
+// red berries and tree of heaven by its papery winged seeds, and what a
+// planter asks about birds; winter is now how the plant looks in winter.
+// Photos filed as winter before then stay so until a steward re-files them.
 type Kind string
 
 const (
 	Young  Kind = "young"
 	Leaf   Kind = "leaf"
 	Flower Kind = "flower"
+	Fruit  Kind = "fruit"
 	Mature Kind = "mature"
 	Winter Kind = "winter"
 )
 
 // Kinds is every kind, in the order a plant grows through them and a form
 // offers them.
-var Kinds = []Kind{Young, Leaf, Flower, Mature, Winter}
+var Kinds = []Kind{Young, Leaf, Flower, Fruit, Mature, Winter}
 
 // Label is the kind's name on the stewards' screens. Volunteer copy is the
 // app's, in both languages.
@@ -74,10 +82,12 @@ func (k Kind) Label() string {
 		return "Leaf close-up"
 	case Flower:
 		return "Flower close-up"
+	case Fruit:
+		return "Fruit or seed"
 	case Mature:
 		return "Mature plant, full size"
 	case Winter:
-		return "Winter or seed head"
+		return "In winter"
 	}
 
 	return "Not set"
@@ -151,6 +161,10 @@ type Photo struct {
 	// these.
 	InFlower bool
 
+	// InFruit is the same for fruit or seed on the plant: a fruit photo
+	// always is. The record's fruiting days are read from these.
+	InFruit bool
+
 	Source Source
 
 	// Credit is the author, for a borrowed photo; for ours it may be empty,
@@ -186,7 +200,7 @@ type Fields struct {
 	TakenWhere            string
 	TakenYear, TakenMonth int
 	TakenAt               time.Time
-	InFlower              bool
+	InFlower, InFruit     bool
 	Source                Source
 	Credit                string
 	SourceURL             string
@@ -750,7 +764,7 @@ func (b *Business) remove(names []string) {
 func (p *Photo) apply(f Fields) {
 	p.Kind, p.PlaceID, p.Elsewhere, p.TakenWhere = f.Kind, f.PlaceID, f.Elsewhere, f.TakenWhere
 	p.TakenYear, p.TakenMonth = f.TakenYear, f.TakenMonth
-	p.TakenAt, p.InFlower = f.TakenAt, f.InFlower
+	p.TakenAt, p.InFlower, p.InFruit = f.TakenAt, f.InFlower, f.InFruit
 	p.Source, p.Credit, p.SourceURL, p.License = f.Source, f.Credit, f.SourceURL, f.License
 	p.Checked = f.Checked
 }
@@ -791,8 +805,11 @@ func tidy(f Fields) Fields {
 		f.TakenYear, f.TakenMonth = local.Year(), int(local.Month())
 	}
 
-	if f.Kind == Flower {
+	switch f.Kind {
+	case Flower:
 		f.InFlower = true
+	case Fruit:
+		f.InFruit = true
 	}
 
 	return f
@@ -801,7 +818,7 @@ func tidy(f Fields) Fields {
 func (b *Business) check(f Fields) error {
 	switch {
 	case !slices.Contains(Kinds, f.Kind):
-		return Invalid{Field: "kind", Problem: "choose which kind of photo this is: young plant, leaf, flower, full size, or winter"}
+		return Invalid{Field: "kind", Problem: "choose which kind of photo this is: young plant, leaf, flower, fruit or seed, full size, or winter"}
 	case f.Source != Ours && f.Source != Borrowed:
 		return Invalid{Field: "source", Problem: "say whether this is our own photo or a borrowed one"}
 	case f.TakenMonth < 0 || f.TakenMonth > 12:

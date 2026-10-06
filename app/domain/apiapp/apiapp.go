@@ -272,8 +272,8 @@ func (a app) endpoints() []Endpoint {
 		},
 		{
 			Method: http.MethodGet, Path: Prefix + "/species/{slug}/flowering", NeedsKey: true,
-			Summary: "The plant's flowering record, read from its photos: for each year, newest first, the first and last day it was photographed in flower and the first day it was photographed at all, each with the photo, where it was taken and whether it is checked. Our own dated photos from anywhere count; borrowed ones never do. Volunteers' cards show only the dates from checked photos.",
-			Returns: `{"species": slug, "years": [{year, first_flower, last_flower, first_seen, in_flower, seen}]}, each date {photo_id, taken_on, place, elsewhere, taken_where, checked} or absent.`,
+			Summary: "The plant's flowering and fruiting record, read from its photos: for each year, newest first, the first and last day it was photographed in flower, the first and last in fruit or seed, and the first day it was photographed at all, each with the photo, where it was taken and whether it is checked. Our own dated photos from anywhere count; borrowed ones never do. Volunteers' cards show only the dates from checked photos.",
+			Returns: `{"species": slug, "years": [{year, first_flower, last_flower, first_fruit, last_fruit, first_seen, in_flower, in_fruit, seen}]}, each date {photo_id, taken_on, place, elsewhere, taken_where, checked} or absent.`,
 			handler: a.flowering,
 		},
 		{
@@ -309,6 +309,7 @@ func (a app) endpoints() []Endpoint {
 				{Name: "taken_month", Type: "integer", Description: "1 to 12. Leave it, taken_year and taken_on out to use the date the camera recorded."},
 				{Name: "taken_on", Type: "string", Description: "The day it was taken, such as 2026-04-03, for the flowering record, when the camera did not record it. The month and year follow it."},
 				{Name: "in_flower", Type: "boolean", Description: "True when the plant is in flower in the photo, whatever the kind. A flower photo always is."},
+				{Name: "in_fruit", Type: "boolean", Description: "True when the plant carries fruit or seed in the photo, whatever the kind. A fruit photo always does."},
 				{Name: "taken_year", Type: "integer", Description: "Four figures."},
 				{Name: "place", Type: "string", Description: "Where it was taken, as a place slug from /api/v1/places. For ours, taken on the property."},
 				{Name: "taken_where", Type: "string", Description: "For ours taken off the property: where, by name, such as a park. The card names it, and shows a photo taken here before it. Not with place."},
@@ -330,6 +331,7 @@ func (a app) endpoints() []Endpoint {
 				{Name: "taken_year", Type: "integer", Description: "Four figures, or 0 for not known."},
 				{Name: "taken_on", Type: "string", Description: `The day it was taken, such as "2026-04-03"; "" for not known. Sending only taken_month or taken_year says the day is not known.`},
 				{Name: "in_flower", Type: "boolean", Description: "The plant in flower in the photo, whatever its kind. A flower photo always is."},
+				{Name: "in_fruit", Type: "boolean", Description: "The plant in fruit or seed in the photo, whatever its kind. A fruit photo always is."},
 				{Name: "place", Type: "string", Description: `Where on the property it was taken, as a place slug; "" for not said.`},
 				{Name: "elsewhere", Type: "boolean", Description: "Taken off the property."},
 				{Name: "taken_where", Type: "string", Description: "Where off the property, such as a park's name."},
@@ -660,6 +662,7 @@ type PhotoJSON struct {
 	TakenMonth int       `json:"taken_month,omitempty"`
 	TakenOn    string    `json:"taken_on,omitempty"`
 	InFlower   bool      `json:"in_flower"`
+	InFruit    bool      `json:"in_fruit"`
 	Place      string    `json:"place,omitempty"`
 	Elsewhere  bool      `json:"elsewhere"`
 	TakenWhere string    `json:"taken_where,omitempty"`
@@ -677,7 +680,7 @@ func (a app) photoOf(p photobus.Photo, places map[types.ID]string) PhotoJSON {
 		ID: p.ID.String(), Kind: string(p.Kind), Source: string(p.Source),
 		Credit: p.Credit, SourceURL: p.SourceURL, License: p.License,
 		TakenYear: p.TakenYear, TakenMonth: p.TakenMonth, Place: places[p.PlaceID],
-		TakenOn: photobus.DayOf(p.TakenAt), InFlower: p.InFlower,
+		TakenOn: photobus.DayOf(p.TakenAt), InFlower: p.InFlower, InFruit: p.InFruit,
 		Elsewhere: p.Elsewhere, TakenWhere: p.TakenWhere,
 		Checked: p.Checked, SHA256: p.SHA256,
 		LargeURL:  a.base + "/photos/" + p.ID.String() + "/large.jpg",
@@ -784,6 +787,7 @@ func photoFieldsOf(r *http.Request, places []placebus.Place) (photobus.Fields, s
 		Checked: r.PostFormValue("checked") != "" && r.PostFormValue("checked") != "false",
 
 		InFlower: r.PostFormValue("in_flower") != "" && r.PostFormValue("in_flower") != "false",
+		InFruit:  r.PostFormValue("in_fruit") != "" && r.PostFormValue("in_fruit") != "false",
 	}
 
 	day, err := photobus.Day(strings.TrimSpace(r.PostFormValue("taken_on")))

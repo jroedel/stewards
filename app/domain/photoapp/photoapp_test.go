@@ -223,7 +223,7 @@ func TestAStewardAddsAPhotoAndChecksIt(t *testing.T) {
 	}
 
 	list := s.get(s.photosPath()+"?done=added", true).Body.String()
-	for _, want := range []string{"Photo added.", "Not checked: volunteers don't see it", "Our photo · April 2027", "5 of the five kinds have no checked photo yet."} {
+	for _, want := range []string{"Photo added.", "Not checked: volunteers don't see it", "Our photo · April 2027", "6 of the 6 kinds have no checked photo yet."} {
 		if !strings.Contains(list, want) {
 			t.Errorf("the photos screen does not show %q", want)
 		}
@@ -660,7 +660,7 @@ func TestAPhotosDayAndFlowerAreSaidOnItsScreen(t *testing.T) {
 
 	// And the plant's flowering record has it, first and last, not checked.
 	list := s.get(s.photosPath(), true).Body.String()
-	if !strings.Contains(list, "Flowering record") || strings.Count(list, `/edit">20 Sep</a>`) != 3 || !strings.Contains(list, "not checked") {
+	if !strings.Contains(list, "Flowering and fruiting") || strings.Count(list, `/edit">20 Sep</a>`) != 3 || !strings.Contains(list, "not checked") {
 		t.Error("the flowering record does not show the photo's day")
 	}
 

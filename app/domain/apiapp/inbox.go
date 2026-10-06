@@ -66,6 +66,7 @@ type SortIn struct {
 	Species  string `json:"species"`
 	Kind     string `json:"kind"`
 	InFlower bool   `json:"in_flower"`
+	InFruit  bool   `json:"in_fruit"`
 	Place    string `json:"place"`
 	Note     string `json:"note"`
 
@@ -98,6 +99,7 @@ func (a app) inboxEndpoints() []Endpoint {
 				{Name: "species", Type: "string", Description: "The plant's slug, for photo and planted. It must already be added: PUT /api/v1/species/{slug} first."},
 				{Name: "kind", Type: "string", Values: kindNames(), Description: "What it shows, for photo; for planted, leave it out for young."},
 				{Name: "in_flower", Type: "boolean", Description: "For photo and planted: true when the plant is in flower in the photo, whatever the kind -- a mature plant in bloom too. A flower photo always is. The plant's flowering record (first and last flowering days each year) is kept from these, with the day the camera recorded."},
+				{Name: "in_fruit", Type: "boolean", Description: "For photo and planted: true when the plant carries fruit or seed in the photo -- berries, pods, winged seeds, seed heads -- whatever the kind. A fruit photo always does. The record's fruiting days are kept from these."},
 				{Name: "place", Type: "string", Description: "A place slug: where it was taken, for photo, or planted, for planted. Leave it out to keep the place the photo was sent with. Only for a photo taken on the property."},
 				{Name: "note", Type: "string", Description: fmt.Sprintf("For unsure: the question, or why it should go, at most %d characters. For stock: a note on the line.", inboxbus.MaxNote)},
 				{Name: "nursery", Type: "string", Description: "For stock: the nursery's name, from GET /api/v1/nurseries. A name not there is added to the register as written."},
@@ -246,7 +248,7 @@ func (a app) sortInbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s := inboxbus.Sorting{Outcome: outcome, Kind: photobus.Kind(in.Kind), InFlower: in.InFlower, Note: in.Note}
+	s := inboxbus.Sorting{Outcome: outcome, Kind: photobus.Kind(in.Kind), InFlower: in.InFlower, InFruit: in.InFruit, Note: in.Note}
 
 	if outcome == inboxbus.AsStock {
 		price, err := nurserybus.ParsePrice(in.Price)

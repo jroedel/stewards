@@ -47,7 +47,7 @@ func CardRoutes(mux *http.ServeMux, cfg Config) {
 
 type cardWording struct {
 	Back, Planting, Weeding, NotConfirmed, CheckedAgainst, Sources,
-	Flower, Blooms, NoBloom, SeenInFlower, Size, Tall, Wide, Light, Water, Note,
+	Flower, Blooms, NoBloom, SeenInFlower, SeenInFruit, Size, Tall, Wide, Light, Water, Note,
 	WhereItGrows, NotListedAnywhere, Planned, NotSure, Edit types.Text
 
 	Actions  map[listingbus.Action]types.Text
@@ -80,6 +80,7 @@ var cardWords = cardWording{
 	Blooms:            types.Text{EN: "Blooms"},
 	NoBloom:           types.Text{EN: "No bloom months recorded yet."},
 	SeenInFlower:      types.Text{EN: "Seen in flower"},
+	SeenInFruit:       types.Text{EN: "Seen in fruit"},
 	Size:              types.Text{EN: "Mature size"},
 	Tall:              types.Text{EN: "tall"},
 	Wide:              types.Text{EN: "wide"},
@@ -122,6 +123,7 @@ var cardWords = cardWording{
 		photobus.Young:  {EN: "No young-plant photo yet."},
 		photobus.Leaf:   {EN: "No leaf photo yet."},
 		photobus.Flower: {EN: "No flower photo yet."},
+		photobus.Fruit:  {EN: "No fruit or seed photo yet."},
 		photobus.Mature: {EN: "No full-size photo yet."},
 		photobus.Winter: {EN: "No winter photo yet."},
 	},
@@ -129,6 +131,7 @@ var cardWords = cardWording{
 		photobus.Young:  {EN: "Young plant"},
 		photobus.Leaf:   {EN: "Leaf"},
 		photobus.Flower: {EN: "Flower"},
+		photobus.Fruit:  {EN: "Fruit or seed"},
 		photobus.Mature: {EN: "Full size"},
 		photobus.Winter: {EN: "In winter"},
 	},
@@ -159,6 +162,7 @@ type cardView struct {
 	Months      []monthCell
 	BloomWords  string
 	Flowering   []types.Text // the last two years seen in flower, newest first
+	Fruiting    []types.Text // and in fruit
 	Height      string
 	Width       string
 	Light       []types.Text
@@ -185,8 +189,8 @@ type figure struct {
 
 // viewKinds is the photos each view shows, in the order it shows them.
 var viewKinds = map[bool][]photobus.Kind{
-	false: {photobus.Flower, photobus.Mature, photobus.Winter},
-	true:  {photobus.Young, photobus.Leaf, photobus.Winter},
+	false: {photobus.Flower, photobus.Fruit, photobus.Mature, photobus.Winter},
+	true:  {photobus.Young, photobus.Leaf, photobus.Fruit, photobus.Winter},
 }
 
 type monthCell struct {
@@ -256,7 +260,7 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 	}
 
 	names := placeNames(places)
-	v.Flowering = flowering(photos)
+	v.Flowering, v.Fruiting = flowering(photos)
 
 	for _, k := range viewKinds[v.Weeding] {
 		p, ok := photobus.Best(photos, k)
@@ -495,25 +499,35 @@ func (a app) photo(w http.ResponseWriter, r *http.Request) {
 }
 
 // flowering is the plant's flowering record as a volunteer is told it: the
-// last two years it was seen in flower, from checked photos alone, as a
-// volunteer sees no photo until a steward has checked it. "2026: 3 Apr –
-// 20 May", a day seen off the property naming where, since the record
-// counts photos from everywhere and a park two weeks ahead is not this
-// garden.
+// last two years it was seen in flower, and in fruit, from checked photos
+// alone, as a volunteer sees no photo until a steward has checked it.
+// "2026: 3 Apr – 20 May", a day seen off the property naming where, since
+// the record counts photos from everywhere and a park two weeks ahead is not
+// this garden.
 //
 // English, with the Spanish to come with the rest of the card's: the month
 // names are a date's, not copy, and are written as English writes them.
-func flowering(photos []photobus.Photo) []types.Text {
+func flowering(photos []photobus.Photo) (flower, fruit []types.Text) {
+	record := photobus.Flowering(photos, true)
+
+	return spans(record, func(s photobus.Season) (photobus.Photo, photobus.Photo) { return s.FirstFlower, s.LastFlower }),
+		spans(record, func(s photobus.Season) (photobus.Photo, photobus.Photo) { return s.FirstFruit, s.LastFruit })
+}
+
+// spans is up to two years' first-to-last days, newest first, of whichever
+// pair of days ends picks out.
+func spans(record []photobus.Season, ends func(photobus.Season) (first, last photobus.Photo)) []types.Text {
 	var out []types.Text
 
-	for _, s := range photobus.Flowering(photos, true) {
-		if s.FirstFlower.ID.Zero() {
+	for _, s := range record {
+		first, last := ends(s)
+		if first.ID.Zero() {
 			continue
 		}
 
-		line := fmt.Sprintf("%d: %s", s.Year, dayAndWhere(s.FirstFlower))
-		if s.LastFlower.ID != s.FirstFlower.ID && dayOf(s.LastFlower) != dayOf(s.FirstFlower) {
-			line += " – " + dayAndWhere(s.LastFlower)
+		line := fmt.Sprintf("%d: %s", s.Year, dayAndWhere(first))
+		if last.ID != first.ID && dayOf(last) != dayOf(first) {
+			line += " – " + dayAndWhere(last)
 		}
 
 		out = append(out, types.Text{EN: line})

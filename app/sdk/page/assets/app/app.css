@@ -682,11 +682,12 @@ code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap
 .map-pick svg, .map-pick input { position: absolute; top: 0; left: 0; width: 280px; height: 182px; margin: 0; padding: 0; border: 0; }
 .map-pick input { cursor: crosshair; }
 
-/* The flowering record on a plant's steward photos screen: a small table,
-   one year to a row, that must still read at phone width. */
-.flowering-table { width: 100%; border-collapse: collapse; font-size: 15px; }
-.flowering-table th, .flowering-table td { text-align: left; vertical-align: top; padding: 6px 8px 6px 0; }
-.flowering-table thead th { color: var(--muted); font-weight: 500; }
-.flowering-table tbody th { font-weight: 700; }
-.flowering-table .row-note { display: block; font-size: 13px; }
-.flowering-count td { padding-top: 0; color: var(--muted); font-size: 13px; border-bottom: 1px solid var(--rule); }
+/* The flowering and fruiting record on a plant's steward photos screen: a
+   year at a time, each day beside what it is, which reads at phone width
+   where a table of five columns would not. */
+.season + .season { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule); }
+.season h3 { margin: 0 0 6px; }
+.season-days { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0 0 6px; font-size: 15px; }
+.season-days dt { color: var(--muted); }
+.season-days dd { margin: 0; }
+.season-days .row-note { font-size: 13px; }

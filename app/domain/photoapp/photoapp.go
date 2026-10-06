@@ -206,13 +206,14 @@ type fieldsView struct {
 	Credit, SourceURL     string
 	License               string
 	Checked, InFlower     bool
+	InFruit               bool
 }
 
 type listView struct {
 	SpeciesID, Name, Slug string
 	Seasons               []season
 	Sections              []section
-	Missing               int
+	Missing, Kinds        int
 	Fields                fieldsView
 	Problems              map[string]string
 	Done                  string
@@ -343,6 +344,7 @@ func (a app) showList(w http.ResponseWriter, r *http.Request, status int, sp spe
 	v.SpeciesID, v.Name, v.Slug = sp.ID.String(), sp.Common.EN, sp.Slug
 	v.Fields = fieldsOf(f, places)
 	v.Seasons = seasonsOf(photobus.Flowering(photos, false), names)
+	v.Kinds = len(photobus.Kinds)
 
 	for _, k := range photobus.Kinds {
 		s := section{Kind: string(k), Label: k.Label()}
@@ -376,7 +378,8 @@ func (a app) showList(w http.ResponseWriter, r *http.Request, status int, sp spe
 type season struct {
 	Year                               int
 	FirstSeen, FirstFlower, LastFlower sighting
-	Seen, InFlower                     int
+	FirstFruit, LastFruit              sighting
+	Seen, InFlower, InFruit            int
 }
 
 // sighting is one date in the record: the photo's day, where it was seen,
@@ -390,7 +393,8 @@ func seasonsOf(record []photobus.Season, names map[types.ID]string) []season {
 	var out []season
 	for _, s := range record {
 		out = append(out, season{
-			Year: s.Year, Seen: s.Seen, InFlower: s.InFlower,
+			Year: s.Year, Seen: s.Seen, InFlower: s.InFlower, InFruit: s.InFruit,
+			FirstFruit: sightingOf(s.FirstFruit, names), LastFruit: sightingOf(s.LastFruit, names),
 			FirstSeen: sightingOf(s.FirstSeen, names), FirstFlower: sightingOf(s.FirstFlower, names), LastFlower: sightingOf(s.LastFlower, names),
 		})
 	}
@@ -550,6 +554,7 @@ func fieldsFrom(r *http.Request, problems map[string]string) photobus.Fields {
 		License:   r.PostFormValue("license"),
 		Checked:   r.PostFormValue("checked") == "yes",
 		InFlower:  r.PostFormValue("in_flower") == "yes",
+		InFruit:   r.PostFormValue("in_fruit") == "yes",
 	}
 
 	if day, err := photobus.Day(strings.TrimSpace(r.PostFormValue("taken_on"))); err != nil {
@@ -602,7 +607,7 @@ func fieldsOf(f photobus.Fields, places []option) fieldsView {
 	v := fieldsView{
 		Ours: f.Source != photobus.Borrowed, TakenWhere: f.TakenWhere,
 		Credit: f.Credit, SourceURL: f.SourceURL, License: f.License, Checked: f.Checked,
-		InFlower: f.InFlower, TakenOn: photobus.DayOf(f.TakenAt),
+		InFlower: f.InFlower, InFruit: f.InFruit, TakenOn: photobus.DayOf(f.TakenAt),
 	}
 
 	// The list from placeOptions, with "Somewhere else" after "Not said":

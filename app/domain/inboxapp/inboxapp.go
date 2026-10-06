@@ -899,8 +899,9 @@ type sortView struct {
 	// As is the outcome being filled in; empty for the choice of one.
 	As string
 
-	// InFlower is the box as it was sent, kept when the form comes back.
-	InFlower bool
+	// InFlower and InFruit are the boxes as they were sent, kept when the
+	// form comes back.
+	InFlower, InFruit bool
 
 	Species, Kinds, Places []option
 	NoPlants               bool
@@ -962,11 +963,15 @@ func (a app) sort(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v := sortView{As: r.PostFormValue("as"), InFlower: r.PostFormValue("in_flower") != "", Problems: map[string]string{}}
+	v := sortView{
+		As: r.PostFormValue("as"), Problems: map[string]string{},
+		InFlower: r.PostFormValue("in_flower") != "", InFruit: r.PostFormValue("in_fruit") != "",
+	}
 	s := inboxbus.Sorting{
 		Outcome:  inboxbus.Outcome(v.As),
 		Kind:     photobus.Kind(r.PostFormValue("kind")),
 		InFlower: v.InFlower,
+		InFruit:  v.InFruit,
 		Note:     r.PostFormValue("note"),
 	}
 
