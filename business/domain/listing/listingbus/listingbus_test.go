@@ -182,3 +182,28 @@ func TestWhatIsListedCannotBeRemoved(t *testing.T) {
 		t.Errorf("removing the place once unlisted: %v", err)
 	}
 }
+
+// A program may list a plant to pull, and take one off a place: removed the
+// first time, nothing to do the second.
+func TestAProgramPullsAndUnlists(t *testing.T) {
+	g := setup(t)
+
+	got, err := g.listings.Import(t.Context(), g.inflow.ID, g.johnson.ID, listingbus.Fields{Action: listingbus.Pull, Note: types.Text{EN: "Invasive."}})
+	if err != nil || got.Outcome != listingbus.Created || got.Listing.Action != listingbus.Pull {
+		t.Fatalf("pull: %+v %v", got, err)
+	}
+
+	if _, err := g.listings.Import(t.Context(), g.inflow.ID, g.johnson.ID, listingbus.Fields{Action: listingbus.Pull, Planned: true}); err == nil {
+		t.Error("a program pulled a plant still to plant")
+	}
+
+	for i, want := range []listingbus.Outcome{listingbus.Removed, listingbus.Unchanged} {
+		if got, err := g.listings.Unlist(t.Context(), g.inflow.ID, g.johnson.ID); err != nil || got != want {
+			t.Errorf("unlist %d: %q %v, want %q", i+1, got, err, want)
+		}
+	}
+
+	if all, _ := g.listings.ForPlace(t.Context(), g.inflow.ID); len(all) != 0 {
+		t.Errorf("still listed: %+v", all)
+	}
+}

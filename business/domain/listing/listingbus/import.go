@@ -12,15 +12,17 @@ import (
 // it does not. The API's PUT /api/v1/places/<slug>/plants/<species> is this,
 // so a batch can be sent twice and the second time is a list of "unchanged".
 //
-// What an import cannot do is say pull. A listing has no "checked" box for a
-// steward to tick after looking, as a photo has: it is on the place card the
-// moment it is saved. Protect is the safe direction to be wrong in -- a
-// volunteer leaves a weed for a week -- and pull is the dangerous one, the
-// native pulled that the Phase 1 test is about, from a program that found a
-// page calling it a weed. So the API may protect a plant, or mark it
-// careful, and only a steward on the place's Plants screen tells volunteers
-// to pull one. An import may still change a listing a steward made pull into
-// protect; that is the safe direction too.
+// An import may say pull. It could not at first: a listing has no "checked"
+// box for a steward to tick after looking, as a photo has, and is on the
+// place card the moment it is saved, so pull -- the dangerous direction, the
+// native pulled that the Phase 1 test is about -- was left to a steward on
+// the place's Plants screen. That held until the API found tree of heaven
+// on the property and could only list it careful with "pull it" in the
+// note, which is pull by another name with less said. The stewards decided
+// (2026-10-06) that the API marks pulls too. What keeps it honest is the
+// same as for every other listing: the steward's own key, the log line each
+// one writes, and the rules below, which refuse to pull what is being
+// planted.
 //
 // The outcomes are speciesbus's words, so a batch reads the same for plants
 // and their places.
@@ -32,6 +34,7 @@ const (
 	Created   Outcome = "created"
 	Updated   Outcome = "updated"
 	Unchanged Outcome = "unchanged"
+	Removed   Outcome = "removed"
 )
 
 // Imported is a listing after an import, and what the import did to it.
@@ -43,10 +46,6 @@ type Imported struct {
 // Import lists the species at the place, or changes how it is listed. See
 // the comment above.
 func (b *Business) Import(ctx context.Context, placeID, speciesID types.ID, f Fields) (Imported, error) {
-	if f.Action == Pull {
-		return Imported{}, Invalid{Field: "action", Problem: "a plant is marked to pull by a steward on the place's Plants screen, after looking, not by an import. Send protect or careful"}
-	}
-
 	f.Note = f.Note.Trimmed()
 
 	existing, found, err := b.listed(ctx, placeID, speciesID)
@@ -86,4 +85,23 @@ func (b *Business) listed(ctx context.Context, placeID, speciesID types.ID) (Lis
 	}
 
 	return Listing{}, false, nil
+}
+
+// Unlist takes the species off the place's list, for a program: Removed when
+// it was listed there, Unchanged when it was not, so that a batch sent twice
+// reads the second time as nothing to do.
+func (b *Business) Unlist(ctx context.Context, placeID, speciesID types.ID) (Outcome, error) {
+	_, found, err := b.listed(ctx, placeID, speciesID)
+	switch {
+	case err != nil:
+		return "", err
+	case !found:
+		return Unchanged, nil
+	}
+
+	if err := b.Remove(ctx, placeID, speciesID); err != nil {
+		return "", fmt.Errorf("taking the plant off the place: %w", err)
+	}
+
+	return Removed, nil
 }

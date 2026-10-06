@@ -385,7 +385,7 @@ func (a app) editForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.showEdit(w, r, http.StatusOK, p, sp, editView{Problems: map[string]string{}}, fieldsOfPhoto(p))
+	a.showEdit(w, r, http.StatusOK, p, sp, editView{Problems: map[string]string{}}, photobus.FieldsOf(p))
 }
 
 func (a app) update(w http.ResponseWriter, r *http.Request) {
@@ -457,7 +457,7 @@ func (a app) remove(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	a.showEdit(w, r, http.StatusUnprocessableEntity, p, sp, v, fieldsOfPhoto(p))
+	a.showEdit(w, r, http.StatusUnprocessableEntity, p, sp, v, photobus.FieldsOf(p))
 }
 
 func (a app) showEdit(w http.ResponseWriter, r *http.Request, status int, p photobus.Photo, sp speciesbus.Species, v editView, f photobus.Fields) {
@@ -531,14 +531,6 @@ func fieldsFrom(r *http.Request, problems map[string]string) photobus.Fields {
 
 // elsewhere is the place list's value for a photo taken off the property.
 const elsewhere = "elsewhere"
-
-func fieldsOfPhoto(p photobus.Photo) photobus.Fields {
-	return photobus.Fields{
-		Kind: p.Kind, PlaceID: p.PlaceID, Elsewhere: p.Elsewhere, TakenWhere: p.TakenWhere,
-		TakenYear: p.TakenYear, TakenMonth: p.TakenMonth,
-		Source: p.Source, Credit: p.Credit, SourceURL: p.SourceURL, License: p.License, Checked: p.Checked,
-	}
-}
 
 func fieldsOf(f photobus.Fields, places []option) fieldsView {
 	v := fieldsView{

@@ -45,13 +45,21 @@ to be read at all (CLAUDE.md §6).
   describe an upload as confirmed. The skinny bed guide's two "frostweed"
   photos were wingstem; a source saying a name is not the same as the plant
   being that species.
-- **It removes nothing.** Removing is a person's job on the screens.
-- **It never says pull.** A listing (a plant at a place) has no box for a
-  steward to tick first; it is on the place card the moment it is made. So
-  an import may protect a plant or mark it careful, and only a steward on
-  the place's Plants screen marks one to pull. Do not try to get round it
-  with a note that says "pull": tell the person which plants you think are
-  to be pulled, and let them do it.
+- **It deletes no plant, photo or place.** That is a person's job on the
+  screens. It can take a plant off a place's list
+  (`DELETE /api/v1/places/<place>/plants/<species>`), for one listed in the
+  wrong place; the plant and its photos stay.
+- **A pull is on the place card at once.** A listing has no box for a
+  steward to tick first, and pull tells volunteers to take the plant out the
+  next time they are there. The stewards decided the API may mark pulls; the
+  care that asks for is yours. Mark one only for a plant the person has
+  agreed is to come out *at that place* (pull or protect belongs to a plant
+  and a place, not to the plant: poison ivy is native), and always say why in
+  the note ("Invasive: take it out, root and all, before it seeds").
+- **A change to a checked photo clears its check.** Correct a photo's kind,
+  month or place with `PATCH /api/v1/photos/<id>`, sending only what changes.
+  The answer says `"check_cleared": true` when it took a check away; tell
+  the person it needs checking again.
 - **A change to a confirmed plant clears its confirmation.** The answer says
   `"confirmation_cleared": true`. Before changing a confirmed plant, tell the
   person it will need confirming again.
