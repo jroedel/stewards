@@ -6,6 +6,14 @@
 // are kept, because "they had Turk's cap in April" is cheap to keep and
 // useful to know, but they are history rather than a catalogue.
 //
+// The nurseries themselves are a register: a name a steward chose once, with
+// the address, website, phone and a note on what to know about the place
+// ("natives are in the back greenhouse"). A nursery is added there, or by
+// typing a new name when a tag photo is sorted, which must never wait on a
+// trip to another screen. Either way the name is the register's from then on,
+// so "Natural Gardener" and "the natural gardener" are one nursery with one
+// history rather than two that each looked a week out of date.
+//
 // A visit is a nursery on a day. A line is one plant on its tables, as the tag
 // gives it: the name on the tag, and -- when a steward or their Claude has
 // matched it -- the plant here it is, by which the bed's plan can ask whether
@@ -17,9 +25,12 @@
 package nurserybus
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -28,9 +39,30 @@ import (
 	"github.com/jroedel/stewards/business/types"
 )
 
+// Nursery is one nursery in the register.
+type Nursery struct {
+	ID      types.ID
+	Name    string
+	Address string
+	Website string
+	Phone   string
+	Note    string
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// NurseryFields is what a steward says about a nursery.
+type NurseryFields struct {
+	Name, Address, Website, Phone, Note string
+}
+
 // Visit is a nursery on a day.
 type Visit struct {
-	ID      types.ID
+	ID        types.ID
+	NurseryID types.ID
+
+	// Nursery is its name, as the register has it now.
 	Nursery string
 
 	// Day is the garden's midnight at the start of the day it was visited.
@@ -89,13 +121,35 @@ type Invalid struct {
 
 func (e Invalid) Error() string { return fmt.Sprintf("%s: %s", e.Field, e.Problem) }
 
-// ErrNotFound is returned for a line or a visit that does not exist.
+// ErrNotFound is returned for a nursery, a line or a visit that does not
+// exist.
 var ErrNotFound = errors.New("there is no such nursery stock")
+
+// ErrDuplicate is a store's answer to a nursery named as another already is,
+// ignoring case: the insert or update is the check.
+var ErrDuplicate = errors.New("there is already a nursery by that name")
+
+// ErrInUse is a store's answer to removing a nursery that has visits.
+var ErrInUse = errors.New("that nursery has visits")
 
 // Storer is what the rules need from the database.
 type Storer interface {
-	// Visit finds the visit for a nursery on a day, by its name ignoring
-	// case, or makes it: one statement that cannot make two.
+	// EnsureNursery finds the nursery by its name ignoring case, or adds n:
+	// one statement that cannot add two.
+	EnsureNursery(ctx context.Context, n Nursery) (Nursery, error)
+	CreateNursery(ctx context.Context, n Nursery) error
+	UpdateNursery(ctx context.Context, n Nursery) error
+
+	// DeleteNursery removes a nursery with no visits, in one statement:
+	// ErrInUse if it has one, ErrNotFound if it is not there.
+	DeleteNursery(ctx context.Context, id types.ID) error
+	NurseryByID(ctx context.Context, id types.ID) (Nursery, error)
+
+	// Register is every nursery, by name.
+	Register(ctx context.Context) ([]Nursery, error)
+
+	// Visit finds the visit for a nursery on a day or makes it: one
+	// statement that cannot make two.
 	Visit(ctx context.Context, v Visit) (Visit, error)
 	CreateLine(ctx context.Context, l Line) error
 	UpdateLine(ctx context.Context, l Line) error
@@ -120,15 +174,19 @@ func NewBusiness(store Storer, now func() time.Time) *Business {
 }
 
 const (
-	maxName = 100
-	maxPot  = 40
-	maxNote = 300
+	maxName    = 100
+	maxPot     = 40
+	maxNote    = 300
+	maxAddress = 200
+	maxWebsite = 300
+	maxPhone   = 40
 )
 
 // Add records a line of a nursery's stock on the day it was seen, making the
-// visit if it is the first line of that day.
+// visit if it is the first line of that day. nursery is a name: one in the
+// register, however it is typed, or a new one, which is added to it.
 func (b *Business) Add(ctx context.Context, nursery string, seen time.Time, inboxID types.ID, f Fields) (Line, error) {
-	nursery = strings.Join(strings.Fields(nursery), " ")
+	nursery = oneLine(nursery)
 
 	switch {
 	case nursery == "":
@@ -144,7 +202,12 @@ func (b *Business) Add(ctx context.Context, nursery string, seen time.Time, inbo
 
 	now := b.now().UTC().Truncate(time.Millisecond)
 
-	v, err := b.store.Visit(ctx, Visit{ID: types.NewID(), Nursery: nursery, Day: DayOf(seen), CreatedAt: now})
+	n, err := b.store.EnsureNursery(ctx, Nursery{ID: types.NewID(), Name: nursery, CreatedAt: now, UpdatedAt: now})
+	if err != nil {
+		return Line{}, err
+	}
+
+	v, err := b.store.Visit(ctx, Visit{ID: types.NewID(), NurseryID: n.ID, Nursery: n.Name, Day: DayOf(seen), CreatedAt: now})
 	if err != nil {
 		return Line{}, err
 	}
@@ -234,25 +297,167 @@ func (b *Business) LastNursery(ctx context.Context, seen time.Time) (string, err
 	return "", nil
 }
 
-// Nurseries is the name of every nursery visited, the most recently visited
-// first, for a steward to choose from rather than type.
+// Nurseries is the name of every nursery in the register, for a steward to
+// choose from rather than type: the most recently visited first, since the
+// next tag photo is likeliest to be from there, then the rest by name.
 func (b *Business) Nurseries(ctx context.Context) ([]string, error) {
+	register, err := b.store.Register(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	last, err := b.LastVisits(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	slices.SortStableFunc(register, func(x, y Nursery) int {
+		return last[y.ID].Compare(last[x.ID]) // zero, never visited, sorts last
+	})
+
+	names := make([]string, len(register))
+	for i, n := range register {
+		names[i] = n.Name
+	}
+
+	return names, nil
+}
+
+// LastVisits is the day of each nursery's most recent visit, by its id. A
+// nursery never visited is not in it.
+func (b *Business) LastVisits(ctx context.Context) (map[types.ID]time.Time, error) {
 	visits, err := b.store.Visits(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	seen := map[string]bool{}
-
-	var names []string
+	last := map[types.ID]time.Time{}
 	for _, v := range visits {
-		if k := strings.ToLower(v.Nursery); !seen[k] {
-			seen[k] = true
-			names = append(names, v.Nursery)
+		if v.Day.After(last[v.NurseryID]) {
+			last[v.NurseryID] = v.Day
 		}
 	}
 
-	return names, nil
+	return last, nil
+}
+
+// ------------------------------------------------------------------ the register
+
+// Register is every nursery, by name.
+func (b *Business) Register(ctx context.Context) ([]Nursery, error) {
+	all, err := b.store.Register(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	slices.SortFunc(all, func(x, y Nursery) int { return cmp.Compare(strings.ToLower(x.Name), strings.ToLower(y.Name)) })
+
+	return all, nil
+}
+
+// Nursery is one nursery, or ErrNotFound.
+func (b *Business) Nursery(ctx context.Context, id types.ID) (Nursery, error) {
+	return b.store.NurseryByID(ctx, id)
+}
+
+// CreateNursery adds a nursery to the register.
+func (b *Business) CreateNursery(ctx context.Context, f NurseryFields) (Nursery, error) {
+	f, err := checkNursery(f)
+	if err != nil {
+		return Nursery{}, err
+	}
+
+	now := b.now().UTC().Truncate(time.Millisecond)
+	n := Nursery{ID: types.NewID(), CreatedAt: now, UpdatedAt: now}
+	n.apply(f)
+
+	if err := b.store.CreateNursery(ctx, n); err != nil {
+		return Nursery{}, duplicate(err, f.Name)
+	}
+
+	return n, nil
+}
+
+// UpdateNursery changes what the register says about a nursery. A new name
+// is the name of every visit to it from then on, past ones too: it is the
+// same nursery, spelled right at last.
+func (b *Business) UpdateNursery(ctx context.Context, id types.ID, f NurseryFields) (Nursery, error) {
+	n, err := b.store.NurseryByID(ctx, id)
+	if err != nil {
+		return Nursery{}, err
+	}
+
+	if f, err = checkNursery(f); err != nil {
+		return Nursery{}, err
+	}
+
+	n.apply(f)
+	n.UpdatedAt = b.now().UTC().Truncate(time.Millisecond)
+
+	if err := b.store.UpdateNursery(ctx, n); err != nil {
+		return Nursery{}, duplicate(err, f.Name)
+	}
+
+	return n, nil
+}
+
+// DeleteNursery removes a nursery from the register: one added twice, or by
+// mistake. Only while it has no visits. A nursery the stewards have walked
+// round is part of what the stock says, and its history stays with it.
+func (b *Business) DeleteNursery(ctx context.Context, id types.ID) error {
+	return b.store.DeleteNursery(ctx, id)
+}
+
+func duplicate(err error, name string) error {
+	if errors.Is(err, ErrDuplicate) {
+		return Invalid{Field: "name", Problem: fmt.Sprintf("there is already a nursery called %s. Change that one instead, or give this one a name of its own", name)}
+	}
+
+	return err
+}
+
+func checkNursery(f NurseryFields) (NurseryFields, error) {
+	f.Name, f.Address, f.Phone = oneLine(f.Name), oneLine(f.Address), oneLine(f.Phone)
+	f.Website, f.Note = strings.TrimSpace(f.Website), strings.TrimSpace(f.Note)
+
+	// A website as a person types it, "naturalgardener.com", is the https
+	// address of it. Anything else must be a web address outright: it is a
+	// link on a steward's screen, and a javascript: one would run there.
+	if f.Website != "" && !strings.Contains(f.Website, "://") {
+		f.Website = "https://" + f.Website
+	}
+
+	switch {
+	case f.Name == "":
+		return f, Invalid{Field: "name", Problem: "write the nursery's name"}
+	case utf8.RuneCountInString(f.Name) > maxName:
+		return f, Invalid{Field: "name", Problem: fmt.Sprintf("the name is longer than %d characters", maxName)}
+	case utf8.RuneCountInString(f.Address) > maxAddress:
+		return f, Invalid{Field: "address", Problem: fmt.Sprintf("the address is longer than %d characters", maxAddress)}
+	case f.Website != "" && !webAddress(f.Website):
+		return f, Invalid{Field: "website", Problem: "write the website's address, such as naturalgardener.com"}
+	case utf8.RuneCountInString(f.Website) > maxWebsite:
+		return f, Invalid{Field: "website", Problem: fmt.Sprintf("the website's address is longer than %d characters", maxWebsite)}
+	case utf8.RuneCountInString(f.Phone) > maxPhone:
+		return f, Invalid{Field: "phone", Problem: fmt.Sprintf("the phone number is longer than %d characters", maxPhone)}
+	case utf8.RuneCountInString(f.Note) > maxNote:
+		return f, Invalid{Field: "note", Problem: fmt.Sprintf("keep the note under %d characters", maxNote)}
+	}
+
+	return f, nil
+}
+
+func webAddress(s string) bool {
+	u, err := url.Parse(s)
+
+	return err == nil && (u.Scheme == "https" || u.Scheme == "http") && strings.Contains(u.Host, ".") && !strings.ContainsAny(s, " \t")
+}
+
+// oneLine is s with its runs of spaces, tabs and line breaks made one space.
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+func (n *Nursery) apply(f NurseryFields) {
+	n.Name, n.Address, n.Website, n.Phone, n.Note = f.Name, f.Address, f.Website, f.Phone, f.Note
 }
 
 // DayOf is the garden's midnight at the start of the day t falls on.

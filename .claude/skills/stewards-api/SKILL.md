@@ -216,9 +216,12 @@ batches, and sorts them later. "Sort my inbox" means this:
    sees them. List the photos set aside with their questions.
 
 Nursery photos (`"at": "nursery"`) are stock for planning a bed. Sort each
-as `stock`: `nursery` (the name as `GET /api/v1/nursery` writes it, if it was
-visited before), `name_on_tag` as the tag writes it, and `pot_size`, `price`
-and `count` when the photo shows them. Give `species` only when the tag's
+as `stock`: `nursery` (a name from the register, `GET /api/v1/nurseries`),
+`name_on_tag` as the tag writes it, and `pot_size`, `price` and `count` when
+the photo shows them. A name not in the register is added to it as written,
+so ask the person which nursery it was rather than guess one: a misspelling
+becomes a second nursery for them to tidy up. The register itself -- address,
+website, phone, a note -- is the steward's to fill in on the screens. Give `species` only when the tag's
 scientific name matches a plant that is already here; a tag is evidence, not
 an identification, and an unmatched line is fine. A good flower close-up from
 a nursery can be a `photo` of the plant instead, if the person wants it.

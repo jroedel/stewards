@@ -536,6 +536,11 @@ main > h1:first-child { margin-top: 20px; }
 .photo-credit { color: var(--muted); overflow-wrap: anywhere; }
 .photos-missing { margin-top: 12px; }
 
+/* A nursery in the register: its map, website and phone as a row of links
+   tall enough for a thumb, wrapping onto a second line on a narrow phone. */
+.nursery-links { display: flex; flex-wrap: wrap; gap: 0 20px; margin: 0; }
+.nursery-links a, .nursery-edit { display: inline-block; padding: 10px 0; font-weight: 700; }
+
 /* A card's photo is a link to the same photo on a page of its own, to look
    closer. The magnifying glass in the corner says so without words, drawn
    like the other icons: a 2 px stroke with round ends on a 24 px grid. */

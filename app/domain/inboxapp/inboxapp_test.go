@@ -16,7 +16,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jroedel/stewards/app/domain/inboxapp"
 	"github.com/jroedel/stewards/app/sdk/mid"
@@ -105,7 +107,20 @@ func serve(t *testing.T) *site {
 		listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
 	}
 	s.nursery = nurserybus.NewBusiness(nurserydb.NewStore(db), nil)
-	s.inbox = inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, inboxbus.Deps{Photos: s.photos, Listings: s.listings, Stock: s.nursery}, nil)
+	// The inbox's clock is noon today in the garden, a millisecond on each
+	// time it is read. A photo with no date of its own is dated when it is
+	// sent, and its nursery visit is on that day; on the real clock a test
+	// run at midnight in Austin sent one tag before it and one after, and
+	// they were two visits (CI, 2026-10-06 05:00 UTC). Today's, not a fixed
+	// day, because the stock screen shows a visit's photos for 90 days by
+	// the real clock.
+	y, m, d := time.Now().In(types.Garden).Date()
+	var ticks atomic.Int64
+	noon := func() time.Time {
+		return time.Date(y, m, d, 12, 0, 0, 0, types.Garden).Add(time.Duration(ticks.Add(1)) * time.Millisecond)
+	}
+
+	s.inbox = inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, inboxbus.Deps{Photos: s.photos, Listings: s.listings, Stock: s.nursery}, noon)
 
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
@@ -876,5 +891,97 @@ func TestALineOfStockIsCorrected(t *testing.T) {
 
 	if w := s.post("/steward/nursery/lines/"+line, url.Values{"name_on_tag": {""}}); w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("a line with nothing to name it: %d", w.Code)
+	}
+}
+
+// The register of nurseries: a nursery named when its first tag photo is
+// sorted is in it, under that spelling; a steward fills in the rest, and
+// cannot add it twice or remove it once visited.
+func TestTheNurseriesAreARegister(t *testing.T) {
+	s := serve(t)
+	ids := s.sent(url.Values{"at": {"nursery"}}, file{"IMG_0031.JPG", noisy(t, 31)})
+
+	if w := s.post("/steward/inbox/"+ids[0], url.Values{"as": {"stock"}, "nursery": {"natural  gardener"}, "name_on_tag": {"Turk's cap"}}); w.Code != http.StatusSeeOther {
+		t.Fatalf("sorting: %d", w.Code)
+	}
+
+	nurseryID := regexp.MustCompile(`id="nursery-([0-9a-f]{32})"`)
+
+	page := s.get("/steward/nurseries", true).Body.String()
+	m := nurseryID.FindStringSubmatch(page)
+	if m == nil || !strings.Contains(page, ">natural gardener</h2>") || !strings.Contains(page, "Last visited ") {
+		t.Fatalf("the register after the sort:\n%s", page)
+	}
+	id := m[1]
+
+	if w := s.post("/steward/nurseries", url.Values{"name": {"Natural Gardener"}}); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "There is already a nursery called Natural Gardener") {
+		t.Errorf("the same nursery again: %d", w.Code)
+	}
+
+	w := s.post("/steward/nurseries/"+id, url.Values{
+		"name": {"Natural Gardener"}, "address": {"100 Example Rd, Austin, TX 78735"},
+		"website": {"naturalgardener.com"}, "phone": {"(512) 555-0142"}, "note": {"Natives along the back fence."},
+	})
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/steward/nurseries?done=saved#nursery-"+id {
+		t.Fatalf("filling it in: %d %s\n%s", w.Code, w.Header().Get("Location"), w.Body.String())
+	}
+
+	page = s.get("/steward/nurseries?done=saved", true).Body.String()
+	for _, want := range []string{
+		"Saved.", ">Natural Gardener</h2>",
+		`href="https://www.openstreetmap.org/search?query=100&#43;Example&#43;Rd%2C&#43;Austin%2C&#43;TX&#43;78735"`,
+		`href="https://naturalgardener.com"`, `href="tel:5125550142"`, "Call (512) 555-0142",
+		"Natives along the back fence.",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the register does not show %q", want)
+		}
+	}
+
+	// The stock, and the next sort, use its name now.
+	if stock := s.get("/steward/nursery", true).Body.String(); !strings.Contains(stock, `<a href="/steward/nurseries#nursery-`+id+`">Natural Gardener</a>`) {
+		t.Error("the stock does not link the nursery to the register")
+	}
+
+	more := s.sent(url.Values{"at": {"nursery"}}, file{"IMG_0032.JPG", noisy(t, 32)})
+	if form := s.get("/steward/inbox/"+more[0]+"?as=stock", true).Body.String(); !strings.Contains(form, `<option value="Natural Gardener">`) {
+		t.Error("the sort form does not offer the nursery by its name")
+	}
+
+	// Visited: it stays.
+	if form := s.get("/steward/nurseries/"+id+"/edit", true).Body.String(); strings.Contains(form, "/delete") || !strings.Contains(form, "cannot be removed") {
+		t.Error("a visited nursery offers to be removed")
+	}
+
+	if w := s.post("/steward/nurseries/"+id+"/delete", url.Values{"confirm": {"yes"}}); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "stays with them") {
+		t.Errorf("removing a visited nursery: %d", w.Code)
+	}
+
+	// One added by mistake goes, once the box is ticked.
+	w = s.post("/steward/nurseries", url.Values{"name": {"Barton Springs Nursery"}, "website": {"javascript:alert(1)"}})
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "Write the website&#39;s address") {
+		t.Errorf("a script for a website: %d", w.Code)
+	}
+
+	w = s.post("/steward/nurseries", url.Values{"name": {"Barton Springs Nursery"}})
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("adding one: %d\n%s", w.Code, w.Body.String())
+	}
+	barton := strings.TrimPrefix(w.Header().Get("Location"), "/steward/nurseries?done=added#nursery-")
+
+	if w := s.post("/steward/nurseries/"+barton+"/delete", url.Values{}); w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("removing without the box: %d", w.Code)
+	}
+
+	if w := s.post("/steward/nurseries/"+barton+"/delete", url.Values{"confirm": {"yes"}}); w.Code != http.StatusSeeOther {
+		t.Errorf("removing with the box: %d", w.Code)
+	}
+
+	if page := s.get("/steward/nurseries", true).Body.String(); strings.Contains(page, "Barton Springs") || !strings.Contains(page, "Natural Gardener") {
+		t.Error("the register after removing one")
+	}
+
+	if w := s.get("/steward/nurseries", false); w.Code == http.StatusOK {
+		t.Error("the register was shown to somebody signed out")
 	}
 }

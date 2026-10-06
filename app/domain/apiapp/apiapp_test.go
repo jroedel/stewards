@@ -290,7 +290,7 @@ func TestTheIndexListsWhatIsThere(t *testing.T) {
 		"PUT /api/v1/species/{slug}", apiapp.UploadPattern,
 		"GET /api/v1/places/{slug}/plants", "PUT /api/v1/places/{slug}/plants/{species}",
 		"GET /api/v1/inbox", "GET /api/v1/inbox/{id}/{file}", "POST /api/v1/inbox/{id}/sort",
-		"GET /api/v1/nursery", "PUT /api/v1/nursery/lines/{id}",
+		"GET /api/v1/nursery", "PUT /api/v1/nursery/lines/{id}", "GET /api/v1/nurseries",
 	} {
 		if !seen[want] {
 			t.Errorf("the index does not list %s", want)

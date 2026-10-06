@@ -1,0 +1,29 @@
+{{define "title"}}Nurseries · Garden stewards{{end}}
+{{define "content"}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow"><a href="/steward/nursery">Nursery stock</a></p>
+<h1>Nurseries</h1>
+<p class="lead">Where the stewards buy plants: how to get there, and what to know before going. A nursery is added here, or by writing a new one's name when a nursery photo is sorted. Volunteers never see this.</p>
+
+{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+
+<a class="button button-block" href="/steward/nurseries/new">Add a nursery</a>
+
+{{range $n := .Nurseries}}
+<section class="card photo-kind" id="nursery-{{$n.ID}}" aria-labelledby="name-{{$n.ID}}">
+  <h2 id="name-{{$n.ID}}">{{$n.Name}}</h2>
+  {{with $n.Address}}<p class="row-note">{{.}}</p>{{end}}
+  {{if or $n.MapURL $n.Website $n.Tel}}<p class="nursery-links">
+    {{- with $n.MapURL}}<a href="{{.}}" rel="noopener">Open in maps</a>{{end}}
+    {{- with $n.Website}}<a href="{{.}}" rel="noopener">Website</a>{{end}}
+    {{- with $n.Tel}}<a href="{{.}}">Call {{$n.Phone}}</a>{{end -}}
+  </p>{{else if $n.Phone}}<p class="row-note">{{$n.Phone}}</p>{{end}}
+  {{with $n.Note}}<p class="row-note">{{.}}</p>{{end}}
+  <p class="help">{{with $n.LastVisit}}Last visited {{.}} · <a href="/steward/nursery#nursery-{{$n.ID}}">what it had</a>{{else}}Not visited yet.{{end}}</p>
+  <a class="nursery-edit" href="/steward/nurseries/{{$n.ID}}/edit">Change</a>
+</section>
+{{else}}
+<div class="card empty"><p>No nurseries yet. Add one, or sort a nursery photo from the inbox and write the nursery's name.</p></div>
+{{end}}
+</div>
+{{end}}{{end}}
