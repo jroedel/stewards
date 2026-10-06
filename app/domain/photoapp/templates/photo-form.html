@@ -5,7 +5,7 @@
 <h1>{{.Kind}}</h1>
 
 <p class="photo-large"><img src="/photos/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="The photo being edited"></p>
-<p class="help"><a href="/photos/{{.ID}}/large.jpg">Open it larger</a> to compare it with the plant, or <a href="/photos/{{.ID}}/{{.Full}}">at full size</a> for the detail. {{.Original}}</p>
+<p class="help"><a href="/plants/{{.Slug}}/photos/{{.ID}}">Zoom in</a> to compare it with the plant. {{.Original}}</p>
 
 {{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below and press Save again.</p>{{end}}
 

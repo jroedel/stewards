@@ -41,6 +41,7 @@ func CardRoutes(mux *http.ServeMux, cfg Config) {
 	a := newApp(cfg)
 
 	mux.HandleFunc("GET /plants/{slug}", a.card)
+	mux.HandleFunc("GET /plants/{slug}/photos/{id}", a.photo)
 }
 
 type cardWording struct {
@@ -56,6 +57,9 @@ type cardWording struct {
 	Kinds    map[photobus.Kind]types.Text
 
 	OurPhoto, PhotoBy, Source, Photos types.Text
+
+	// The photo on a page of its own, to look closer.
+	ZoomIn, Pinch, ByItself types.Text
 }
 
 // The card's own words. English, with Spanish to be written by a native
@@ -85,6 +89,9 @@ var cardWords = cardWording{
 	OurPhoto:          types.Text{EN: "Our photo"},
 	PhotoBy:           types.Text{EN: "Photo:"},
 	Source:            types.Text{EN: "source"},
+	ZoomIn:            types.Text{EN: "Zoom in:"},
+	Pinch:             types.Text{EN: "Pinch to zoom in."},
+	ByItself:          types.Text{EN: "Open the photo by itself"},
 
 	Actions: map[listingbus.Action]types.Text{
 		listingbus.Protect: {EN: "Protect"},
@@ -374,4 +381,95 @@ func takenWords(year, month int) string {
 	}
 
 	return strings.Join(parts, " ")
+}
+
+// ------------------------------------------------------------------ one photo, closer
+
+// photoView is one of a plant's photos on a page of its own, at full size, to
+// look at the hairs on a stem or the teeth of a leaf, which a card's picture
+// is too small to show.
+type photoView struct {
+	Copy    cardWording
+	Name    types.Text
+	Slug    string
+	Weeding bool // which view of the card to go back to
+
+	Figure     figure
+	LargeW     int
+	LargeH     int
+	Full       string // full.jpg, or full.png for a PNG
+	EditURL    string // a steward's, to check it or take it down
+	NotChecked bool   // a steward looking at one volunteers do not see
+}
+
+// photo is the page a card's photo opens. There is no script on it: the
+// phone's own pinch-zoom is the zoom, and it is what a volunteer already
+// knows. What the page adds is the picture with the most pixels in it, and
+// the large one underneath while that arrives -- a few megabytes on a
+// garden's signal is a few seconds of something rather than of nothing.
+//
+// The same rule as the pictures themselves: a checked photo is anybody's, an
+// unchecked one a steward's. A photo that is not there, or not to be shown,
+// goes back to the card, which is where the link that led here was, rather
+// than to a page saying a photo exists that cannot be seen.
+func (a app) photo(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	sp, err := a.species.BySlug(ctx, r.PathValue("slug"))
+	switch {
+	case errors.Is(err, speciesbus.ErrNotFound):
+		a.render.Render(w, r, http.StatusNotFound, "plant-missing", cardWords)
+
+		return
+	case err != nil:
+		a.fail(w, r, "reading a species for one of its photos", err)
+
+		return
+	}
+
+	weeding := r.URL.Query().Get("view") == "weeding"
+
+	back := "/plants/" + sp.Slug
+	if weeding {
+		back += "?view=weeding"
+	}
+
+	photos, err := a.photos.ForSpecies(ctx, sp.ID)
+	if err != nil {
+		a.fail(w, r, "reading a species' photos", err)
+
+		return
+	}
+
+	_, steward := mid.StewardFrom(ctx)
+
+	i := slices.IndexFunc(photos, func(p photobus.Photo) bool { return p.ID.String() == r.PathValue("id") })
+	if i < 0 || (!photos[i].Checked && !steward) {
+		http.Redirect(w, r, back, http.StatusFound)
+
+		return
+	}
+
+	p := photos[i]
+
+	places, err := a.places.All(ctx)
+	if err != nil {
+		a.fail(w, r, "listing places for a photo", err)
+
+		return
+	}
+
+	v := photoView{
+		Copy: cardWords, Name: sp.Common, Slug: sp.Slug, Weeding: weeding,
+		Figure: figureOf(p, sp, placeNames(places)),
+		LargeW: p.Large.Width, LargeH: p.Large.Height,
+		Full:       photobus.ServedName(photobus.Full, p.Format),
+		NotChecked: !p.Checked,
+	}
+
+	if steward {
+		v.EditURL = "/steward/photos/" + p.ID.String() + "/edit"
+	}
+
+	a.render.Render(w, r, http.StatusOK, "plant-photo", v)
 }

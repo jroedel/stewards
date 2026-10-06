@@ -536,6 +536,31 @@ main > h1:first-child { margin-top: 20px; }
 .photo-credit { color: var(--muted); overflow-wrap: anywhere; }
 .photos-missing { margin-top: 12px; }
 
+/* A card's photo is a link to the same photo on a page of its own, to look
+   closer. The magnifying glass in the corner says so without words, drawn
+   like the other icons: a 2 px stroke with round ends on a 24 px grid. */
+.photo-zoom { display: block; position: relative; border-radius: 12px; }
+.photo-zoom::after {
+  content: ""; position: absolute; right: 10px; bottom: 10px;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--sf-white) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23231F20' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5 21 21M10.5 7.5v6M7.5 10.5h6'/%3E%3C/svg%3E") center / 24px no-repeat;
+}
+
+/* That page. The large picture and the full one share one box -- the same
+   photo at two sizes is the same shape -- with the full one on top, so the
+   large shows until the full has arrived and then is hidden by it. Both are
+   contained in the box rather than stretched, and the box is no taller than
+   most of the screen, so a photo taken in portrait fits whole on a laptop.
+   On a wide screen it takes more than the column, up to 1280 px. The zoom is
+   the phone's own pinch, which needs nothing here. */
+.zoom { margin: 12px calc(50% - min(50vw - 16px, 640px)) 0; }
+.zoom-frame { position: relative; }
+.zoom-frame img { display: block; width: 100%; height: auto; max-height: 85vh; object-fit: contain; }
+.zoom-frame .zoom-full { position: absolute; inset: 0; height: 100%; max-height: none; }
+.zoom figcaption { margin: 6px auto 0; max-width: 560px; font-size: 15px; }
+.zoom figcaption strong { display: block; font-size: 17px; }
+.zoom + .help { margin-top: 8px; }
+
 /* The Planned list's picture: a square, cropped, before the name. */
 .row-thumb { flex: none; width: 64px; height: 64px; border-radius: 8px; object-fit: cover; background: var(--sf-neutral); }
 
