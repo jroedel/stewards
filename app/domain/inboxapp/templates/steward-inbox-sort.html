@@ -16,7 +16,7 @@
 <div class="card">
   <a class="photo-large photo-zoom" href="/steward/inbox/{{.ID}}/zoom"><span class="sr-only">Zoom in on the photo</span><img src="/steward/inbox/{{.ID}}/large.jpg" width="{{.Width}}" height="{{.Height}}" alt=""></a>
   <div>
-    <p class="row-tags">{{if .Nursery}}<span class="tag">At a nursery</span>{{else if .Where}}<span class="tag">{{.Where}}</span>{{else}}<span class="tag tag-open">Place not said</span>{{end}}{{if .Unsure}} <span class="tag tag-open">Not sure yet</span>{{end}}</p>
+    <p class="row-tags">{{if not .Here}}<span class="tag">{{.Away}}</span>{{else if .Where}}<span class="tag">{{.Where}}</span>{{else}}<span class="tag tag-open">Place not said</span>{{end}}{{if .Unsure}} <span class="tag tag-open">Not sure yet</span>{{end}}</p>
     {{with .Taken}}<p class="row-note">{{.}}</p>{{end}}
     {{if .Unsure}}<p class="row-note">Question: {{.Question}}</p>{{else}}{{with .Note}}<p class="row-note">{{.}}</p>{{end}}{{end}}
   </div>
@@ -24,7 +24,7 @@
 
 {{if not .As}}
 <a class="button button-block" href="/steward/inbox/{{.ID}}?as=photo">A plant: add it to the plant's photos</a>
-{{if not .Nursery}}<a class="button button-block" href="/steward/inbox/{{.ID}}?as=planted">Just planted: list it at its place</a>{{end}}
+{{if .Here}}<a class="button button-block" href="/steward/inbox/{{.ID}}?as=planted">Just planted: list it at its place</a>{{end}}
 {{if .Stock}}<a class="button button-block" href="/steward/inbox/{{.ID}}?as=stock">Nursery stock: add it to the nursery's list</a>{{end}}
 <a class="button button-block button-quiet" href="/steward/inbox/{{.ID}}?as=unsure">Not sure yet: set it aside</a>
 <a class="button button-block button-quiet" href="/steward/inbox/{{.ID}}?as=discard">Discard</a>
@@ -44,7 +44,7 @@
   {{with index .Problems "kind"}}<p class="field-problem">{{.}}</p>{{end}}
   <select id="kind" name="kind" required>{{range .Kinds}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
 
-  {{if not .Nursery}}
+  {{if .Here}}
   <label for="place">{{if eq .As "planted"}}Where it was planted{{else}}Where it was taken <span class="optional">optional</span>{{end}}</label>
   {{with index .Problems "place"}}<p class="field-problem">{{.}}</p>{{end}}
   <select id="place" name="place"{{if eq .As "planted"}} required{{end}}>{{range .Places}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>

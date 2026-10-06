@@ -200,7 +200,7 @@ func TestTheAPIDoesNotDiscardOrCheck(t *testing.T) {
 		"checked":        {id, map[string]any{"outcome": "photo", "species": "winecup", "kind": "leaf", "checked": true}, "", `"checked" is not a field this takes`},
 		"no outcome":     {id, map[string]any{"species": "winecup"}, "outcome", "Send photo, planted or unsure."},
 		"no such plant":  {id, map[string]any{"outcome": "photo", "species": "frostweed", "kind": "leaf"}, "species", "PUT /api/v1/species/frostweed adds it first"},
-		"nursery placed": {nursery, map[string]any{"outcome": "photo", "species": "winecup", "kind": "leaf", "place": "inflow"}, "place", "taken at a nursery"},
+		"nursery placed": {nursery, map[string]any{"outcome": "photo", "species": "winecup", "kind": "leaf", "place": "inflow"}, "place", "taken off the property"},
 		"no such place":  {id, map[string]any{"outcome": "photo", "species": "winecup", "kind": "leaf", "place": "moon"}, "place", `No place has the slug "moon"`},
 	} {
 		w := s.sortPhoto(tc.id, tc.body)
@@ -306,5 +306,39 @@ func TestNurseryStockIsSortedReadAndCorrectedThroughTheAPI(t *testing.T) {
 	garden := s.inboxed(inboxbus.Property, types.ID{}, 8)
 	if w := s.sortPhoto(garden, map[string]any{"outcome": "stock", "nursery": "Natural Gardener", "name_on_tag": "x"}); w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("a garden photo as stock: %d", w.Code)
+	}
+}
+
+// A photo from a park says so, and where; it can be a plant's photo, with no
+// place here, and nothing else.
+func TestAPhotoFromElsewhereThroughTheAPI(t *testing.T) {
+	s := serve(t)
+	inflow := s.inflow()
+
+	if w := s.put("winecup", winecup()); w.Code != http.StatusCreated {
+		t.Fatalf("adding the plant: %d", w.Code)
+	}
+
+	it, err := s.inbox.Add(t.Context(), inboxbus.Fields{FromID: s.steward, At: inboxbus.Elsewhere, Site: "Pedernales Falls State Park"}, noisy(t, 61))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := it.ID.String()
+
+	list := decode[inboxList](t, s.api(http.MethodGet, "/api/v1/inbox", s.key, nil, ""))
+	if len(list.Photos) != 1 || list.Photos[0].At != "elsewhere" || list.Photos[0].Where != "Pedernales Falls State Park" || list.Photos[0].Place != "" {
+		t.Fatalf("the inbox: %+v", list)
+	}
+
+	if w := s.sortPhoto(id, map[string]any{"outcome": "planted", "species": "winecup", "place": inflow.Slug}); w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("planted at a place here: %d", w.Code)
+	}
+
+	if w := s.sortPhoto(id, map[string]any{"outcome": "photo", "species": "winecup", "kind": "flower", "place": inflow.Slug}); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "off the property") {
+		t.Errorf("a photo given a place here: %d", w.Code)
+	}
+
+	if w := s.sortPhoto(id, map[string]any{"outcome": "photo", "species": "winecup", "kind": "flower"}); w.Code != http.StatusOK {
+		t.Errorf("a photo of the plant: %d\n%s", w.Code, w.Body.String())
 	}
 }

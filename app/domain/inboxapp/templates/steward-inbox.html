@@ -19,7 +19,7 @@
   {{range .Items}}<li>
     <a class="photo-thumb" href="/steward/inbox/{{.ID}}"><img src="/steward/inbox/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="" loading="lazy"></a>
     <div class="photo-about">
-      <p class="row-tags">{{if .Nursery}}<span class="tag">At a nursery</span>{{else if .Where}}<span class="tag">{{.Where}}</span>{{else}}<span class="tag tag-open">Place not said</span>{{end}}</p>
+      <p class="row-tags">{{if not .Here}}<span class="tag">{{.Away}}</span>{{else if .Where}}<span class="tag">{{.Where}}</span>{{else}}<span class="tag tag-open">Place not said</span>{{end}}</p>
       {{with .Note}}<p class="row-note">{{.}}</p>{{end}}
       {{with .Time}}<p class="row-note">{{.}}</p>{{end}}
       <a href="/steward/inbox/{{.ID}}">Sort</a>
@@ -39,7 +39,7 @@
   {{range .Aside}}<li>
     <a class="photo-thumb" href="/steward/inbox/{{.ID}}"><img src="/steward/inbox/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="" loading="lazy"></a>
     <div class="photo-about">
-      <p class="row-tags">{{if .Nursery}}<span class="tag">At a nursery</span>{{else if .Where}}<span class="tag">{{.Where}}</span>{{end}}</p>
+      <p class="row-tags">{{if not .Here}}<span class="tag">{{.Away}}</span>{{else if .Where}}<span class="tag">{{.Where}}</span>{{end}}</p>
       {{with .Note}}<p class="row-note">{{.}}</p>{{end}}
       <a href="/steward/inbox/{{.ID}}">Sort</a>
     </div>

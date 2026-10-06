@@ -218,6 +218,11 @@ h2 {
 .form label { margin-top: 8px; font-weight: 700; }
 .form label:first-of-type { margin-top: 0; }
 
+/* Fields grouped to be shown or hidden together, laid out as the form lays
+   out its own: stretched to its width, with its gaps and label margins. */
+.form .field-group { display: flex; flex-direction: column; gap: 8px; }
+.form .field-group > label:first-of-type { margin-top: 8px; }
+
 .form input[type="email"],
 .form input[type="password"],
 .form input[type="url"],
@@ -535,6 +540,15 @@ main > h1:first-child { margin-top: 20px; }
 .photo figcaption strong { display: block; font-size: 17px; }
 .photo-credit { color: var(--muted); overflow-wrap: anywhere; }
 .photos-missing { margin-top: 12px; }
+
+/* Where a batch was taken, on the send screen: each choice shows only the
+   field that goes with it. The fields stay in the form either way, and the
+   server reads only the one for the choice, so a value left in a hidden
+   one does no harm. Without :has() all three show, each saying what it is
+   for, which is the page as it would be with no stylesheet at all. */
+form:has(input[name="at"][value="property"]:checked) :is(.for-nursery, .for-elsewhere),
+form:has(input[name="at"][value="nursery"]:checked) :is(.for-property, .for-elsewhere),
+form:has(input[name="at"][value="elsewhere"]:checked) :is(.for-property, .for-nursery) { display: none; }
 
 /* A nursery in the register: its map, website and phone as a row of links
    tall enough for a thumb, wrapping onto a second line on a narrow phone. */
