@@ -870,7 +870,7 @@ func (b *Business) original(it Item) ([]byte, error) {
 
 func (b *Business) removeFiles(it Item) error {
 	var errs []error
-	for _, name := range []string{photobus.Name(it.ID, photobus.Large), photobus.Name(it.ID, photobus.Small), originalName(it)} {
+	for _, name := range []string{photobus.Name(it.ID, photobus.Large), photobus.Name(it.ID, photobus.Small), originalName(it), photobus.FullName(it.ID, it.Format)} {
 		if err := b.files.Remove(name); err != nil {
 			errs = append(errs, err)
 		}
@@ -880,9 +880,10 @@ func (b *Business) removeFiles(it Item) error {
 }
 
 // Open reads one of a photo's pictures. Only a steward may be shown one; the
-// caller sees to that.
+// caller sees to that. A Full picture is made and kept as photobus.OpenFull
+// makes one, and goes with the others when they go.
 func (b *Business) Open(ctx context.Context, id types.ID, size photobus.Size) (Item, photobus.File, error) {
-	if size != photobus.Large && size != photobus.Small {
+	if size != photobus.Large && size != photobus.Small && size != photobus.Full {
 		return Item{}, nil, ErrNotFound
 	}
 
@@ -897,6 +898,15 @@ func (b *Business) Open(ctx context.Context, id types.ID, size photobus.Size) (I
 		return Item{}, nil, ErrNotFound
 	}
 
+	if size == photobus.Full {
+		f, err := photobus.OpenFull(ctx, b.files, it.ID, it.Format)
+		if err != nil {
+			return Item{}, nil, err
+		}
+
+		return it, f, nil
+	}
+
 	f, err := b.files.Open(photobus.Name(it.ID, size))
 	if err != nil {
 		return Item{}, nil, fmt.Errorf("opening the %s picture of inbox photo %s: %w", size, it.ID, err)
@@ -905,14 +915,7 @@ func (b *Business) Open(ctx context.Context, id types.ID, size photobus.Size) (I
 	return it, f, nil
 }
 
-func originalName(it Item) string {
-	ext := "jpg"
-	if it.Format == "png" {
-		ext = "png"
-	}
-
-	return it.ID.String() + "-original." + ext
-}
+func originalName(it Item) string { return it.ID.String() + "-original." + photobus.Ext(it.Format) }
 
 func (b *Business) put(it Item, files map[string][]byte) ([]string, error) {
 	var written []string

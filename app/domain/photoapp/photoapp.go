@@ -122,14 +122,10 @@ func (a app) file(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var size photobus.Size
+	name := r.PathValue("file")
 
-	switch r.PathValue("file") {
-	case "large.jpg":
-		size = photobus.Large
-	case "small.jpg":
-		size = photobus.Small
-	default:
+	size, ok := photobus.ServedSize(name)
+	if !ok {
 		http.NotFound(w, r)
 
 		return
@@ -152,7 +148,7 @@ func (a app) file(w http.ResponseWriter, r *http.Request) {
 	// Not there, rather than forbidden, for somebody who may not see it: a
 	// 403 would say there is a photo here worth asking about.
 	_, steward := mid.StewardFrom(r.Context())
-	if !p.Checked && !steward {
+	if (!p.Checked && !steward) || name != photobus.ServedName(size, p.Format) {
 		http.NotFound(w, r)
 
 		return
@@ -169,7 +165,7 @@ func (a app) file(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "private, no-store")
 	}
 
-	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Content-Type", photobus.ContentType(name))
 
 	var modified time.Time
 	if st, err := f.Stat(); err == nil {
@@ -375,6 +371,7 @@ type editView struct {
 	Kind                string
 	Width, Height       int
 	Original            string
+	Full                string // full.jpg or full.png
 	Fields              fieldsView
 	Problems            map[string]string
 	DeleteProblem       string
@@ -472,7 +469,8 @@ func (a app) showEdit(w http.ResponseWriter, r *http.Request, status int, p phot
 	v.ID, v.SpeciesID, v.Name = p.ID.String(), sp.ID.String(), sp.Common.EN
 	v.Kind = p.Kind.Label()
 	v.Width, v.Height = p.Small.Width, p.Small.Height
-	v.Original = fmt.Sprintf("%d × %d kept for the cards; the original is kept too, and never shown.", p.Large.Width, p.Large.Height)
+	v.Original = fmt.Sprintf("%d × %d kept for the cards. The full size is the photo as it was sent, with where it was taken and the camera's details taken out.", p.Large.Width, p.Large.Height)
+	v.Full = photobus.ServedName(photobus.Full, p.Format)
 	v.Fields = fieldsOf(f, places)
 
 	a.render.Render(w, r, status, "photo-form", v)

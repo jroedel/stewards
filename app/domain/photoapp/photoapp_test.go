@@ -232,7 +232,7 @@ func TestAStewardAddsAPhotoAndChecksIt(t *testing.T) {
 		t.Errorf("a steward's view of an unchecked photo: %d %q", w.Code, w.Header().Get("Cache-Control"))
 	}
 
-	for _, file := range []string{"small.jpg", "large.jpg", "original.jpg", "original"} {
+	for _, file := range []string{"small.jpg", "large.jpg", "full.jpg", "original.jpg", "original"} {
 		if w := s.get("/photos/"+id+"/"+file, false); w.Code != http.StatusNotFound {
 			t.Errorf("signed out, %s of an unchecked photo: %d", file, w.Code)
 		}
@@ -258,6 +258,21 @@ func TestAStewardAddsAPhotoAndChecksIt(t *testing.T) {
 
 	if img, err := jpeg.Decode(w.Body); err != nil || img.Bounds().Dx() != 900 {
 		t.Errorf("the large picture: %v, %v", err, img)
+	}
+
+	// And at full size, under the same rule: the original's pixels, and
+	// as a JPEG, so not under the name a PNG's would have.
+	w = s.get("/photos/"+id+"/full.jpg", false)
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/jpeg" || w.Header().Get("Cache-Control") != "public, max-age=86400" {
+		t.Fatalf("signed out, the checked photo at full size: %d %q %q", w.Code, w.Header().Get("Content-Type"), w.Header().Get("Cache-Control"))
+	}
+
+	if img, err := jpeg.Decode(w.Body); err != nil || img.Bounds().Dx() != 900 {
+		t.Errorf("the full picture: %v, %v", err, img)
+	}
+
+	if w := s.get("/photos/"+id+"/full.png", true); w.Code != http.StatusNotFound {
+		t.Errorf("a JPEG's full picture as full.png: %d", w.Code)
 	}
 
 	card = s.get("/plants/brazos-penstemon?view=weeding", false).Body.String()

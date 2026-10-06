@@ -146,6 +146,19 @@ type Position struct {
 // limits of one each are a limit of two.
 var one = make(chan struct{}, 1)
 
+// Turn waits for that one turn, for as long as ctx allows, and gives back
+// the function that hands it on. Prepare takes it itself; it is exported for
+// work that is not a decode but holds a photo's bytes twice over all the
+// same, such as reading an original and writing it out again Stripped.
+func Turn(ctx context.Context) (release func(), err error) {
+	select {
+	case one <- struct{}{}:
+		return func() { <-one }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 // Prepare decodes a photo and makes its two sizes, one photo at a time
 // across the whole process. It waits its turn for as long as ctx allows.
 func Prepare(ctx context.Context, data []byte) (Prepared, error) {
@@ -165,12 +178,11 @@ func Prepare(ctx context.Context, data []byte) (Prepared, error) {
 
 	// After the header, so a refusal never waits behind somebody else's
 	// photo.
-	select {
-	case one <- struct{}{}:
-	case <-ctx.Done():
-		return Prepared{}, ctx.Err()
+	release, err := Turn(ctx)
+	if err != nil {
+		return Prepared{}, err
 	}
-	defer func() { <-one }()
+	defer release()
 
 	var src image.Image
 	if format == "jpeg" {

@@ -1021,20 +1021,16 @@ func (a app) file(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var size photobus.Size
+	name := r.PathValue("file")
 
-	switch r.PathValue("file") {
-	case "large.jpg":
-		size = photobus.Large
-	case "small.jpg":
-		size = photobus.Small
-	default:
+	size, ok := photobus.ServedSize(name)
+	if !ok {
 		http.NotFound(w, r)
 
 		return
 	}
 
-	_, f, err := a.inbox.Open(r.Context(), id, size)
+	it, f, err := a.inbox.Open(r.Context(), id, size)
 
 	switch {
 	case errors.Is(err, inboxbus.ErrNotFound):
@@ -1048,10 +1044,16 @@ func (a app) file(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
+	if name != photobus.ServedName(size, it.Format) {
+		http.NotFound(w, r)
+
+		return
+	}
+
 	// Kept nowhere but the steward's screen: a photo nobody has looked at
 	// may have somebody in it.
 	w.Header().Set("Cache-Control", "private, no-store")
-	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Content-Type", photobus.ContentType(name))
 
 	var modified time.Time
 	if st, err := f.Stat(); err == nil {

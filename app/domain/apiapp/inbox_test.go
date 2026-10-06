@@ -78,7 +78,7 @@ func TestTheInboxIsReadWithAKey(t *testing.T) {
 	}
 
 	p := list.Photos[0]
-	if p.ID != id || p.At != "property" || p.Place != "inflow" || p.Note != "by the outlet" || p.LargeURL != base+"/api/v1/inbox/"+id+"/large.jpg" {
+	if p.ID != id || p.At != "property" || p.Place != "inflow" || p.Note != "by the outlet" || p.LargeURL != base+"/api/v1/inbox/"+id+"/large.jpg" || p.FullURL != base+"/api/v1/inbox/"+id+"/full.jpg" {
 		t.Errorf("the photo: %+v", p)
 	}
 
@@ -95,8 +95,15 @@ func TestTheInboxIsReadWithAKey(t *testing.T) {
 		t.Errorf("the picture without a key: %d", w.Code)
 	}
 
-	if w := s.api(http.MethodGet, "/api/v1/inbox/"+id+"/original.jpg", s.key, nil, ""); w.Code != http.StatusNotFound {
-		t.Errorf("the original: %d", w.Code)
+	full := s.api(http.MethodGet, "/api/v1/inbox/"+id+"/full.jpg", s.key, nil, "")
+	if full.Code != http.StatusOK || full.Header().Get("Content-Type") != "image/jpeg" || full.Header().Get("Cache-Control") != "private, no-store" {
+		t.Errorf("the full picture: %d %q %q", full.Code, full.Header().Get("Content-Type"), full.Header().Get("Cache-Control"))
+	}
+
+	for _, file := range []string{"original.jpg", "full.png"} {
+		if w := s.api(http.MethodGet, "/api/v1/inbox/"+id+"/"+file, s.key, nil, ""); w.Code != http.StatusNotFound {
+			t.Errorf("%s: %d", file, w.Code)
+		}
 	}
 
 	if w := s.api(http.MethodGet, "/api/v1/inbox?status=sorted", s.key, nil, ""); w.Code != http.StatusUnprocessableEntity {

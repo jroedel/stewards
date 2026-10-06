@@ -509,6 +509,10 @@ func TestAPhotoArrivesUncheckedAndOnce(t *testing.T) {
 		t.Fatalf("the upload: %d %+v", w.Code, first)
 	}
 
+	if first.Photo.FullURL != base+"/photos/"+first.Photo.ID+"/full.jpg" {
+		t.Errorf("its full picture is at %q", first.Photo.FullURL)
+	}
+
 	w = s.upload("winecup", fields, data)
 	again := decode[answer](t, w)
 

@@ -616,6 +616,7 @@ type PhotoJSON struct {
 	SHA256     string    `json:"sha256,omitempty"`
 	LargeURL   string    `json:"large_url"`
 	SmallURL   string    `json:"small_url"`
+	FullURL    string    `json:"full_url"`
 	EditURL    string    `json:"edit_url"`
 	CreatedAt  time.Time `json:"created_at"`
 }
@@ -628,6 +629,7 @@ func (a app) photoOf(p photobus.Photo, places map[types.ID]string) PhotoJSON {
 		Checked: p.Checked, SHA256: p.SHA256,
 		LargeURL:  a.base + "/photos/" + p.ID.String() + "/large.jpg",
 		SmallURL:  a.base + "/photos/" + p.ID.String() + "/small.jpg",
+		FullURL:   a.base + "/photos/" + p.ID.String() + "/" + photobus.ServedName(photobus.Full, p.Format),
 		EditURL:   a.base + "/steward/photos/" + p.ID.String() + "/edit",
 		CreatedAt: p.CreatedAt.UTC(),
 	}

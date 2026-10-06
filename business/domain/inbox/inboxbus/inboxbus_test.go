@@ -354,7 +354,7 @@ func TestTheInboxIsNewestFirst(t *testing.T) {
 	}
 }
 
-func TestOnlyTheTwoSizesCanBeOpened(t *testing.T) {
+func TestOnlyTheThreeSizesCanBeOpened(t *testing.T) {
 	g := setup(t)
 
 	it, err := g.inbox.Add(t.Context(), g.property(), photo(t, 8))
@@ -362,7 +362,7 @@ func TestOnlyTheTwoSizesCanBeOpened(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, size := range []photobus.Size{photobus.Large, photobus.Small} {
+	for _, size := range []photobus.Size{photobus.Large, photobus.Small, photobus.Full} {
 		_, f, err := g.inbox.Open(t.Context(), it.ID, size)
 		if err != nil {
 			t.Errorf("%s: %v", size, err)
@@ -582,6 +582,17 @@ func TestADiscardedPhotoStaysGone(t *testing.T) {
 	it, err := g.inbox.Add(t.Context(), g.property(), data)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	// Looked at full size first, so that there is a full picture to go too.
+	_, f, err := g.inbox.Open(t.Context(), it.ID, photobus.Full)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	if n := len(g.files(t)); n != 4 {
+		t.Fatalf("%d files before", n)
 	}
 
 	if _, err := g.inbox.Sort(t.Context(), it.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsDiscard}); err != nil {
