@@ -35,17 +35,6 @@ before(async () => {
   page = await browser.page();
   await page.goto(`${base}/healthz`);
 
-  const draw = (colour) =>
-    page.evaluate(`(async () => {
-      const c = new OffscreenCanvas(1200, 900);
-      const ctx = c.getContext("2d");
-      ctx.fillStyle = "${colour}"; ctx.fillRect(0, 0, 1200, 900);
-      const b = new Uint8Array(await (await c.convertToBlob({ type: "image/jpeg", quality: 0.9 })).arrayBuffer());
-      let s = "";
-      for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
-      return btoa(s);
-    })()`);
-
   stage("adding a plant and sending three photos");
   let w = await post("/steward/species", new URLSearchParams({ slug: "turks-cap", common_en: "Turk's cap", scientific: "Malvaviscus arboreus var. drummondii", status: "native" }));
   assert.equal(w.status, 303, `adding the plant: ${w.status}\n${await w.text()}`);
@@ -54,18 +43,7 @@ before(async () => {
   speciesID = /\/steward\/species\/([0-9a-f]{32})\/edit/.exec(list)?.[1];
   assert.ok(speciesID, "the plant is not on the list");
 
-  for (const colour of ["#c00", "#0a0", "#00c"]) {
-    const form = new FormData();
-    form.append("photo", new Blob([Buffer.from(await draw(colour), "base64")], { type: "image/jpeg" }), `${colour.slice(1)}.jpg`);
-    form.append("at", "property");
-    w = await post("/steward/inbox/send", form);
-    assert.equal(w.status, 201, `sending a photo: ${w.status}\n${await w.text()}`);
-  }
-
-  // In the inbox's order, which is the order the sort screen goes in.
-  const inbox = await (await fetch(`${base}/steward/inbox`, { headers })).text();
-  ids = [...new Set([...inbox.matchAll(/\/steward\/inbox\/([0-9a-f]{32})\/small\.jpg/g)].map((m) => m[1]))];
-  assert.equal(ids.length, 3, "the three photos are not in the inbox");
+  ids = await send("#c00", "#0a0", "#00c");
 
   // Drawing on /healthz, a page of plain text, has Chrome ask for a
   // favicon there and be told 404: not the sort screen's doing.
@@ -81,6 +59,34 @@ after(async () => {
 });
 
 const opts = { skip: skip() };
+
+// draw is a photo of one plain colour, drawn in the page, as base64.
+const draw = (colour) =>
+  page.evaluate(`(async () => {
+    const c = new OffscreenCanvas(1200, 900);
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "${colour}"; ctx.fillRect(0, 0, 1200, 900);
+    const b = new Uint8Array(await (await c.convertToBlob({ type: "image/jpeg", quality: 0.9 })).arrayBuffer());
+    let s = "";
+    for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
+    return btoa(s);
+  })()`);
+
+// send puts photos of these colours in the inbox, as the send screen does,
+// and gives back every photo waiting, in the inbox's order -- the order the
+// sort screen goes in.
+async function send(...colours) {
+  for (const colour of colours) {
+    const form = new FormData();
+    form.append("photo", new Blob([Buffer.from(await draw(colour), "base64")], { type: "image/jpeg" }), `${colour.slice(1)}.jpg`);
+    form.append("at", "property");
+    const w = await fetch(`${server.base}/steward/inbox/send`, { method: "POST", body: form, headers, signal: AbortSignal.timeout(60_000) });
+    assert.equal(w.status, 201, `sending a photo: ${w.status}\n${await w.text()}`);
+  }
+
+  const inbox = await (await fetch(`${server.base}/steward/inbox`, { headers })).text();
+  return [...new Set([...inbox.matchAll(/\/steward\/inbox\/([0-9a-f]{32})\/small\.jpg/g)].map((m) => m[1]))];
+}
 
 const fetched = (end) => page.evaluate(`performance.getEntriesByType("resource").filter((e) => e.name.endsWith(${JSON.stringify(end)})).length`);
 
@@ -149,6 +155,42 @@ test("a batch is sorted photo after photo without a page load", opts, async () =
   const inbox = await (await fetch(`${server.base}/steward/inbox`, { headers })).text();
   assert.match(inbox, /Nothing waiting/, "photos are still waiting");
   assert.match(inbox, /Not sure yet/, "the photo set aside is not set aside");
+
+  assert.deepEqual(page.errors, [], "the page reported errors, or the header policy refused something");
+});
+
+test("two photos chosen in the inbox are sorted together, the plant named once", opts, async () => {
+  const [a, b, c] = await send("#a50", "#5a0", "#05a");
+
+  await page.goto(`${server.base}/steward/inbox`);
+  await page.waitFor(`document.querySelectorAll("input[name=photo]").length === 3`);
+
+  // The button's count is the stylesheet's, which Chrome gives a script
+  // only as the rule that makes it; the screenshot shows it.
+  stage("choosing two");
+  await click(`input[name=photo][value='${c}']`);
+  await click(`input[name=photo][value='${a}']`);
+  assert.equal(await page.evaluate(`document.querySelectorAll("input[name=photo]:checked").length`), 2, "two taps did not choose two photos");
+  if (process.env.SCREENSHOTS) writeFileSync(join(process.env.SCREENSHOTS, "inbox-chosen.png"), await page.screenshot());
+
+  await click(".together-bar .button");
+  await page.waitFor(`document.querySelector("#swap input[name=group]")?.value === "${a}.${c}" && ${shown(a)}`);
+  assert.match(await page.evaluate(`document.querySelector(".sort-where").textContent`), /1 of the 2 chosen/);
+
+  stage("the first, naming the plant");
+  await page.evaluate(`window.sameDocument = true`);
+  await click(`input[name=species][value='${speciesID}']`);
+  await click("input[name=kind][value=leaf]");
+  await click("#swap form button[type=submit]");
+  await page.waitFor(`${shown(c)} && document.querySelector(".sort-where")?.textContent.includes("2 of the 2 chosen")`);
+  assert.equal(await page.evaluate(`window.sameDocument`), true, "sorting one of a group loaded a page");
+  assert.equal(await page.evaluate(`document.querySelector("input[name=species][value='${speciesID}']").checked`), true, "the plant is not chosen on the second");
+
+  stage("the second, with the plant already chosen");
+  await click("input[name=kind][value=flower]");
+  await click("#swap form button[type=submit]");
+  await page.waitFor(`location.pathname === "/steward/inbox" && document.querySelectorAll("input[name=photo]").length === 1`);
+  assert.equal(await page.evaluate(`document.querySelector("input[name=photo]").value`), b, "the photo not chosen is not the one left");
 
   assert.deepEqual(page.errors, [], "the page reported errors, or the header policy refused something");
 });

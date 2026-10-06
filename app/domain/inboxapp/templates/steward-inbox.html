@@ -6,28 +6,36 @@
 <p class="lead">Photos sent from the garden or a nursery, waiting to be sorted: which plant, which place, and what happened. Volunteers never see them.</p>
 
 {{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+{{with .Problem}}<p class="problem" role="alert">{{.}}</p>{{end}}
 
 <a class="button button-block" href="/steward/inbox/new">Send photos</a>
 {{with .Days}}<a class="button button-block button-quiet" href="/steward/inbox/{{(index (index . 0).Items 0).ID}}">Sort, starting with the newest</a>{{end}}
 
 {{if .Days}}
-<p class="help">{{.Count}} waiting to be sorted.</p>
+<p class="help">{{.Count}} waiting to be sorted. To sort several photos of one plant together, such as its leaf, its flower and the whole plant, tap them, then Sort the chosen photos together. You name the plant once.</p>
+
+{{/* An ordinary form: the photos chosen go as photo=, and the stylesheet
+counts them (app.css, "Choosing photos"). No script. */}}
+<form class="together" method="get" action="/steward/inbox/together">
 {{range .Days}}
-<section class="card photo-kind" aria-label="{{.Label}}">
+<section class="inbox-day" aria-label="{{.Label}}">
   <h2>{{.Label}}</h2>
-  <ul class="photo-list">
+  {{if or .Tags .Open}}<p class="row-tags">{{range .Tags}}<span class="tag">{{.}}</span>{{end}}{{if .Open}}<span class="tag tag-open">Place not said</span>{{end}}</p>{{end}}
+  {{range .Notes}}<p class="row-note">{{.}}</p>{{end}}
+  <ul class="pick">
   {{range .Items}}<li>
-    <a class="photo-thumb" href="/steward/inbox/{{.ID}}"><img src="/steward/inbox/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="" loading="lazy"></a>
-    <div class="photo-about">
-      <p class="row-tags">{{if not .Here}}<span class="tag">{{.Away}}</span>{{else if .Where}}<span class="tag">{{.Where}}</span>{{else}}<span class="tag tag-open">Place not said</span>{{end}}</p>
-      {{with .Note}}<p class="row-note">{{.}}</p>{{end}}
-      <p class="row-note">{{with .Time}}{{.}} · {{end}}{{template "photo-id" .ID}}</p>
-      <a href="/steward/inbox/{{.ID}}">Sort</a>
-    </div>
+    <label class="pick-one">
+      <input type="checkbox" name="photo" value="{{.ID}}">
+      <img src="/steward/inbox/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="" loading="lazy">
+      <span class="pick-badge" aria-hidden="true"></span>
+      <span class="pick-id">{{template "photo-id" .ID}}{{with .Time}}<span class="sr-only">, {{.}}</span>{{end}}</span>
+    </label>
   </li>
   {{end}}</ul>
 </section>
 {{end}}
+<div class="together-bar"><button class="button button-block" type="submit">Sort the chosen photos together</button></div>
+</form>
 {{else}}
 <div class="card empty"><p>Nothing waiting. Photos you send land here until they are sorted.</p></div>
 {{end}}
