@@ -77,12 +77,15 @@ type Places interface {
 type Listings interface {
 	ForPlace(ctx context.Context, placeID types.ID) ([]listingbus.Listing, error)
 	Import(ctx context.Context, placeID, speciesID types.ID, f listingbus.Fields) (listingbus.Imported, error)
+	Unlist(ctx context.Context, placeID, speciesID types.ID) (listingbus.Outcome, error)
 }
 
 // Photos is what it needs from the photo rules.
 type Photos interface {
+	ByID(ctx context.Context, id types.ID) (photobus.Photo, error)
 	ForSpecies(ctx context.Context, speciesID types.ID) ([]photobus.Photo, error)
 	Import(ctx context.Context, speciesID types.ID, f photobus.Fields, data []byte) (photobus.Photo, bool, error)
+	Amend(ctx context.Context, id types.ID, f photobus.Fields) (photobus.Amended, error)
 }
 
 // Config is what this app needs.
@@ -206,14 +209,20 @@ func (a app) endpoints() []Endpoint {
 		},
 		{
 			Method: http.MethodPut, Path: Prefix + "/places/{slug}/plants/{species}", NeedsKey: true,
-			Summary: "List a plant at a place, or change how it is listed. The plant must already be added. Sending what is already there changes nothing. A listing is on the place card as soon as it is made, so an import can only protect a plant or mark it careful: a steward marks one to pull, on the place's Plants screen.",
+			Summary: "List a plant at a place, or change how it is listed. The plant must already be added. Sending what is already there changes nothing. A listing is on the place card as soon as it is made, with nothing for a steward to tick first: a pull tells volunteers to take the plant out the next time they are there, so say why in the note.",
 			Body: &Body{Encoding: "json", Fields: []Field{
-				{Name: "action", Type: "string", Required: true, Values: importActions(), Description: "protect: leave it. careful: it stays or goes as the note says, but handle it with gloves on."},
+				{Name: "action", Type: "string", Required: true, Values: actionNames(), Description: "protect: leave it. pull: take it out, root and all. careful: it stays or goes as the note says, but handle it with gloves on."},
 				{Name: "planned", Type: "boolean", Description: "True when there is planting still to do: none of it is in the ground yet, or more is going in (say how many in the note). It goes on the place's To plant list. False for a plant already growing here, planted or come up on its own: it is protected and on the flowering calendar either way."},
 				text("note", `What to know about it here, such as "6 plants, at the shady end".`, false),
 			}},
 			Returns: `201 {"outcome": "created", "place": slug, "listing": {...}}, or 200 with "updated" or "unchanged".`,
 			handler: a.putPlacePlant,
+		},
+		{
+			Method: http.MethodDelete, Path: Prefix + "/places/{slug}/plants/{species}", NeedsKey: true,
+			Summary: "Take a plant off a place's list, for one listed in the wrong place. It is off the place card at once. The plant itself, its photos and its other places stay.",
+			Returns: `200 {"outcome": "removed", "place": slug, "species": slug}, or "unchanged" when it was not listed there.`,
+			handler: a.deletePlacePlant,
 		},
 		{
 			Method: http.MethodGet, Path: Prefix + "/species", NeedsKey: true,
@@ -263,6 +272,24 @@ func (a app) endpoints() []Endpoint {
 			}},
 			Returns: `201 {"photo": photo, "duplicate": false}, or 200 with the photo already kept and "duplicate": true.`,
 			handler: a.addPhoto,
+		},
+		{
+			Method: http.MethodPatch, Path: Prefix + "/photos/{id}", NeedsKey: true,
+			Summary: "Change what is said about a plant photo: send only the fields that change, as the photo upload names them. A change to a checked photo takes the check away, for a steward to give again after looking; sending what is already there changes nothing. The picture itself never changes: a different photo is a new one. The id is a photo's id, as GET /api/v1/species/{slug} lists them.",
+			Body: &Body{Encoding: "json", Fields: []Field{
+				{Name: "kind", Type: "string", Values: kindNames(), Description: "What it shows."},
+				{Name: "source", Type: "string", Values: []string{string(photobus.Ours), string(photobus.Borrowed)}, Description: "ours or borrowed."},
+				{Name: "credit", Type: "string", Description: "The author."},
+				{Name: "source_url", Type: "string", Description: "The photo's own page, for a borrowed one."},
+				{Name: "license", Type: "string", Description: "Its licence's short name, for a borrowed one."},
+				{Name: "taken_month", Type: "integer", Description: "1 to 12, or 0 for not known."},
+				{Name: "taken_year", Type: "integer", Description: "Four figures, or 0 for not known."},
+				{Name: "place", Type: "string", Description: `Where on the property it was taken, as a place slug; "" for not said.`},
+				{Name: "elsewhere", Type: "boolean", Description: "Taken off the property."},
+				{Name: "taken_where", Type: "string", Description: "Where off the property, such as a park's name."},
+			}},
+			Returns: `200 {"outcome": "updated" or "unchanged", "photo": photo}. "check_cleared": true when the change took a check away.`,
+			handler: a.patchPhoto,
 		},
 	}
 

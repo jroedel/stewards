@@ -624,3 +624,46 @@ func isInvalid(err error, field string) bool {
 
 	return ok && invalid.Field == field
 }
+
+// A program corrects a photo: a change takes a check away, the same again
+// leaves it, and a check is never a program's to give.
+func TestAProgramsCorrectionTakesTheCheckAway(t *testing.T) {
+	g := setup(t)
+
+	f := ours(photobus.Flower)
+	f.Checked = true
+	p, err := g.photos.Add(t.Context(), g.penstemon.ID, f, photo(t, 600, 400))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	same := photobus.FieldsOf(p)
+	same.Checked = false
+	if got, err := g.photos.Amend(t.Context(), p.ID, same); err != nil || got.Outcome != photobus.Unchanged || !got.Photo.Checked || got.Unchecked {
+		t.Errorf("the same again: %+v %v", got, err)
+	}
+
+	leaf := same
+	leaf.Kind = photobus.Leaf
+	got, err := g.photos.Amend(t.Context(), p.ID, leaf)
+	if err != nil || got.Outcome != photobus.Updated || got.Photo.Kind != photobus.Leaf || got.Photo.Checked || !got.Unchecked {
+		t.Errorf("a leaf after all: %+v %v", got, err)
+	}
+
+	// Unchecked already: a further change has no check to take.
+	leaf.TakenMonth = 5
+	if got, err := g.photos.Amend(t.Context(), p.ID, leaf); err != nil || got.Outcome != photobus.Updated || got.Unchecked {
+		t.Errorf("a change to an unchecked photo: %+v %v", got, err)
+	}
+
+	leaf.Checked = true
+	if _, err := g.photos.Amend(t.Context(), p.ID, leaf); err == nil {
+		t.Error("a program checked a photo")
+	} else if invalid, ok := errors.AsType[photobus.Invalid](err); !ok || invalid.Field != "checked" {
+		t.Errorf("checking: %v", err)
+	}
+
+	if _, err := g.photos.Amend(t.Context(), types.NewID(), same); !errors.Is(err, photobus.ErrNotFound) {
+		t.Errorf("a photo that is not there: %v", err)
+	}
+}

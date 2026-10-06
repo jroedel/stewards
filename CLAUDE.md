@@ -167,9 +167,12 @@ A question about *behaviour* starts in `business/domain/…bus`. A question abou
   to read or change anything but plants, photos, listings, the steward's
   photo inbox and nursery stock. The API
   confirms no plant and checks no photo, so neither reaches a volunteer
-  until a person has looked at it. A listing is the exception -- it is on
-  the place card as soon as it is made -- which is why the API may only
-  protect a plant or mark it careful, never tell volunteers to pull one.
+  until a person has looked at it, and a change to a checked photo takes
+  the check away again. A listing is the exception -- it is on the place
+  card as soon as it is made, pull included, which the stewards decided on
+  2026-10-06 the API may mark -- so a pull goes only where the person has
+  agreed, with a note saying why. The API takes plants off places, and
+  deletes no plant, photo or place.
   Sorting the inbox files a photo the same way, unchecked, and never
   discards one: a person does that on the photo's screen.
 - **Agents never set GitHub secrets or variables**, and never read

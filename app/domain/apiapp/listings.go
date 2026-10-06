@@ -17,9 +17,9 @@ import (
 )
 
 // A listing is a plant at a place: what a volunteer does with it there, and
-// whether it is part of the planting. The API reads a place's listings and
-// adds or changes one through listingbus.Import, which will not say pull --
-// see there for why.
+// whether it is part of the planting. The API reads a place's listings, adds
+// or changes one through listingbus.Import -- pull included, since the
+// stewards decided it may (see there) -- and takes one off through Unlist.
 
 // ListingIn is the body of a PUT to a place's plant.
 type ListingIn struct {
@@ -90,12 +90,10 @@ func (a app) putPlacePlant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Pull is a real action and goes on to the rules, which say why an
-	// import may not send it; anything else is not an action at all.
 	action := listingbus.Action(in.Action)
 	if !slices.Contains(listingbus.Actions, action) {
 		web.WriteJSON(w, http.StatusUnprocessableEntity, web.Problem("action",
-			"Send protect, to leave it, or careful, to handle it with gloves on as the note says."))
+			"Send protect, to leave it; pull, to take it out; or careful, to handle it with gloves on as the note says."))
 
 		return
 	}
@@ -182,14 +180,38 @@ func (a app) speciesAt(w http.ResponseWriter, r *http.Request, slug string) (spe
 	return sp, true
 }
 
-// importActions is what the index offers: every action but pull, which
-// listingbus.Import refuses.
-func importActions() []string {
+// deletePlacePlant takes a plant off a place's list.
+func (a app) deletePlacePlant(w http.ResponseWriter, r *http.Request) {
+	pl, ok := a.loadPlace(w, r)
+	if !ok {
+		return
+	}
+
+	sp, ok := a.speciesAt(w, r, r.PathValue("species"))
+	if !ok {
+		return
+	}
+
+	outcome, err := a.listings.Unlist(r.Context(), pl.ID, sp.ID)
+	if err != nil {
+		a.fail(w, r, "taking a plant off a place", err)
+
+		return
+	}
+
+	if outcome == listingbus.Removed {
+		steward, _ := mid.StewardFrom(r.Context())
+		a.log.InfoContext(r.Context(), "listing removed", "place", pl.Slug, "species", sp.Slug, "user_id", steward.ID.String())
+	}
+
+	web.WriteJSON(w, http.StatusOK, map[string]any{"outcome": outcome, "place": pl.Slug, "species": sp.Slug})
+}
+
+// actionNames is every action a listing can have, for the index.
+func actionNames() []string {
 	var out []string
 	for _, a := range listingbus.Actions {
-		if a != listingbus.Pull {
-			out = append(out, string(a))
-		}
+		out = append(out, string(a))
 	}
 
 	return out

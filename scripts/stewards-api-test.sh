@@ -78,7 +78,7 @@ check "errors fail the command" \
 check "a path outside the API is refused" \
 	bash -c '! STEWARDS_API_KEY=x "$0" GET /steward/species 2>/dev/null' "$API"
 check "and so is a method it does not take" \
-	bash -c '! STEWARDS_API_KEY=x "$0" DELETE /api/v1/species/winecup 2>/dev/null' "$API"
+	bash -c '! STEWARDS_API_KEY=x "$0" OPTIONS /api/v1/species/winecup 2>/dev/null' "$API"
 
 STEWARDS_URL=http://127.0.0.1:18471/ STEWARDS_API_KEY="$KEY" "$API" GET /api/v1/species > /dev/null
 check "STEWARDS_URL points it elsewhere" \

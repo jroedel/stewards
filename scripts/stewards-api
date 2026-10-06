@@ -37,7 +37,7 @@ method="$1" path="$2"
 shift 2
 
 case "$method" in
-GET | PUT | POST) ;;
+GET | PUT | POST | PATCH | DELETE) ;;
 *) die "$method is not a method the API takes; the index (GET /api/v1) lists them" ;;
 esac
 

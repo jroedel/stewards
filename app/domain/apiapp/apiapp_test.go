@@ -483,6 +483,82 @@ func (s *site) upload(slug string, fields map[string]string, photo []byte) *http
 	return s.api(http.MethodPost, "/api/v1/species/"+slug+"/photos", s.key, &body, mw.FormDataContentType())
 }
 
+// A photo is corrected after it was added: only what is sent changes, a
+// checked photo loses its check for a steward to give again, and sending
+// the same again changes nothing.
+func TestAPhotoIsCorrectedAndLosesItsCheck(t *testing.T) {
+	s := serve(t)
+	s.put("winecup", winecup())
+
+	if _, err := s.places.Create(t.Context(), placebus.Fields{Slug: "rain-garden", Name: types.Text{EN: "Rain garden"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	type answer struct {
+		Outcome      string           `json:"outcome"`
+		Photo        apiapp.PhotoJSON `json:"photo"`
+		CheckCleared bool             `json:"check_cleared"`
+	}
+
+	w := s.upload("winecup", map[string]string{"kind": "flower", "source": "ours", "taken_month": "4", "taken_year": "2026"}, noisy(t, 7))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("upload: %d %s", w.Code, w.Body.String())
+	}
+	id := decode[answer](t, w).Photo.ID
+
+	patch := func(body string) *httptest.ResponseRecorder {
+		return s.api(http.MethodPatch, "/api/v1/photos/"+id, s.key, strings.NewReader(body), "application/json")
+	}
+
+	// A steward checks it.
+	pid, _ := types.ParseID(id)
+	p, _ := s.photos.ByID(t.Context(), pid)
+	f := photobus.FieldsOf(p)
+	f.Checked = true
+	if _, err := s.photos.Update(t.Context(), pid, f); err != nil {
+		t.Fatal(err)
+	}
+
+	// The same again: nothing changes, and it stays checked.
+	if got := decode[answer](t, patch(`{"kind": "flower"}`)); got.Outcome != "unchanged" || !got.Photo.Checked || got.CheckCleared {
+		t.Errorf("sent what is there: %+v", got)
+	}
+
+	// Really a leaf, at the rain garden: those change, the month stays, and
+	// the check goes.
+	got := decode[answer](t, patch(`{"kind": "leaf", "place": "rain-garden"}`))
+	if got.Outcome != "updated" || got.Photo.Kind != "leaf" || got.Photo.Place != "rain-garden" || got.Photo.TakenMonth != 4 || got.Photo.TakenYear != 2026 ||
+		got.Photo.Checked || !got.CheckCleared {
+		t.Errorf("corrected: %+v", got)
+	}
+
+	// The place taken away again.
+	if got := decode[answer](t, patch(`{"place": ""}`)); got.Photo.Place != "" || got.CheckCleared {
+		t.Errorf("place taken away: %+v", got)
+	}
+
+	for name, tc := range map[string]struct {
+		body, field string
+		code        int
+	}{
+		"asked to be checked": {`{"checked": true}`, "checked", http.StatusUnprocessableEntity},
+		"not a kind":          {`{"kind": "bark"}`, "kind", http.StatusUnprocessableEntity},
+		"not a place":         {`{"place": "moon"}`, "place", http.StatusUnprocessableEntity},
+		"not a month":         {`{"taken_month": 13}`, "taken_month", http.StatusUnprocessableEntity},
+	} {
+		w := patch(tc.body)
+		if p := decode[problem](t, w); w.Code != tc.code || p.Error.Field != tc.field {
+			t.Errorf("%s: %d %+v", name, w.Code, p.Error)
+		}
+	}
+
+	for _, missing := range []string{"0123456789abcdef0123456789abcdef", "not-an-id"} {
+		if w := s.api(http.MethodPatch, "/api/v1/photos/"+missing, s.key, strings.NewReader(`{}`), "application/json"); w.Code != http.StatusNotFound {
+			t.Errorf("a photo that is not there (%s): %d", missing, w.Code)
+		}
+	}
+}
+
 func TestAPhotoArrivesUncheckedAndOnce(t *testing.T) {
 	s := serve(t)
 	s.put("winecup", winecup())
@@ -578,9 +654,9 @@ func TestAPhotoArrivesUncheckedAndOnce(t *testing.T) {
 }
 
 // A plant is listed at a place the way a plant is added: created, then
-// unchanged when sent again, then updated. And never to pull: a listing is on
-// the place card at once, with no box for a steward to tick first.
-func TestAPlantIsListedAtAPlaceButNeverToPull(t *testing.T) {
+// unchanged when sent again, then updated -- to pull, too, as the stewards
+// decided for tree of heaven -- and taken off again.
+func TestAPlantIsListedAtAPlaceAndTakenOff(t *testing.T) {
 	s := serve(t)
 
 	bed, err := s.places.Create(t.Context(), placebus.Fields{Slug: "skinny-bed", Name: types.Text{EN: "Skinny bed"}})
@@ -619,17 +695,24 @@ func TestAPlantIsListedAtAPlaceButNeverToPull(t *testing.T) {
 		t.Errorf("a changed note: %d %s", w.Code, w.Body.String())
 	}
 
-	// Pull is refused with the reason, and the listing is left as it was.
-	w = list("skinny-bed", "winecup", map[string]any{"action": "pull"})
-	if p := decode[problem](t, w); w.Code != http.StatusUnprocessableEntity || p.Error.Field != "action" || !strings.Contains(p.Error.Problem, "Plants screen") {
-		t.Errorf("pull: %d %+v", w.Code, p)
+	// A plant still to plant is never one to pull: the rules say so, and
+	// the listing is left as it was.
+	w = list("skinny-bed", "winecup", map[string]any{"action": "pull", "planned": true})
+	if p := decode[problem](t, w); w.Code != http.StatusUnprocessableEntity || p.Error.Field != "action" || !strings.Contains(p.Error.Problem, "not one to pull") {
+		t.Errorf("pull what is being planted: %d %+v", w.Code, p)
+	}
+
+	// Pull, with why.
+	pull := map[string]any{"action": "pull", "note": map[string]string{"en": "Invasive: take it out, root and all."}}
+	if got := decode[answer](t, list("skinny-bed", "winecup", pull)); got.Outcome != "updated" || got.Listing.Action != "pull" || got.Listing.Planned {
+		t.Errorf("pull: %+v", got)
 	}
 
 	if w := list("skinny-bed", "winecup", map[string]any{"action": "weed"}); w.Code != http.StatusUnprocessableEntity || decode[problem](t, w).Error.Field != "action" {
 		t.Errorf("an action that is not one: %d", w.Code)
 	}
 
-	// A steward's pull may be turned into protect: the safe direction.
+	// A steward's pull may be turned into protect.
 	sp, _ := s.species.BySlug(t.Context(), "winecup")
 	if _, err := s.listings.Set(t.Context(), bed.ID, sp.ID, listingbus.Fields{Action: listingbus.Pull}); err != nil {
 		t.Fatal(err)
@@ -658,5 +741,27 @@ func TestAPlantIsListedAtAPlaceButNeverToPull(t *testing.T) {
 	if got.Place != "skinny-bed" || len(got.Plants) != 1 || got.Plants[0].Species != "winecup" || got.Plants[0].Note.EN != "4 plants, at the shady end" ||
 		got.Plants[0].CardURL != base+"/plants/winecup" {
 		t.Errorf("read back: %+v", got)
+	}
+
+	// Taken off: removed, then nothing to do; the plant itself stays.
+	unlist := func() string {
+		w := s.api(http.MethodDelete, "/api/v1/places/skinny-bed/plants/winecup", s.key, nil, "")
+		if w.Code != http.StatusOK {
+			t.Fatalf("taking it off: %d %s", w.Code, w.Body.String())
+		}
+
+		return decode[answer](t, w).Outcome
+	}
+	if first, again := unlist(), unlist(); first != "removed" || again != "unchanged" {
+		t.Errorf("taken off: %q, then %q", first, again)
+	}
+	if got := decode[listed](t, s.api(http.MethodGet, "/api/v1/places/skinny-bed/plants", s.key, nil, "")); len(got.Plants) != 0 {
+		t.Errorf("still listed: %+v", got.Plants)
+	}
+	if _, err := s.species.BySlug(t.Context(), "winecup"); err != nil {
+		t.Errorf("the plant went with its listing: %v", err)
+	}
+	if w := s.api(http.MethodDelete, "/api/v1/places/skinny-bed/plants/winecup", "", nil, ""); w.Code != http.StatusUnauthorized {
+		t.Errorf("taking it off with no key: %d", w.Code)
 	}
 }
