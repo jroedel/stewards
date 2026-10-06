@@ -629,6 +629,36 @@ func TestASortedPhotoIsSortedOnce(t *testing.T) {
 	}
 }
 
+// Sorted as a leaf, then as a flower: the second is somebody's different
+// answer, and is told what the first one was rather than that nothing
+// changed. Only the same sort again is "unchanged". One after the other,
+// as two sorts at once often run on a busy machine.
+func TestASortAsAnotherKindIsToldTheFirst(t *testing.T) {
+	g := setup(t)
+	it := g.sent(t, g.atInflow(), 30)
+	leaf := inboxbus.Sorting{Outcome: inboxbus.AsPhoto, SpeciesID: g.penstemon.ID, Kind: photobus.Leaf}
+
+	if _, err := g.inbox.Sort(t.Context(), it.ID, g.steward.ID, leaf); err != nil {
+		t.Fatal(err)
+	}
+
+	flower := leaf
+	flower.Kind = photobus.Flower
+
+	_, err := g.inbox.Sort(t.Context(), it.ID, g.steward.ID, flower)
+	if already, ok := errors.AsType[inboxbus.AlreadySorted](err); !ok || already.Item.Kind != photobus.Leaf {
+		t.Errorf("sorted again as a flower: %v", err)
+	}
+
+	if res, err := g.inbox.Sort(t.Context(), it.ID, g.steward.ID, leaf); err != nil || !res.Unchanged || res.Item.Kind != photobus.Leaf {
+		t.Errorf("sorted again as a leaf: %+v, %v", res, err)
+	}
+
+	if photos, _ := g.photos.ForSpecies(t.Context(), g.penstemon.ID); len(photos) != 1 || photos[0].Kind != photobus.Leaf {
+		t.Errorf("photos made: %+v", photos)
+	}
+}
+
 // Two stewards sorting the same photo at once: one makes something, the
 // other is told it is done.
 func TestTwoSortsAtOnceMakeOneThing(t *testing.T) {
