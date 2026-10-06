@@ -139,6 +139,7 @@ The brand palette comes from `tokens.json`. It uses the colors **painted** in th
 ## 5. Imagery
 
 - **Our photos first.** Photo points (same spot, same direction, each season) are the backbone of the place cards. A photo is always dated and credited to its place and its photographer.
+- **Ours from here, then ours from elsewhere, then borrowed.** A steward's photo from a park or a trail is still ours, and often the best one there is of a plant, but a volunteer reading the card is looking at this garden. So the card says where it was taken, *Our photo · Pedernales Falls State Park · May 2027* (or *not taken here* when nobody said), and a kind's photo from the property comes before it however much newer the park's is. On a photo's screen, *Somewhere else, off the property* is one of the places in its list, with the place's name beside it.
 - **Every species photo is labelled with one of five kinds**, so each view of the card can pick the right picture:
 
   | Kind | Shown on | Why |

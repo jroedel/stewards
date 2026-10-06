@@ -90,6 +90,11 @@ func TestInitBringsTheFirstPhotosTableForward(t *testing.T) {
 	if err != nil || len(all) != 2 || all[0].SHA256 != "" {
 		t.Fatalf("the old photos read back: %d, %v", len(all), err)
 	}
+
+	// And as taken here, which every photo before taken_where was.
+	if all[0].Elsewhere || all[0].TakenWhere != "" {
+		t.Errorf("an old photo reads back as taken elsewhere: %+v", all[0])
+	}
 }
 
 func mustID(t *testing.T, s string) types.ID {

@@ -17,6 +17,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -200,6 +201,7 @@ type fieldsView struct {
 	Kinds, Months, Places []option
 	Ours                  bool
 	TakenYear             string
+	TakenWhere            string
 	Credit, SourceURL     string
 	License               string
 	Checked               bool
@@ -490,7 +492,17 @@ func fieldsFrom(r *http.Request, problems map[string]string) photobus.Fields {
 		Checked:   r.PostFormValue("checked") == "yes",
 	}
 
-	if s := r.PostFormValue("place"); s != "" {
+	// "Somewhere else" is a choice in the place list rather than a box of
+	// its own, because a photo is either at one of the places here or not
+	// here at all, and two controls could say both. Its name is read only
+	// with it: the box stays in the form, hidden, when another place is
+	// chosen, and a name left in it would otherwise send the photo off the
+	// property.
+	switch s := r.PostFormValue("place"); s {
+	case "":
+	case elsewhere:
+		f.Elsewhere, f.TakenWhere = true, r.PostFormValue("taken_where")
+	default:
 		id, err := types.ParseID(s)
 		if err != nil {
 			problems["place"] = "Choose the place from the list, or leave it empty."
@@ -517,18 +529,30 @@ func fieldsFrom(r *http.Request, problems map[string]string) photobus.Fields {
 	return f
 }
 
+// elsewhere is the place list's value for a photo taken off the property.
+const elsewhere = "elsewhere"
+
 func fieldsOfPhoto(p photobus.Photo) photobus.Fields {
 	return photobus.Fields{
-		Kind: p.Kind, PlaceID: p.PlaceID, TakenYear: p.TakenYear, TakenMonth: p.TakenMonth,
+		Kind: p.Kind, PlaceID: p.PlaceID, Elsewhere: p.Elsewhere, TakenWhere: p.TakenWhere,
+		TakenYear: p.TakenYear, TakenMonth: p.TakenMonth,
 		Source: p.Source, Credit: p.Credit, SourceURL: p.SourceURL, License: p.License, Checked: p.Checked,
 	}
 }
 
 func fieldsOf(f photobus.Fields, places []option) fieldsView {
 	v := fieldsView{
-		Places: places, Ours: f.Source != photobus.Borrowed,
+		Ours: f.Source != photobus.Borrowed, TakenWhere: f.TakenWhere,
 		Credit: f.Credit, SourceURL: f.SourceURL, License: f.License, Checked: f.Checked,
 	}
+
+	// The list from placeOptions, with "Somewhere else" after "Not said":
+	// copied, so the captions' list is not the one changed.
+	v.Places = slices.Clone(places)
+	if len(v.Places) > 0 && f.Elsewhere {
+		v.Places[0].Selected = false
+	}
+	v.Places = slices.Insert(v.Places, min(1, len(v.Places)), option{Value: elsewhere, Label: "Somewhere else, off the property", Selected: f.Elsewhere})
 
 	if f.TakenYear != 0 {
 		v.TakenYear = strconv.Itoa(f.TakenYear)
@@ -561,7 +585,7 @@ func (a app) placeOptions(ctx context.Context, chosen types.ID) ([]option, map[t
 	}
 
 	names := map[types.ID]string{}
-	opts := []option{{Value: "", Label: "Not said, or not here", Selected: chosen.Zero()}}
+	opts := []option{{Value: "", Label: "Not said", Selected: chosen.Zero()}}
 
 	for _, p := range all {
 		name := p.Name.EN
@@ -586,6 +610,10 @@ func caption(p photobus.Photo, places map[types.ID]string) string {
 		parts = append(parts, cmp.Or(p.Credit, "Our photo"))
 		if name, ok := places[p.PlaceID]; ok {
 			parts = append(parts, name)
+		}
+
+		if p.Elsewhere {
+			parts = append(parts, cmp.Or(p.TakenWhere, "not taken here"))
 		}
 	}
 

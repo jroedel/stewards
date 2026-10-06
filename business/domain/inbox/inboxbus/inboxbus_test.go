@@ -885,8 +885,15 @@ func TestAPhotoFromElsewhereIsOnlyAPhoto(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !res.Photo.PlaceID.Zero() || res.Photo.Source != photobus.Ours {
+	if !res.Photo.PlaceID.Zero() || res.Photo.Source != photobus.Ours || !res.Photo.Elsewhere || res.Photo.TakenWhere != "Pedernales Falls State Park" {
 		t.Errorf("the plant's photo: %+v", res.Photo)
+	}
+
+	// With no name said, it is still from elsewhere.
+	unnamed := g.sent(t, inboxbus.Fields{FromID: g.steward.ID, At: inboxbus.Elsewhere}, 42)
+	res, err = g.inbox.Sort(t.Context(), unnamed.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsPhoto, SpeciesID: g.penstemon.ID, Kind: photobus.Leaf})
+	if err != nil || !res.Photo.Elsewhere || res.Photo.TakenWhere != "" {
+		t.Errorf("an unnamed park photo: %+v, %v", res.Photo, err)
 	}
 }
 

@@ -41,7 +41,7 @@ var Expected = sqldb.Expected{
 		"id", "species_id", "place_id", "kind", "taken_year", "taken_month",
 		"source", "credit", "source_url", "license", "checked", "format",
 		"large_width", "large_height", "small_width", "small_height",
-		"created_at", "updated_at", "sha256",
+		"created_at", "updated_at", "sha256", "elsewhere", "taken_where",
 	},
 }
 
@@ -103,7 +103,18 @@ CREATE INDEX IF NOT EXISTS photos_place ON photos (place_id);
 		return err
 	}
 
-	// After the column, in its own statement, for the reason above. UNIQUE,
+	// elsewhere is 1 for one of ours taken off the property, and
+	// taken_where the name of where, if said. 0 and '' for every photo
+	// from before, which is what they were: taken here, or borrowed.
+	if err := sqldb.AddColumn(ctx, db, "photos", "elsewhere", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+
+	if err := sqldb.AddColumn(ctx, db, "photos", "taken_where", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+
+	// After the columns, in its own statement, for the reason above. UNIQUE,
 	// so that two uploads of one photo at the same moment cannot both be
 	// kept: the second insert is refused, and a claim is one statement.
 	const index = `CREATE UNIQUE INDEX IF NOT EXISTS photos_species_sha256 ON photos (species_id, sha256) WHERE sha256 != ''`
@@ -116,16 +127,16 @@ CREATE INDEX IF NOT EXISTS photos_place ON photos (place_id);
 
 const columns = `id, species_id, place_id, kind, taken_year, taken_month,
 source, credit, source_url, license, checked, format,
-large_width, large_height, small_width, small_height, created_at, updated_at, sha256`
+large_width, large_height, small_width, small_height, created_at, updated_at, sha256, elsewhere, taken_where`
 
 // Create inserts a photo.
 func (s *Store) Create(ctx context.Context, p photobus.Photo) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO photos (`+columns+`)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ID.String(), orNull(p.SpeciesID), orNull(p.PlaceID), string(p.Kind), p.TakenYear, p.TakenMonth,
 		string(p.Source), p.Credit, p.SourceURL, p.License, p.Checked, p.Format,
 		p.Large.Width, p.Large.Height, p.Small.Width, p.Small.Height,
-		p.CreatedAt.UnixMilli(), p.UpdatedAt.UnixMilli(), p.SHA256)
+		p.CreatedAt.UnixMilli(), p.UpdatedAt.UnixMilli(), p.SHA256, p.Elsewhere, p.TakenWhere)
 
 	switch {
 	case sqldb.IsForeignKeyViolation(err):
@@ -148,11 +159,11 @@ func (s *Store) Update(ctx context.Context, p photobus.Photo) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE photos SET
     place_id = ?, kind = ?, taken_year = ?, taken_month = ?,
     source = ?, credit = ?, source_url = ?, license = ?, checked = ?,
-    updated_at = ?
+    elsewhere = ?, taken_where = ?, updated_at = ?
 WHERE id = ?`,
 		orNull(p.PlaceID), string(p.Kind), p.TakenYear, p.TakenMonth,
 		string(p.Source), p.Credit, p.SourceURL, p.License, p.Checked,
-		p.UpdatedAt.UnixMilli(), p.ID.String())
+		p.Elsewhere, p.TakenWhere, p.UpdatedAt.UnixMilli(), p.ID.String())
 
 	switch {
 	case sqldb.IsForeignKeyViolation(err):
@@ -243,7 +254,7 @@ func scan(row scanner) (photobus.Photo, error) {
 	err := row.Scan(&id, &species, &place, &kind, &p.TakenYear, &p.TakenMonth,
 		&source, &p.Credit, &p.SourceURL, &p.License, &p.Checked, &p.Format,
 		&p.Large.Width, &p.Large.Height, &p.Small.Width, &p.Small.Height,
-		&created, &updated, &p.SHA256)
+		&created, &updated, &p.SHA256, &p.Elsewhere, &p.TakenWhere)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return photobus.Photo{}, err

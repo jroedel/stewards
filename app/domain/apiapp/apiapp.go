@@ -251,13 +251,15 @@ func (a app) endpoints() []Endpoint {
 			Body: &Body{Encoding: "multipart", Fields: []Field{
 				{Name: "photo", Type: "file", Required: true, Description: fmt.Sprintf("A JPEG or PNG, at most %d MB, as the camera saved it. Location and camera details are removed from every copy shown.", photobus.MaxBytes>>20)},
 				{Name: "kind", Type: "string", Required: true, Values: kindNames(), Description: "What it shows. young: the seedling; leaf, flower: close-ups; mature: the grown plant at full size, in a garden; winter: how it looks in winter, or its seed head."},
-				{Name: "source", Type: "string", Required: true, Values: []string{string(photobus.Ours), string(photobus.Borrowed)}, Description: "ours: taken here. borrowed: from Wikimedia Commons, iNaturalist or the like, under an open licence."},
+				{Name: "source", Type: "string", Required: true, Values: []string{string(photobus.Ours), string(photobus.Borrowed)}, Description: "ours: taken by a steward, here or elsewhere. borrowed: from Wikimedia Commons, iNaturalist or the like, under an open licence."},
 				{Name: "credit", Type: "string", Description: "The author, as the photo's page gives it. Required when borrowed; for ours, leave it out unless the photographer wants to be named."},
 				{Name: "source_url", Type: "string", Description: "The photo's own page, https. Required when borrowed."},
 				{Name: "license", Type: "string", Description: `Its licence's short name, such as "CC BY-SA 4.0". Required when borrowed.`},
 				{Name: "taken_month", Type: "integer", Description: "1 to 12. Leave it and taken_year out to use the date the camera recorded."},
 				{Name: "taken_year", Type: "integer", Description: "Four figures."},
-				{Name: "place", Type: "string", Description: "Where it was taken, as a place slug from /api/v1/places. For ours."},
+				{Name: "place", Type: "string", Description: "Where it was taken, as a place slug from /api/v1/places. For ours, taken on the property."},
+				{Name: "taken_where", Type: "string", Description: "For ours taken off the property: where, by name, such as a park. The card names it, and shows a photo taken here before it. Not with place."},
+				{Name: "elsewhere", Type: "boolean", Description: "true for ours taken off the property when nobody said where. taken_where implies it."},
 			}},
 			Returns: `201 {"photo": photo, "duplicate": false}, or 200 with the photo already kept and "duplicate": true.`,
 			handler: a.addPhoto,
@@ -612,6 +614,8 @@ type PhotoJSON struct {
 	TakenYear  int       `json:"taken_year,omitempty"`
 	TakenMonth int       `json:"taken_month,omitempty"`
 	Place      string    `json:"place,omitempty"`
+	Elsewhere  bool      `json:"elsewhere"`
+	TakenWhere string    `json:"taken_where,omitempty"`
 	Checked    bool      `json:"checked"`
 	SHA256     string    `json:"sha256,omitempty"`
 	LargeURL   string    `json:"large_url"`
@@ -626,6 +630,7 @@ func (a app) photoOf(p photobus.Photo, places map[types.ID]string) PhotoJSON {
 		ID: p.ID.String(), Kind: string(p.Kind), Source: string(p.Source),
 		Credit: p.Credit, SourceURL: p.SourceURL, License: p.License,
 		TakenYear: p.TakenYear, TakenMonth: p.TakenMonth, Place: places[p.PlaceID],
+		Elsewhere: p.Elsewhere, TakenWhere: p.TakenWhere,
 		Checked: p.Checked, SHA256: p.SHA256,
 		LargeURL:  a.base + "/photos/" + p.ID.String() + "/large.jpg",
 		SmallURL:  a.base + "/photos/" + p.ID.String() + "/small.jpg",
@@ -747,6 +752,15 @@ func photoFieldsOf(r *http.Request, places []placebus.Place) (photobus.Fields, s
 			return f, "place", fmt.Sprintf("No place has the slug %q. GET %s/places lists them.", slug, Prefix)
 		}
 		f.PlaceID = places[i].ID
+	}
+
+	f.TakenWhere = r.PostFormValue("taken_where")
+	f.Elsewhere = r.PostFormValue("elsewhere") == "true"
+
+	// The screens make these one choice, so they cannot both be said
+	// there; here they can, and photobus would quietly keep the place.
+	if !f.PlaceID.Zero() && (f.Elsewhere || strings.TrimSpace(f.TakenWhere) != "") {
+		return f, "taken_where", "place is a place here, and taken_where or elsewhere says the photo was taken off the property. Send one or the other."
 	}
 
 	return f, "", ""

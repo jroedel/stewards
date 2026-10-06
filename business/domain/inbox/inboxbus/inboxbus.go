@@ -791,7 +791,13 @@ func (b *Business) make(ctx context.Context, it Item, s Sorting, listed *listing
 
 	var res Result
 
-	res.Photo, err = b.deps.Photos.Add(ctx, s.SpeciesID, photobus.Fields{Kind: s.Kind, PlaceID: s.PlaceID, Source: photobus.Ours}, data)
+	// A photo from a nursery or a park goes on as one of ours from
+	// elsewhere, under the name the batch was sent with, if any: never as
+	// one of this garden's.
+	res.Photo, err = b.deps.Photos.Add(ctx, s.SpeciesID, photobus.Fields{
+		Kind: s.Kind, PlaceID: s.PlaceID, Source: photobus.Ours,
+		Elsewhere: !it.At.Here(), TakenWhere: it.Site,
+	}, data)
 
 	invalid, isInvalid := errors.AsType[photobus.Invalid](err)
 	dup, isDup := errors.AsType[photobus.Duplicate](err)

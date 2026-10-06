@@ -341,4 +341,13 @@ func TestAPhotoFromElsewhereThroughTheAPI(t *testing.T) {
 	if w := s.sortPhoto(id, map[string]any{"outcome": "photo", "species": "winecup", "kind": "flower"}); w.Code != http.StatusOK {
 		t.Errorf("a photo of the plant: %d\n%s", w.Code, w.Body.String())
 	}
+
+	// The plant's photo says where it was taken, as the batch said.
+	one := decode[struct {
+		Species apiapp.SpeciesJSON `json:"species"`
+	}](t, s.api(http.MethodGet, "/api/v1/species/winecup", s.key, nil, ""))
+
+	if len(one.Species.Photos) != 1 || !one.Species.Photos[0].Elsewhere || one.Species.Photos[0].TakenWhere != "Pedernales Falls State Park" {
+		t.Errorf("the plant's photos: %+v", one.Species.Photos)
+	}
 }

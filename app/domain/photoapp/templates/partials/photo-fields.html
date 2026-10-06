@@ -10,7 +10,7 @@ edit form ask for. */}}
   <fieldset>
     <legend>Whose photo</legend>
     {{template "photo-problem" (index $p "source")}}
-    <label class="check"><input type="radio" name="source" value="ours"{{if .Ours}} checked{{end}}> Ours: taken here</label>
+    <label class="check"><input type="radio" name="source" value="ours"{{if .Ours}} checked{{end}}> Ours: a steward took it</label>
     <label class="check"><input type="radio" name="source" value="borrowed"{{if not .Ours}} checked{{end}}> Borrowed, under an open licence</label>
 
     <label for="credit">Credit <span class="optional">optional for ours</span></label>
@@ -46,6 +46,12 @@ edit form ask for. */}}
     <label for="place">Where it was taken <span class="optional">optional</span></label>
     {{template "photo-problem" (index $p "place")}}
     <select id="place" name="place">{{range .Places}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+    <div class="field-group for-taken-elsewhere">
+      <label for="taken_where">Name of the place <span class="optional">optional</span></label>
+      <p class="help" id="taken-where-help">A park, a trail, a friend's garden. The card names it, so nobody takes the photo for one of this garden's plants.</p>
+      {{template "photo-problem" (index $p "taken_where")}}
+      <input id="taken_where" name="taken_where" type="text" value="{{.TakenWhere}}" maxlength="100" placeholder="Pedernales Falls State Park" aria-describedby="taken-where-help">
+    </div>
   </fieldset>
 
   {{template "photo-problem" (index $p "checked")}}

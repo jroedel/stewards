@@ -179,8 +179,16 @@ func (s *site) photosPath() string { return "/steward/species/" + s.penstemon + 
 func noisy(t *testing.T) []byte {
 	t.Helper()
 
+	return noise(t, 1)
+}
+
+// noise is noisy with another seed, for a second photo that is not the
+// same photo again.
+func noise(t *testing.T, seed uint64) []byte {
+	t.Helper()
+
 	img := image.NewRGBA(image.Rect(0, 0, 900, 600))
-	rng := rand.New(rand.NewPCG(1, 2))
+	rng := rand.New(rand.NewPCG(seed, 2))
 
 	for i := range img.Pix {
 		img.Pix[i] = uint8(rng.UintN(256))
@@ -525,5 +533,92 @@ func TestTheSamePhotoTwiceIsSaidSo(t *testing.T) {
 	w := s.upload(s.photosPath(), leaf(), data, true)
 	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "That photo is already here, under Leaf close-up.") {
 		t.Errorf("the same photo twice: %d", w.Code)
+	}
+}
+
+// A photo of ours from a park says so on the card, by name when a steward
+// gave one, and one taken here is shown before it however much newer the
+// park's is: a volunteer looking at the card is looking at this garden.
+func TestAPhotoTakenOffThePropertySaysWhere(t *testing.T) {
+	s := serve(t)
+
+	park := leaf()
+	park.Set("place", "elsewhere")
+	park.Set("taken_where", "  Pedernales Falls   State Park ")
+	park.Set("checked", "yes")
+
+	if w := s.upload(s.photosPath(), park, noise(t, 1), true); w.Code != http.StatusSeeOther {
+		t.Fatalf("upload: %d\n%s", w.Code, w.Body.String())
+	}
+
+	list := s.get(s.photosPath(), true).Body.String()
+	if !strings.Contains(list, "Our photo · Pedernales Falls State Park · April 2027") {
+		t.Error("the photos screen does not say where it was taken")
+	}
+
+	id := photoID.FindStringSubmatch(list)[1]
+
+	edit := s.get("/steward/photos/"+id+"/edit", true).Body.String()
+	for _, want := range []string{
+		`<option value="elsewhere" selected>Somewhere else, off the property</option>`,
+		`name="taken_where" type="text" value="Pedernales Falls State Park"`,
+		`<option value="">Not said</option>`,
+	} {
+		if !strings.Contains(edit, want) {
+			t.Errorf("the edit screen does not show %q", want)
+		}
+	}
+
+	card := s.get("/plants/brazos-penstemon?view=weeding", false).Body.String()
+	if !strings.Contains(card, "Our photo · Pedernales Falls State Park · April 2027") {
+		t.Error("the card does not say where the photo was taken")
+	}
+
+	// Without a name it still says it was not taken here.
+	park.Set("taken_where", "")
+	if w := s.post("/steward/photos/"+id, park); w.Code != http.StatusSeeOther {
+		t.Fatalf("saving it without a name: %d\n%s", w.Code, w.Body.String())
+	}
+
+	if card := s.get("/plants/brazos-penstemon?view=weeding", false).Body.String(); !strings.Contains(card, "Our photo · not taken here · April 2027") {
+		t.Error("the card does not say an unnamed park photo was not taken here")
+	}
+
+	// A name left in the hidden box when "Not said" is chosen again does
+	// not send the photo back off the property.
+	here := leaf()
+	here.Set("taken_where", "Pedernales Falls State Park")
+	here.Set("checked", "yes")
+
+	if w := s.post("/steward/photos/"+id, here); w.Code != http.StatusSeeOther {
+		t.Fatalf("saving it as here: %d", w.Code)
+	}
+
+	if p, _ := s.photos.ByID(t.Context(), mustID(t, id)); p.Elsewhere || p.TakenWhere != "" {
+		t.Errorf("chosen as not said, the photo is %+v", p)
+	}
+
+	// Off the property again, then a photo taken here a year earlier: the
+	// card shows ours from here.
+	park.Set("taken_where", "Pedernales Falls State Park")
+	s.post("/steward/photos/"+id, park)
+
+	older := leaf()
+	older.Set("taken_year", "2026")
+	older.Set("checked", "yes")
+
+	if w := s.upload(s.photosPath(), older, noise(t, 2), true); w.Code != http.StatusSeeOther {
+		t.Fatalf("the second upload: %d\n%s", w.Code, w.Body.String())
+	}
+
+	card = s.get("/plants/brazos-penstemon?view=weeding", false).Body.String()
+	if !strings.Contains(card, "Our photo · April 2026") || strings.Contains(card, "Pedernales") || strings.Contains(card, id) {
+		t.Error("the card does not show the photo taken here first")
+	}
+
+	// A name too long to fit is refused, and said where it was typed.
+	park.Set("taken_where", strings.Repeat("a", 101))
+	if w := s.post("/steward/photos/"+id, park); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "longer than 100 characters") {
+		t.Errorf("a long name: %d", w.Code)
 	}
 }

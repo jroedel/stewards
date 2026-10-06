@@ -541,6 +541,17 @@ func TestAPhotoArrivesUncheckedAndOnce(t *testing.T) {
 		t.Errorf("our photo: %+v", a.Photo)
 	}
 
+	// Ours, off the property, by name or not.
+	park := map[string]string{"kind": "leaf", "source": "ours", "taken_where": "Pedernales Falls State Park"}
+	if a := decode[answer](t, s.upload("winecup", park, noisy(t, 4))); !a.Photo.Elsewhere || a.Photo.TakenWhere != "Pedernales Falls State Park" || a.Photo.Place != "" {
+		t.Errorf("our photo from a park: %+v", a.Photo)
+	}
+
+	unnamed := map[string]string{"kind": "mature", "source": "ours", "elsewhere": "true"}
+	if a := decode[answer](t, s.upload("winecup", unnamed, noisy(t, 5))); !a.Photo.Elsewhere || a.Photo.TakenWhere != "" {
+		t.Errorf("our photo from somewhere unnamed: %+v", a.Photo)
+	}
+
 	for name, tc := range map[string]struct {
 		fields map[string]string
 		photo  []byte
@@ -548,6 +559,9 @@ func TestAPhotoArrivesUncheckedAndOnce(t *testing.T) {
 	}{
 		"asked to be checked": {map[string]string{"kind": "leaf", "source": "ours", "checked": "yes"}, noisy(t, 3), "checked"},
 		"a place not known":   {map[string]string{"kind": "leaf", "source": "ours", "place": "moon"}, noisy(t, 3), "place"},
+		"here and elsewhere":  {map[string]string{"kind": "leaf", "source": "ours", "place": "rain-garden", "taken_where": "A park"}, noisy(t, 3), "taken_where"},
+		"here, and not":       {map[string]string{"kind": "leaf", "source": "ours", "place": "rain-garden", "elsewhere": "true"}, noisy(t, 3), "taken_where"},
+		"a long where":        {map[string]string{"kind": "leaf", "source": "ours", "taken_where": strings.Repeat("a", 101)}, noisy(t, 3), "taken_where"},
 		"no photo":            {map[string]string{"kind": "leaf", "source": "ours"}, nil, "photo"},
 		"no licence":          {map[string]string{"kind": "leaf", "source": "borrowed", "credit": "A", "source_url": "https://x.org/a"}, noisy(t, 3), "license"},
 		"not a photo":         {map[string]string{"kind": "leaf", "source": "ours"}, []byte("a text file"), "photo"},
