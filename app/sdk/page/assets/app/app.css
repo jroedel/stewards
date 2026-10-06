@@ -629,6 +629,47 @@ input[type="file"] { display: block; width: 100%; min-height: 48px; padding: 10p
 .check-done .linkish { min-height: 44px; font-weight: 700; }
 .check-queue h1:focus { outline: none; }
 
+/* Sorting an inbox photo on one screen. The plant, the kind and the two
+   flowering boxes are buttons rather than lists, because a list is two taps
+   and a scroll and a button is one, and a batch is sorted with a thumb.
+   Underneath they are radio buttons and tick boxes, so the form is an
+   ordinary form; the input is hidden from sight, not from a keyboard or a
+   screen reader, and its label is what is drawn. Chosen is filled blue with
+   white words, which reads in sun where a thin outline does not. */
+.sort-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sort-where { display: flex; align-items: center; gap: 16px; margin: 20px 0 0; font-size: 15px; color: var(--muted); }
+.sort-skip { display: inline-flex; align-items: center; min-height: 48px; margin: -12px 0; font: 700 17px var(--font-body); }
+.sort-skip::after { content: " ›"; white-space: pre; }
+.sort-as { margin: 0; font-size: 19px; }
+.chips, .tiles, .pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pills { margin-top: 8px; }
+.form .chip, .form .tile, .form .pill { position: relative; margin: 0; }
+.chip input, .tile input, .pill input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.chip span, .tile span, .pill span {
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  min-height: 48px; padding: 6px 14px; border: 1.5px solid var(--sf-blue);
+  background: var(--sf-white); color: var(--sf-blue); font: 700 16px/1.2 var(--font-body);
+}
+.chip span, .pill span { border-radius: 999px; }
+.tile span { min-height: 56px; padding: 6px 8px; border-radius: 10px; font-size: 15px; }
+.pill { flex: 1; }
+.chip input:checked + span, .tile input:checked + span, .pill input:checked + span { background: var(--sf-blue); color: var(--sf-white); }
+.chip input:focus-visible + span, .tile input:focus-visible + span, .pill input:focus-visible + span { outline: 3px solid var(--sf-blue); outline-offset: 2px; }
+.form .sure { margin-top: 12px; padding: 4px 12px; border: 1px solid var(--rule); border-radius: 12px; }
+.sort-else { display: flex; flex-wrap: wrap; align-items: center; gap: 0 18px; margin: 12px 0 0; }
+.sort-else span { color: var(--muted); }
+.sort-else a { display: inline-flex; align-items: center; min-height: 48px; font-weight: 700; }
+.sort-else .sort-discard { color: var(--tos-pull); }
+
+/* The photo no taller than about a third of the phone, whole rather than
+   cropped -- the magnifying glass opens it full size -- and Save held at the
+   bottom of the screen while the form scrolls under it, so the one main
+   action stays under the thumb (design.md, "Thumbs and gloves") without a
+   scroll to find it on every photo. */
+.sort .photo-large img { max-height: 36vh; object-fit: contain; background: var(--sf-neutral); }
+.sort .sort-save { position: sticky; bottom: 12px; z-index: 1; }
+
 /* ---------------------------------------------------------------- API keys */
 
 .key-new { margin-bottom: 12px; border: 1.5px solid var(--tos-protect); }

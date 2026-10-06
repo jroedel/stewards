@@ -230,6 +230,7 @@ type Inbox interface {
 	ByID(ctx context.Context, id types.ID) (inboxbus.Item, error)
 	Sort(ctx context.Context, id, by types.ID, s inboxbus.Sorting) (inboxbus.Result, error)
 	Open(ctx context.Context, id types.ID, size photobus.Size) (inboxbus.Item, photobus.File, error)
+	RecentPlants(ctx context.Context, n int) ([]types.ID, error)
 }
 
 // NurseryReader is what it needs from the nursery rules: the nurseries a
@@ -420,9 +421,13 @@ func awayWords(it inboxbus.Item) string {
 func sortedWords(done string) string {
 	switch done {
 	case "photo":
-		return "Added to the plant's photos. It is shown to volunteers once a steward checks it there."
+		return "Added to the plant's photos. It is shown to volunteers once a steward checks it."
+	case "photo-checked":
+		return "Added to the plant's photos, checked. Volunteers see it now."
 	case "planted":
 		return "Listed as planted there, and added to the plant's photos to be checked."
+	case "planted-checked":
+		return "Listed as planted there, and added to the plant's photos, checked."
 	case "stock":
 		return "Added to the nursery's stock."
 	case "unsure":
@@ -899,9 +904,18 @@ type sortView struct {
 	// As is the outcome being filled in; empty for the choice of one.
 	As string
 
-	// InFlower and InFruit are the boxes as they were sent, kept when the
-	// form comes back.
-	InFlower, InFruit bool
+	// InFlower, InFruit and Checked are the boxes as they were sent, kept
+	// when the form comes back.
+	InFlower, InFruit, Checked bool
+
+	// Recent is the plants last sorted to, offered as one tap each before
+	// the whole list in Species (inboxbus.RecentPlants has why).
+	Recent []option
+
+	// Position is where this photo is in the inbox, "3 of 12", and Next
+	// the next one's screen: Skip goes there, and swap.mjs fetches it
+	// ahead. Both empty for a photo set aside, which is not in the order.
+	Position, Next string
 
 	Species, Kinds, Places []option
 	NoPlants               bool
@@ -930,6 +944,12 @@ func (a app) sortForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The form for what a photo most often is opens at once, rather than a
+	// choice of forms first: that was a page load per photo spent saying
+	// "a plant" again. A plant's photo, or for a photo taken at a nursery,
+	// a line of its stock; the other outcomes are a tap away.
+	stock := it.At == inboxbus.Nursery && a.nursery != nil
+
 	as := r.URL.Query().Get("as")
 	switch inboxbus.Outcome(as) {
 	case inboxbus.AsPhoto, inboxbus.AsPlanted, inboxbus.AsStock, inboxbus.AsUnsure, inboxbus.AsDiscard:
@@ -937,7 +957,7 @@ func (a app) sortForm(w http.ResponseWriter, r *http.Request) {
 		as = ""
 	}
 
-	if as == string(inboxbus.AsStock) && (it.At != inboxbus.Nursery || a.nursery == nil) {
+	if as == string(inboxbus.AsStock) && !stock {
 		as = ""
 	}
 
@@ -945,6 +965,13 @@ func (a app) sortForm(w http.ResponseWriter, r *http.Request) {
 	// choice is not offered rather than refused after it is made.
 	if !it.At.Here() && as == string(inboxbus.AsPlanted) {
 		as = ""
+	}
+
+	if as == "" {
+		as = string(inboxbus.AsPhoto)
+		if stock {
+			as = string(inboxbus.AsStock)
+		}
 	}
 
 	v := sortView{As: as, Problems: map[string]string{}, Done: sortedWords(r.URL.Query().Get("done"))}
@@ -966,6 +993,7 @@ func (a app) sort(w http.ResponseWriter, r *http.Request) {
 	v := sortView{
 		As: r.PostFormValue("as"), Problems: map[string]string{},
 		InFlower: r.PostFormValue("in_flower") != "", InFruit: r.PostFormValue("in_fruit") != "",
+		Checked: r.PostFormValue("checked") == "yes",
 	}
 	s := inboxbus.Sorting{
 		Outcome:  inboxbus.Outcome(v.As),
@@ -973,6 +1001,10 @@ func (a app) sort(w http.ResponseWriter, r *http.Request) {
 		InFlower: v.InFlower,
 		InFruit:  v.InFruit,
 		Note:     r.PostFormValue("note"),
+	}
+
+	if s.Outcome == inboxbus.AsPhoto || s.Outcome == inboxbus.AsPlanted {
+		s.Checked = v.Checked
 	}
 
 	if s.Outcome == inboxbus.AsStock {
@@ -993,14 +1025,33 @@ func (a app) sort(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	for field, dst := range map[string]*types.ID{"species": &s.SpeciesID, "place": &s.PlaceID} {
-		if raw := r.PostFormValue(field); raw != "" {
-			id, err := types.ParseID(raw)
-			if err != nil {
-				v.Problems[field] = "Choose from the list."
-			}
-			*dst = id
+	// The plant is a button among the recent ones, or from the whole list.
+	// Both, naming different plants, is a slip of the thumb that the screen
+	// does not guess about.
+	species := r.PostFormValue("species")
+	switch other := r.PostFormValue("species_other"); {
+	case other != "" && species != "" && other != species:
+		v.Problems["species"] = "Choose one plant: a button or the list, not both."
+	case other != "":
+		species = other
+	}
+
+	for _, f := range []struct {
+		field, raw string
+		dst        *types.ID
+	}{
+		{"species", species, &s.SpeciesID},
+		{"place", r.PostFormValue("place"), &s.PlaceID},
+	} {
+		if f.raw == "" {
+			continue
 		}
+
+		id, err := types.ParseID(f.raw)
+		if err != nil {
+			v.Problems[f.field] = "Choose from the list."
+		}
+		*f.dst = id
 	}
 
 	if s.Outcome == inboxbus.AsStock {
@@ -1041,9 +1092,14 @@ func (a app) sort(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case err == nil:
-		to := IndexPath + "?done=" + string(s.Outcome)
+		done := string(s.Outcome)
+		if s.Checked {
+			done += "-checked"
+		}
+
+		to := IndexPath + "?done=" + done
 		if !next.Zero() {
-			to = IndexPath + "/" + next.String() + "?done=" + string(s.Outcome)
+			to = IndexPath + "/" + next.String() + "?done=" + done
 		}
 
 		http.Redirect(w, r, to, http.StatusSeeOther)
@@ -1063,6 +1119,20 @@ func (a app) sort(w http.ResponseWriter, r *http.Request) {
 
 	a.showSort(w, r, http.StatusUnprocessableEntity, it, v, s)
 }
+
+// tileWords is each kind's name on its button.
+var tileWords = map[photobus.Kind]string{
+	photobus.Young:  "Young plant",
+	photobus.Leaf:   "Leaf",
+	photobus.Flower: "Flower",
+	photobus.Fruit:  "Fruit or seed",
+	photobus.Mature: "Mature plant",
+	photobus.Winter: "In winter",
+}
+
+// recentPlants is how many of the plants last sorted to are offered as a
+// button each: a row or two on a phone.
+const recentPlants = 6
 
 // nextAfter is the photo to sort after this one: the next in the inbox's
 // order, or the first if this was the last, or none if this was the only one.
@@ -1131,6 +1201,41 @@ func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inb
 
 	v.NoPlants = len(plants) == 0
 
+	recent, err := a.inbox.RecentPlants(r.Context(), recentPlants)
+	if err != nil {
+		a.fail(w, r, "finding the plants sorted to lately", err)
+
+		return
+	}
+
+	byID := map[types.ID]speciesbus.Species{}
+	for _, sp := range plants {
+		byID[sp.ID] = sp
+	}
+
+	chosen := false
+	for _, id := range recent {
+		if sp, ok := byID[id]; ok {
+			v.Recent = append(v.Recent, option{Value: id.String(), Label: sp.Common.EN, Selected: id == s.SpeciesID})
+			chosen = chosen || id == s.SpeciesID
+		}
+	}
+
+	waiting, err := a.inbox.Waiting(r.Context())
+	if err != nil {
+		a.fail(w, r, "listing the inbox", err)
+
+		return
+	}
+
+	if i := slices.IndexFunc(waiting, func(w inboxbus.Item) bool { return w.ID == it.ID }); i >= 0 {
+		v.Position = fmt.Sprintf("%d of %d", i+1, len(waiting))
+
+		if len(waiting) > 1 {
+			v.Next = IndexPath + "/" + waiting[(i+1)%len(waiting)].ID.String()
+		}
+	}
+
 	if v.Stock = it.At == inboxbus.Nursery && a.nursery != nil; v.Stock && v.As == string(inboxbus.AsStock) {
 		if v.Nurseries, err = a.nursery.Nurseries(r.Context()); err != nil {
 			a.fail(w, r, "listing the nurseries", err)
@@ -1154,14 +1259,21 @@ func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inb
 		}
 	}
 
-	v.Species = []option{{Value: "", Label: "Choose the plant", Selected: s.SpeciesID.Zero()}}
+	// The whole list, chosen from only when the plant is not one of the
+	// buttons: a plant chosen by its button is not chosen here as well.
+	first := "Choose the plant"
+	if len(v.Recent) > 0 {
+		first = "Another plant"
+	}
+
+	v.Species = []option{{Value: "", Label: first, Selected: s.SpeciesID.Zero() || chosen}}
 	for _, sp := range plants {
 		label := sp.Common.EN
 		if sp.Scientific != "" {
 			label += " (" + sp.Scientific + ")"
 		}
 
-		v.Species = append(v.Species, option{Value: sp.ID.String(), Label: label, Selected: sp.ID == s.SpeciesID})
+		v.Species = append(v.Species, option{Value: sp.ID.String(), Label: label, Selected: sp.ID == s.SpeciesID && !chosen})
 	}
 
 	kind := s.Kind
@@ -1169,9 +1281,11 @@ func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inb
 		kind = photobus.Young
 	}
 
-	v.Kinds = []option{{Value: "", Label: "Choose what it shows", Selected: kind == ""}}
+	// Shown as six buttons, three across a phone, under "What it shows":
+	// the short name of each fits a button on one line, where "Leaf
+	// close-up" broke in the middle of a word.
 	for _, k := range photobus.Kinds {
-		v.Kinds = append(v.Kinds, option{Value: string(k), Label: k.Label(), Selected: k == kind})
+		v.Kinds = append(v.Kinds, option{Value: string(k), Label: tileWords[k], Selected: k == kind})
 	}
 
 	place := s.PlaceID

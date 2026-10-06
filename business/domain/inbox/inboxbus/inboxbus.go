@@ -531,6 +531,38 @@ func (b *Business) Count(ctx context.Context) (int, error) {
 	return b.store.Count(ctx, New)
 }
 
+// RecentPlants is the plants photos were last sorted to, the most recent
+// first, each once, at most n: what the sort screen offers as one tap before
+// the whole list. A batch is mostly a few plants photographed several ways,
+// so the plant just sorted to is the likeliest next, and the long list is for
+// the rest.
+//
+// From the inbox's own record of what it sorted, by anybody and by the API,
+// rather than from the plants' photos: a photo added on a plant's own screen
+// was not sorted from here, and a steward sorting a batch is thinking of the
+// batch.
+func (b *Business) RecentPlants(ctx context.Context, n int) ([]types.ID, error) {
+	sorted, err := b.store.WithStatus(ctx, Sorted)
+	if err != nil {
+		return nil, err
+	}
+
+	slices.SortStableFunc(sorted, func(x, y Item) int { return y.SortedAt.Compare(x.SortedAt) })
+
+	var out []types.ID
+	for _, it := range sorted {
+		if len(out) == n {
+			break
+		}
+
+		if !it.SpeciesID.Zero() && !slices.Contains(out, it.SpeciesID) {
+			out = append(out, it.SpeciesID)
+		}
+	}
+
+	return out, nil
+}
+
 // Sorting is what a photo is sorted into.
 type Sorting struct {
 	Outcome Outcome
@@ -550,6 +582,14 @@ type Sorting struct {
 	// PlaceID is where it was taken or planted. Empty means the place the
 	// photo was sent with, if any. Required for a planting.
 	PlaceID types.ID
+
+	// Checked is a steward's word, given on the sort screen, that the photo
+	// shows the plant: the plant's photo is made checked, and goes on the
+	// card without a second visit to the check queue. For a photo or a
+	// planting. The API never sets it -- a check is given after looking,
+	// by a person (photobus.Import) -- and builds its Sorting itself, so
+	// it cannot.
+	Checked bool
 
 	// Note is the question, for a photo set aside; empty keeps the note it
 	// came with.
@@ -801,7 +841,7 @@ func (b *Business) make(ctx context.Context, it Item, s Sorting, listed *listing
 	// one of this garden's.
 	res.Photo, err = b.deps.Photos.Add(ctx, s.SpeciesID, photobus.Fields{
 		Kind: s.Kind, InFlower: s.InFlower, InFruit: s.InFruit, PlaceID: s.PlaceID, Source: photobus.Ours,
-		Elsewhere: !it.At.Here(), TakenWhere: it.Site,
+		Elsewhere: !it.At.Here(), TakenWhere: it.Site, Checked: s.Checked,
 	}, data)
 
 	invalid, isInvalid := errors.AsType[photobus.Invalid](err)
