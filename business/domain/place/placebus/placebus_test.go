@@ -305,3 +305,34 @@ func TestAPlaceIsPutOnTheMapAndTakenOff(t *testing.T) {
 		t.Errorf("read back at %v, want off the map", *got.Spot)
 	}
 }
+
+// A program adds a place, sends it again for nothing, changes it, and its
+// spot on the map survives the change.
+func TestAProgramAddsAndChangesAPlace(t *testing.T) {
+	b := business(t)
+
+	f := placebus.Fields{Slug: "skinny-bed", Name: types.Text{EN: " Skinny bed "}, Conditions: types.Text{EN: "4 to 5 hours of morning sun."}}
+
+	got, err := b.Import(t.Context(), f)
+	if err != nil || got.Outcome != placebus.Created || got.Place.Name.EN != "Skinny bed" {
+		t.Fatalf("created: %+v %v", got, err)
+	}
+
+	if _, err := b.SetSpot(t.Context(), got.Place.ID, &placebus.Spot{X: 100, Y: 100}); err != nil {
+		t.Fatal(err)
+	}
+
+	if again, err := b.Import(t.Context(), f); err != nil || again.Outcome != placebus.Unchanged {
+		t.Errorf("sent again: %+v %v", again, err)
+	}
+
+	f.Purpose = types.Text{EN: "Along the house's north wall."}
+	changed, err := b.Import(t.Context(), f)
+	if err != nil || changed.Outcome != placebus.Updated || changed.Place.Purpose.EN == "" || changed.Place.Spot == nil {
+		t.Errorf("changed: %+v %v", changed, err)
+	}
+
+	if _, err := b.Import(t.Context(), placebus.Fields{Slug: "Not A Slug", Name: types.Text{EN: "x"}}); err == nil {
+		t.Error("a slug nobody can type was taken")
+	}
+}
