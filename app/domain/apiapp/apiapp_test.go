@@ -887,3 +887,42 @@ func TestAPlaceIsAddedChangedAndPutOnTheMap(t *testing.T) {
 		t.Errorf("no key: %d", w.Code)
 	}
 }
+
+// The flowering record reads back from the photos: first and last in flower
+// and first seen, each with where and whether it is checked.
+func TestThePlantsFloweringRecordReadsFromItsPhotos(t *testing.T) {
+	s := serve(t)
+	s.put("winecup", winecup())
+
+	for i, f := range []map[string]string{
+		{"kind": "leaf", "source": "ours", "taken_on": "2026-03-12"},
+		{"kind": "flower", "source": "ours", "taken_on": "2026-04-03"},
+		{"kind": "mature", "source": "ours", "taken_on": "2026-05-20", "in_flower": "true", "taken_where": "Pedernales Falls State Park"},
+	} {
+		if w := s.upload("winecup", f, noisy(t, uint64(40+i))); w.Code != http.StatusCreated {
+			t.Fatalf("upload %d: %d %s", i, w.Code, w.Body.String())
+		}
+	}
+
+	type record struct {
+		Species string              `json:"species"`
+		Years   []apiapp.SeasonJSON `json:"years"`
+	}
+
+	got := decode[record](t, s.api(http.MethodGet, "/api/v1/species/winecup/flowering", s.key, nil, ""))
+	if got.Species != "winecup" || len(got.Years) != 1 {
+		t.Fatalf("the record: %+v", got)
+	}
+
+	y := got.Years[0]
+	if y.Year != 2026 || y.Seen != 3 || y.InFlower != 2 ||
+		y.FirstSeen == nil || y.FirstSeen.TakenOn != "2026-03-12" ||
+		y.FirstFlower == nil || y.FirstFlower.TakenOn != "2026-04-03" || y.FirstFlower.Checked ||
+		y.LastFlower == nil || y.LastFlower.TakenOn != "2026-05-20" || !y.LastFlower.Elsewhere || y.LastFlower.TakenWhere != "Pedernales Falls State Park" {
+		t.Errorf("2026: %+v first %+v last %+v", y, y.FirstFlower, y.LastFlower)
+	}
+
+	if w := s.api(http.MethodGet, "/api/v1/species/nothing/flowering", s.key, nil, ""); w.Code != http.StatusNotFound {
+		t.Errorf("a plant not there: %d", w.Code)
+	}
+}

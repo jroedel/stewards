@@ -658,6 +658,12 @@ func TestAPhotosDayAndFlowerAreSaidOnItsScreen(t *testing.T) {
 		t.Error("the edit screen does not show the day and the flower it was given")
 	}
 
+	// And the plant's flowering record has it, first and last, not checked.
+	list := s.get(s.photosPath(), true).Body.String()
+	if !strings.Contains(list, "Flowering record") || strings.Count(list, `/edit">20 Sep</a>`) != 3 || !strings.Contains(list, "not checked") {
+		t.Error("the flowering record does not show the photo's day")
+	}
+
 	// The month and year follow the day, whatever the boxes said.
 	if !strings.Contains(edit, `<option value="9" selected>September</option>`) || !strings.Contains(edit, `value="2026"`) {
 		t.Error("the month and year do not follow the day")

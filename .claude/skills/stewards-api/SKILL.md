@@ -242,7 +242,9 @@ inbox in batches, and sorts them later. "Sort my inbox" means this:
      record** -- each plant's first and last flowering day every year, and
      its first sighting -- from these and the day the camera recorded, so
      every plant photo is worth sorting, not only the best: say in your
-     table which ones are in flower.
+     table which ones are in flower. `GET /api/v1/species/<slug>/flowering`
+     reads the record back, for questions like "when did the winecup start
+     flowering this year?" or "what is new on the property this year?"
    - `stock` — a plant for sale, from a nursery photo: see below.
    - `planted` — the plant was just planted at the `place`. It is listed
      there to protect and taken off the To plant list; the photo becomes its

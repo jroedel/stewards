@@ -32,6 +32,7 @@
     {{if .BloomWords}}<div class="strip" aria-hidden="true">{{range .Months}}<span class="strip-month{{if .On}} is-on{{end}}"><span class="strip-cell">{{if .On}}<svg viewBox="0 0 10 10" preserveAspectRatio="none"><rect width="10" height="10" rx="2" fill="{{.Swatch}}" stroke="#231F20" stroke-opacity="0.3" stroke-width="0.6"/></svg>{{end}}</span>{{.Letter}}</span>{{end}}</div>
     <p class="sr-only">{{.BloomWords}}</p>
     {{else}}<p class="muted">{{say $l .Copy.NoBloom}}</p>{{end}}
+    {{with .Flowering}}<p class="row-note">{{say $l $.Data.Copy.SeenInFlower}}: {{range $i, $x := .}}{{if $i}} · {{end}}{{say $l $x}}{{end}}</p>{{end}}
   </div>
   {{if .Height}}<div class="fact"><h2>{{say $l .Copy.Size}}</h2><p>{{.Height}} {{say $l .Copy.Tall}}{{with .Width}}, {{.}} {{say $l $.Data.Copy.Wide}}{{end}}</p></div>{{end}}
   {{if .Light}}<div class="fact"><h2>{{say $l .Copy.Light}}</h2><p>{{range $i, $x := .Light}}{{if $i}} · {{end}}{{say $l $x}}{{end}}</p></div>{{end}}

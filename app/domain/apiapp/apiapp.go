@@ -271,6 +271,12 @@ func (a app) endpoints() []Endpoint {
 			Returns: `{"species": plant} with "photos": [photo]`, handler: a.oneSpecies,
 		},
 		{
+			Method: http.MethodGet, Path: Prefix + "/species/{slug}/flowering", NeedsKey: true,
+			Summary: "The plant's flowering record, read from its photos: for each year, newest first, the first and last day it was photographed in flower and the first day it was photographed at all, each with the photo, where it was taken and whether it is checked. Our own dated photos from anywhere count; borrowed ones never do. Volunteers' cards show only the dates from checked photos.",
+			Returns: `{"species": slug, "years": [{year, first_flower, last_flower, first_seen, in_flower, seen}]}, each date {photo_id, taken_on, place, elsewhere, taken_where, checked} or absent.`,
+			handler: a.flowering,
+		},
+		{
 			Method: http.MethodPut, Path: Prefix + "/species/{slug}", NeedsKey: true,
 			Summary: "Add the plant at this address, or change it. Sending what is already there changes nothing. A change to a confirmed plant takes its confirmation away, for a steward to give again.",
 			Body: &Body{Encoding: "json", Fields: []Field{

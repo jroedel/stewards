@@ -721,3 +721,44 @@ func TestTheDayTakenAndInFlower(t *testing.T) {
 		t.Error("a day not written as one was read")
 	}
 }
+
+// The flowering record: first seen, first and last in flower, a year at a
+// time, newest first; borrowed and undated photos never count, and checked
+// only when asked.
+func TestTheFloweringRecord(t *testing.T) {
+	at := func(y, m, d int) time.Time { return time.Date(y, time.Month(m), d, 10, 0, 0, 0, types.Garden) }
+	photo := func(id string, when time.Time, flower, checked bool) photobus.Photo {
+		pid, _ := types.ParseID(id)
+		return photobus.Photo{ID: pid, Source: photobus.Ours, TakenAt: when, InFlower: flower, Checked: checked}
+	}
+
+	photos := []photobus.Photo{
+		photo("aaaaaaaa000000000000000000000001", at(2026, 5, 20), true, false),
+		photo("aaaaaaaa000000000000000000000002", at(2026, 3, 12), false, true),
+		photo("aaaaaaaa000000000000000000000003", at(2026, 4, 3), true, true),
+		photo("aaaaaaaa000000000000000000000004", at(2025, 4, 10), true, true),
+		photo("aaaaaaaa000000000000000000000005", time.Time{}, true, true), // no day
+		{ID: types.NewID(), Source: photobus.Borrowed, TakenAt: at(2026, 1, 1), InFlower: true, Checked: true},
+	}
+
+	all := photobus.Flowering(photos, false)
+	if len(all) != 2 || all[0].Year != 2026 || all[1].Year != 2025 {
+		t.Fatalf("years: %+v", all)
+	}
+
+	y := all[0]
+	if y.FirstSeen.ID != photos[1].ID || y.FirstFlower.ID != photos[2].ID || y.LastFlower.ID != photos[0].ID || y.Seen != 3 || y.InFlower != 2 {
+		t.Errorf("2026: %+v", y)
+	}
+
+	// For volunteers: the unchecked last flower is not counted.
+	checked := photobus.Flowering(photos, true)
+	if checked[0].LastFlower.ID != photos[2].ID || checked[0].InFlower != 1 {
+		t.Errorf("2026, checked only: %+v", checked[0])
+	}
+
+	// Seen, never in flower: no flowering days.
+	if got := photobus.Flowering(photos[1:2], false); len(got) != 1 || !got[0].FirstFlower.ID.Zero() || got[0].Seen != 1 {
+		t.Errorf("seen in leaf only: %+v", got)
+	}
+}
