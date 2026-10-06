@@ -199,7 +199,7 @@ function enhance(select) {
     also: o.dataset.also ?? "",
     group: o.parentElement.tagName === "OPTGROUP" ? o.parentElement.label : "",
   }));
-  const hint = select.dataset.find || "Type any part of the name";
+  const hint = select.dataset.find || "Type part of its name";
   const twin = select.dataset.findWith;
 
   const box = document.createElement("div");

@@ -21,8 +21,9 @@
 //     list once the last photo is sorted, or the sign-in page when a session
 //     has ended -- is gone to, as the browser would have.
 //   - No answer at all, or a server error, sends the form the ordinary way.
-//     That sends it twice, which both screens take as once: a Yes is
-//     photobus.SetChecked, and a sort sent again the same is unchanged.
+//     That sends it twice, which each form takes as once: a Yes is
+//     photobus.SetChecked, and a sort or a Change sheet sent again the same
+//     says what it said the first time.
 //   - If this file does not load, each press is a page load and the picture
 //     follows it.
 //
@@ -148,19 +149,35 @@
     if (!form || !document.getElementById("swap").contains(form)) return;
 
     e.preventDefault();
-    const button = form.querySelector("button[type=submit], button:not([type])");
-    if (button?.disabled) return;
-    if (button) button.disabled = true;
+    const buttons = [...form.querySelectorAll("button[type=submit], button:not([type])")];
+    if (buttons.some((b) => b.disabled)) return;
+
+    // What is sent is read before the buttons are stilled: a disabled
+    // button is left out of a form's data, and a form with two -- the
+    // Change sheet's "Save and check it" and "Save without checking" --
+    // says which by the button's own name and value.
+    const body = new URLSearchParams(new FormData(form, e.submitter));
+    for (const b of buttons) b.disabled = true;
 
     try {
-      show(await load(form.action, { method: "POST", body: new URLSearchParams(new FormData(form, e.submitter)) }));
+      show(await load(form.action, { method: "POST", body }));
     } catch (err) {
       if (err instanceof Elsewhere) {
         location.href = err.url;
         return;
       }
 
-      if (button) button.disabled = false;
+      // Sent the ordinary way, saying which button was pressed as the
+      // button would have. Not requestSubmit, which would come back here.
+      for (const b of buttons) b.disabled = false;
+      if (e.submitter?.name) {
+        const pressed = document.createElement("input");
+        pressed.type = "hidden";
+        pressed.name = e.submitter.name;
+        pressed.value = e.submitter.value;
+        form.append(pressed);
+      }
+
       form.submit();
     }
   });

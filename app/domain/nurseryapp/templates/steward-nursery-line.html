@@ -16,7 +16,7 @@
   <label for="species">Which of our plants it is <span class="optional">optional</span></label>
   <p class="help" id="species-help">Only if you are sure. A tag can be wrong.</p>
   {{with index .Problems "species"}}<p class="field-problem">{{.}}</p>{{end}}
-  <select id="species" name="species" aria-describedby="species-help" data-find="Type any part of the plant's name">{{range .Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+  <select id="species" name="species" aria-describedby="species-help" data-find="Type part of its name">{{range .Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
 
   <div class="pair">
     <div>

@@ -19,14 +19,14 @@ import { join } from "node:path";
 import { launch, skip, stage } from "../../../scripts/browser.mjs";
 import { sessionCookie, startServer } from "../../../scripts/testserver.mjs";
 
-let server, browser, page, ref, leaf, flower;
+let server, browser, page, headers, ref, leaf, flower;
 
 before(async () => {
   if (skip()) return;
 
   server = await startServer("check");
   const { base, cookie } = server;
-  const headers = { Cookie: `__Host-session=${cookie}` };
+  headers = { Cookie: `__Host-session=${cookie}` };
   const post = (path, body) => fetch(base + path, { method: "POST", body, redirect: "manual", headers, signal: AbortSignal.timeout(60_000) });
 
   stage("starting Chrome");
@@ -135,6 +135,55 @@ test("Yes, Undo and Skip change the queue in place, with the next picture alread
   assert.equal(await page.evaluate(`window.sameDocument`), true, "Skip loaded a page");
   assert.equal(await fetched(`/steward/check?at=${flower}`), pagesBefore, "Skip fetched the page it had fetched ahead");
   assert.equal(await checked(flower), false, "Skip checked the photo");
+
+  assert.deepEqual(page.errors, [], "the page reported errors, or the header policy refused something");
+});
+
+// The Change sheet: a popover the browser opens with no script, the plant
+// found by typing in it, saved and checked from it, and the queue going on
+// in place as it does after Yes.
+test("Change opens a sheet, and a photo filed under the wrong plant is moved and checked from it", opts, async () => {
+  const plants = async () => [...(await (await fetch(`${server.base}/steward/species`, { headers })).text()).matchAll(/\/steward\/species\/([0-9a-f]{32})\/edit/g)].map((m) => m[1]);
+  const had = await plants();
+  const w = await fetch(`${server.base}/steward/species`, {
+    method: "POST",
+    body: new URLSearchParams({ slug: "turks-cap", common_en: "Turk's cap", scientific: "Malvaviscus arboreus var. drummondii", status: "native" }),
+    redirect: "manual",
+    headers,
+  });
+  assert.equal(w.status, 303, `adding the plant: ${w.status}`);
+  const turksCap = (await plants()).find((id) => !had.includes(id));
+
+  await page.goto(`${server.base}/steward/check?at=${leaf}`);
+  await page.waitFor(shown(leaf));
+  await page.evaluate(`window.sameDocument = true`);
+
+  stage("opening the sheet");
+  await page.tap(".check-other button[popovertarget=change]");
+  await page.waitFor(`document.getElementById("change").matches(":popover-open")`);
+  assert.match(await page.evaluate(`document.querySelector("#change input[name=species]:checked + span")?.textContent ?? ""`), /Brazos penstemon/, "the photo's plant is not chosen on the sheet");
+  if (process.env.SCREENSHOTS) writeFileSync(join(process.env.SCREENSHOTS, "check-change.png"), await page.screenshot());
+
+  stage("the plant found by typing, and what it shows");
+  await page.tap("#change-species");
+  await page.type("malva");
+  await page.waitFor(`document.querySelectorAll("#change .find-list [role=option]").length === 1`);
+  await page.press("Enter");
+  await page.waitFor(`document.querySelector("#change .find-list").hidden`);
+  assert.equal(await page.evaluate(`document.querySelector("#change input[name=species]:checked")`), null, "the photo's own plant is still chosen as well");
+  await page.tap(`#change input[name=kind][value=flower]`);
+  if (process.env.SCREENSHOTS) writeFileSync(join(process.env.SCREENSHOTS, "check-change-chosen.png"), await page.screenshot());
+
+  stage("saved and checked");
+  await page.tap(`#change button[name=checked][value=yes]`);
+  await page.waitFor(`document.querySelector(".check-done")?.textContent.includes("Changed and checked: Turk's cap, flower close-up.")`);
+  assert.equal(await page.evaluate(`window.sameDocument`), true, "saving the sheet loaded a page");
+  assert.ok(await page.evaluate(shown(flower)), "the queue did not go on to the next photo");
+  assert.equal(await page.evaluate(`document.getElementById("change").matches(":popover-open")`), false, "the next photo's sheet is open");
+
+  assert.ok(await checked(leaf), "the server does not have the photo checked");
+  const capPhotos = await (await fetch(`${server.base}/steward/species/${turksCap}/photos`, { headers })).text();
+  assert.ok(capPhotos.includes(`/steward/photos/${leaf}/edit`), "the photo is not under the Turk's cap");
 
   assert.deepEqual(page.errors, [], "the page reported errors, or the header policy refused something");
 });

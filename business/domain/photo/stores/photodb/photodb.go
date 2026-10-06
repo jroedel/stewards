@@ -191,17 +191,19 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 // wrong plant is removed, not moved.
 func (s *Store) Update(ctx context.Context, p photobus.Photo) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE photos SET
-    place_id = ?, kind = ?, taken_year = ?, taken_month = ?,
+    species_id = ?, place_id = ?, kind = ?, taken_year = ?, taken_month = ?,
     source = ?, credit = ?, source_url = ?, license = ?, checked = ?,
     elsewhere = ?, taken_where = ?, taken_at = ?, in_flower = ?, in_fruit = ?, updated_at = ?
 WHERE id = ?`,
-		orNull(p.PlaceID), string(p.Kind), p.TakenYear, p.TakenMonth,
+		orNull(p.SpeciesID), orNull(p.PlaceID), string(p.Kind), p.TakenYear, p.TakenMonth,
 		string(p.Source), p.Credit, p.SourceURL, p.License, p.Checked,
 		p.Elsewhere, p.TakenWhere, millis(p.TakenAt), p.InFlower, p.InFruit, p.UpdatedAt.UnixMilli(), p.ID.String())
 
 	switch {
 	case sqldb.IsForeignKeyViolation(err):
 		return photobus.ErrUnknown
+	case sqldb.IsUniqueViolation(err):
+		return photobus.ErrDuplicate
 	case err != nil:
 		return fmt.Errorf("updating the photo: %w", err)
 	}

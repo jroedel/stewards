@@ -93,6 +93,22 @@ func (k Kind) Label() string {
 	return "Not set"
 }
 
+// Word is the kind's name on a button, three to a row on a phone: Label
+// less what does not fit, where "Leaf close-up" broke in the middle of a
+// word.
+func (k Kind) Word() string {
+	switch k {
+	case Leaf:
+		return "Leaf"
+	case Flower:
+		return "Flower"
+	case Mature:
+		return "Mature plant"
+	}
+
+	return k.Label()
+}
+
 // Source is whose photo it is.
 type Source string
 
@@ -402,6 +418,27 @@ func (b *Business) prepared(ctx context.Context, data []byte) (imaging.Prepared,
 // Update changes what is said about a photo. The pictures do not change; a
 // different photo is a new one.
 func (b *Business) Update(ctx context.Context, id types.ID, f Fields) (Photo, error) {
+	return b.update(ctx, id, types.ID{}, f)
+}
+
+// Refile is Update for a photo filed under the wrong plant, as the API can
+// file one: it moves the photo to speciesID as well, in the same write, so a
+// photo is never under the new plant with what was said for the old one.
+//
+// The pictures stay where they are, being named by the photo alone. The
+// check is whatever f says, as with Update: the check queue's Change sheet
+// is a steward looking at the photo and saying both at once. A plant that
+// already has this same picture refuses it, as Add would.
+func (b *Business) Refile(ctx context.Context, id, speciesID types.ID, f Fields) (Photo, error) {
+	if speciesID.Zero() {
+		return Photo{}, Invalid{Field: "species", Problem: "choose the plant this photo shows"}
+	}
+
+	return b.update(ctx, id, speciesID, f)
+}
+
+// update is Update, and Refile when speciesID is not zero.
+func (b *Business) update(ctx context.Context, id, speciesID types.ID, f Fields) (Photo, error) {
 	p, err := b.store.ByID(ctx, id)
 	if err != nil {
 		return Photo{}, err
@@ -412,12 +449,22 @@ func (b *Business) Update(ctx context.Context, id types.ID, f Fields) (Photo, er
 		return Photo{}, err
 	}
 
+	moved := !speciesID.Zero() && speciesID != p.SpeciesID
+
 	p.apply(f)
+	if moved {
+		p.SpeciesID = speciesID
+	}
+
 	p.UpdatedAt = b.now().UTC().Truncate(time.Millisecond)
 
 	switch err := b.store.Update(ctx, p); {
+	case errors.Is(err, ErrUnknown) && moved:
+		return Photo{}, Invalid{Field: "species", Problem: "that plant or that place is not in the list any more. Open the page again and choose from it"}
 	case errors.Is(err, ErrUnknown):
 		return Photo{}, Invalid{Field: "place", Problem: "that place is not in the list any more. Choose another, or leave it empty"}
+	case errors.Is(err, ErrDuplicate):
+		return Photo{}, Invalid{Field: "species", Problem: "that plant already has this same picture. Delete this copy on its own screen instead"}
 	case err != nil:
 		return Photo{}, err
 	}

@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
+	"github.com/jroedel/stewards/business/domain/species/speciesbus"
+	"github.com/jroedel/stewards/business/types"
 )
 
 // add puts a photo straight in through the rules, checked or not.
@@ -120,5 +122,88 @@ func TestChangingAPhotoFromTheQueueComesBackToIt(t *testing.T) {
 	fields.Del("from")
 	if w := s.post("/steward/photos/"+id, fields); !strings.HasPrefix(w.Header().Get("Location"), s.photosPath()) {
 		t.Errorf("saving from the plant's photos went to %q", w.Header().Get("Location"))
+	}
+}
+
+// The Change sheet: on the queue's page with the photo's plant as its first
+// button and every plant in the searchable list; a leaf filed under the
+// wrong plant saved as the right plant's flower and checked, on to the next
+// photo; saved without the check, it stays in the queue; and what is not
+// right comes back with the sheet open in the page, saying what.
+func TestTheChangeSheetRefilesAPhoto(t *testing.T) {
+	s := serve(t)
+
+	sp, err := s.species.Create(t.Context(), speciesbus.Fields{
+		Slug: "turks-cap", Common: types.Text{EN: "Turk's cap", ES: "Monacillo"}, Scientific: "Malvaviscus arboreus", Status: speciesbus.StatusNative,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	turksCap := sp.ID.String()
+
+	first := s.add(t, photobus.Leaf, false, 1)
+	second := s.add(t, photobus.Leaf, false, 2)
+
+	page := s.get("/steward/check?at="+first, true).Body.String()
+	contains(t, "the sheet", page,
+		`popovertarget="change"`, `id="change"`, ` popover role="dialog"`,
+		`action="/steward/check/`+first+`/change"`,
+		`<input type="radio" name="species" value="`+s.penstemon+`" checked><span>Brazos penstemon</span>`,
+		`data-find-with="species"`, `data-also="Monacillo"`, "Turk&#39;s cap (Malvaviscus arboreus)",
+		`name="kind" value="leaf" required checked`,
+		`name="checked" value="yes">Save and check it`, `name="checked" value="no">Save without checking`,
+		"/static/js/find.")
+
+	// Both a button and the list, different: one is asked for.
+	w := s.post("/steward/check/"+first+"/change", url.Values{"species": {s.penstemon}, "species_other": {turksCap}, "kind": {"flower"}, "checked": {"yes"}})
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("two plants: %d, want 422", w.Code)
+	}
+
+	page = w.Body.String()
+	contains(t, "the sheet sent back", page, "Choose one plant: a button or the list, not both.", `class="sheet sheet-open card"`, `href="#change"`)
+	if strings.Contains(page, ` popover role="dialog"`) {
+		t.Error("the sheet with something to fix is a popover, closed")
+	}
+
+	if p, _ := s.photos.ByID(t.Context(), mustID(t, first)); p.Kind != photobus.Leaf || p.SpeciesID.String() != s.penstemon {
+		t.Errorf("a refused change was saved: %+v", p)
+	}
+
+	// The right plant, from the list, a flower, checked.
+	w = s.post("/steward/check/"+first+"/change", url.Values{"species_other": {turksCap}, "kind": {"flower"}, "checked": {"yes"}})
+	want := "/steward/check?done=changed-checked&last=" + first + "&at=" + second
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != want {
+		t.Fatalf("saving and checking: %d %q, want 303 to %q\n%s", w.Code, w.Header().Get("Location"), want, w.Body.String())
+	}
+
+	p, err := s.photos.ByID(t.Context(), mustID(t, first))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if p.SpeciesID.String() != turksCap || p.Kind != photobus.Flower || !p.InFlower || !p.Checked {
+		t.Errorf("after the sheet: %+v", p)
+	}
+
+	contains(t, "the queue after the sheet", s.get(want, true).Body.String(), "Changed and checked: Turk&#39;s cap, flower close-up.", ">Uncheck</button>", "This is the last one.")
+
+	// The sheet's buttons now start with the plant just worked on.
+	page = s.get("/steward/check", true).Body.String()
+	contains(t, "the next photo's sheet", page, `value="`+turksCap+`"><span>Turk&#39;s cap</span>`)
+
+	// Saved without the check, a photo stays in the queue.
+	w = s.post("/steward/check/"+second+"/change", url.Values{"species": {s.penstemon}, "kind": {"young"}, "checked": {"no"}})
+	want = "/steward/check?done=changed&last=" + second + "&at=" + second
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != want {
+		t.Fatalf("saving without checking: %d %q, want 303 to %q", w.Code, w.Header().Get("Location"), want)
+	}
+
+	contains(t, "the queue after saving without the check", s.get(want, true).Body.String(), "Changed: Brazos penstemon, young plant. It waits here to be checked.", "This is the last one.")
+
+	// Nothing said about what it shows.
+	w = s.post("/steward/check/"+second+"/change", url.Values{"species": {s.penstemon}, "checked": {"yes"}})
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "Choose what the photo shows.") {
+		t.Errorf("no kind: %d", w.Code)
 	}
 }

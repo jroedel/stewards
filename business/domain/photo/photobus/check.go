@@ -71,6 +71,38 @@ func (b *Business) Unchecked(ctx context.Context) ([]Photo, error) {
 	return out, nil
 }
 
+// RecentSpecies is the plants whose photos were added or changed last, most
+// recent first, at most n: the plants a steward is working through, which
+// the check queue's Change sheet offers as a button each. A photo sorted,
+// sent through the API, checked or refiled all count.
+func (b *Business) RecentSpecies(ctx context.Context, n int) ([]types.ID, error) {
+	all, err := b.store.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	slices.SortFunc(all, func(x, y Photo) int {
+		if c := y.UpdatedAt.Compare(x.UpdatedAt); c != 0 {
+			return c
+		}
+
+		return cmp.Compare(x.ID.String(), y.ID.String())
+	})
+
+	var out []types.ID
+	for _, p := range all {
+		if len(out) == n {
+			break
+		}
+
+		if !p.SpeciesID.Zero() && !slices.Contains(out, p.SpeciesID) {
+			out = append(out, p.SpeciesID)
+		}
+	}
+
+	return out, nil
+}
+
 // SetChecked gives a photo a steward's check, or takes it away again: the
 // queue's one-tap Yes, and its Undo.
 //
