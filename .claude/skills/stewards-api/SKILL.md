@@ -1,6 +1,6 @@
 ---
 name: stewards-api
-description: Add plants, their photos and where they grow to the live garden steward app through its API, sort the steward's photo inbox, and read nursery stock for planning a bed, as the steward whose key is in STEWARDS_API_KEY. Use when the person asks to upload, import or add species data, species photos or a place's plants to the site, to sort, go through or identify the photos in their inbox, or to plan a bed from what the nurseries have — not for developing the app.
+description: Add plants, their photos and where they grow to the live garden steward app through its API, add or describe the garden's places, sort the steward's photo inbox, and read nursery stock for planning a bed, as the steward whose key is in STEWARDS_API_KEY. Use when the person asks to upload, import or add species data, species photos or a place's plants to the site, to sort, go through or identify the photos in their inbox, or to plan a bed from what the nurseries have — not for developing the app.
 ---
 
 # Adding plants, photos and listings, and sorting the inbox, through the API
@@ -56,6 +56,9 @@ to be read at all (CLAUDE.md §6).
   agreed is to come out *at that place* (pull or protect belongs to a plant
   and a place, not to the plant: poison ivy is native), and always say why in
   the note ("Invasive: take it out, root and all, before it seeds").
+- **A photo's day and flower can be corrected** with the same PATCH:
+  `taken_on` (`"2026-04-03"`, for a photo whose camera did not record it)
+  and `in_flower`.
 - **A change to a checked photo clears its check.** Correct a photo's kind,
   month or place with `PATCH /api/v1/photos/<id>`, sending only what changes.
   The answer says `"check_cleared": true` when it took a check away; tell
@@ -125,6 +128,30 @@ photo already kept answers `"duplicate": true`.
   speaker, never from machine translation (design.md).
 - Notes are for someone standing in the sun with dirty hands: short, plain,
   practical.
+
+## Places
+
+Places are the named areas people stand in and work in: the rain garden,
+its three bands, the switchbacks. `GET /api/v1/places` gives each as its
+card describes it -- `purpose`, `conditions`, `photo_point`, its `parent`,
+its `spot` on the map -- so read it before saying anything about a place.
+
+- **Add or change one** with `PUT /api/v1/places/<slug>`, sending the whole
+  place: a field left out is emptied, so read it first and send it back with
+  your change. Do it only when the person has described the place or asked
+  for the change; a place is theirs to name.
+- **The slug is forever.** It is the card's address, printed on stakes and
+  QR boards. Choose a short, plain one (`skinny-bed`, `inflow`) and ask the
+  person before creating a place whose slug you made up.
+- **A smaller place inside another** (a band of the rain garden) names it as
+  `parent`. Only where it helps: the switchbacks can stay one place.
+- **The map** is a drawing of the property, not a survey. Put a place on it
+  with `PUT /api/v1/places/<slug>/spot` (`{"x", "y"}` in the drawing's
+  units, which the list's `map` gives) only when the person has said where it
+  is relative to places already on it, and tell them to check it on the map
+  screen. A place inside another is never on the map.
+- English only, as for plants.
+- Removing a place is the person's, on its screen.
 
 ## Photos
 
@@ -209,7 +236,15 @@ inbox in batches, and sorts them later. "Sort my inbox" means this:
    identification: name the look-alikes when there are any (frostweed and
    wingstem, again), and say "not sure" freely. The outcomes are:
    - `photo` — a photo of the plant, for its photos: something to find out
-     about, or a flower not often seen. Choose the `kind`.
+     about, or a flower not often seen. Choose the `kind`, and send
+     `"in_flower": true` whenever the plant is in bloom in it, whatever the
+     kind (a flower close-up always is). The steward keeps a **flowering
+     record** -- each plant's first and last flowering day every year, and
+     its first sighting -- from these and the day the camera recorded, so
+     every plant photo is worth sorting, not only the best: say in your
+     table which ones are in flower. `GET /api/v1/species/<slug>/flowering`
+     reads the record back, for questions like "when did the winecup start
+     flowering this year?" or "what is new on the property this year?"
    - `stock` — a plant for sale, from a nursery photo: see below.
    - `planted` — the plant was just planted at the `place`. It is listed
      there to protect and taken off the To plant list; the photo becomes its

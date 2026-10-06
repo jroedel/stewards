@@ -3,6 +3,7 @@ package speciesapp
 import (
 	"cmp"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strconv"
@@ -46,7 +47,7 @@ func CardRoutes(mux *http.ServeMux, cfg Config) {
 
 type cardWording struct {
 	Back, Planting, Weeding, NotConfirmed, CheckedAgainst, Sources,
-	Flower, Blooms, NoBloom, Size, Tall, Wide, Light, Water, Note,
+	Flower, Blooms, NoBloom, SeenInFlower, Size, Tall, Wide, Light, Water, Note,
 	WhereItGrows, NotListedAnywhere, Planned, NotSure, Edit types.Text
 
 	Actions  map[listingbus.Action]types.Text
@@ -78,6 +79,7 @@ var cardWords = cardWording{
 	Flower:            types.Text{EN: "Flower"},
 	Blooms:            types.Text{EN: "Blooms"},
 	NoBloom:           types.Text{EN: "No bloom months recorded yet."},
+	SeenInFlower:      types.Text{EN: "Seen in flower"},
 	Size:              types.Text{EN: "Mature size"},
 	Tall:              types.Text{EN: "tall"},
 	Wide:              types.Text{EN: "wide"},
@@ -156,6 +158,7 @@ type cardView struct {
 	Swatches    []string
 	Months      []monthCell
 	BloomWords  string
+	Flowering   []types.Text // the last two years seen in flower, newest first
 	Height      string
 	Width       string
 	Light       []types.Text
@@ -253,6 +256,7 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 	}
 
 	names := placeNames(places)
+	v.Flowering = flowering(photos)
 
 	for _, k := range viewKinds[v.Weeding] {
 		p, ok := photobus.Best(photos, k)
@@ -488,4 +492,48 @@ func (a app) photo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.render.Render(w, r, http.StatusOK, "plant-photo", v)
+}
+
+// flowering is the plant's flowering record as a volunteer is told it: the
+// last two years it was seen in flower, from checked photos alone, as a
+// volunteer sees no photo until a steward has checked it. "2026: 3 Apr –
+// 20 May", a day seen off the property naming where, since the record
+// counts photos from everywhere and a park two weeks ahead is not this
+// garden.
+//
+// English, with the Spanish to come with the rest of the card's: the month
+// names are a date's, not copy, and are written as English writes them.
+func flowering(photos []photobus.Photo) []types.Text {
+	var out []types.Text
+
+	for _, s := range photobus.Flowering(photos, true) {
+		if s.FirstFlower.ID.Zero() {
+			continue
+		}
+
+		line := fmt.Sprintf("%d: %s", s.Year, dayAndWhere(s.FirstFlower))
+		if s.LastFlower.ID != s.FirstFlower.ID && dayOf(s.LastFlower) != dayOf(s.FirstFlower) {
+			line += " – " + dayAndWhere(s.LastFlower)
+		}
+
+		out = append(out, types.Text{EN: line})
+		if len(out) == 2 {
+			break
+		}
+	}
+
+	return out
+}
+
+func dayOf(p photobus.Photo) string { return p.TakenAt.In(types.Garden).Format("2 Jan") }
+
+func dayAndWhere(p photobus.Photo) string {
+	switch {
+	case p.Elsewhere && p.TakenWhere != "":
+		return dayOf(p) + " (" + p.TakenWhere + ")"
+	case p.Elsewhere:
+		return dayOf(p) + " (not here)"
+	}
+
+	return dayOf(p)
 }

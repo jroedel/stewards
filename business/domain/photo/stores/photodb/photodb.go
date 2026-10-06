@@ -42,6 +42,7 @@ var Expected = sqldb.Expected{
 		"source", "credit", "source_url", "license", "checked", "format",
 		"large_width", "large_height", "small_width", "small_height",
 		"created_at", "updated_at", "sha256", "elsewhere", "taken_where",
+		"taken_at", "in_flower",
 	},
 }
 
@@ -114,6 +115,30 @@ CREATE INDEX IF NOT EXISTS photos_place ON photos (place_id);
 		return err
 	}
 
+	// taken_at is when it was taken to the second, Unix milliseconds, for
+	// the flowering record's first and last days; 0 for not known. in_flower
+	// is 1 for a photo of the plant in flower, whatever its kind.
+	//
+	// Both are nullable where every other later column has a default, and
+	// NULL means one thing: a row from before the column, not yet filled in.
+	// This store writes 0 or a value, never NULL, so the filling-in below
+	// can run at every startup and touch only those rows. A default would
+	// have made "from before" and "said so since" the same 0, and a flower a
+	// steward un-ticked would be ticked again at the next deploy.
+	for _, col := range []string{"taken_at", "in_flower"} {
+		if err := sqldb.AddColumn(ctx, db, "photos", col, "INTEGER"); err != nil {
+			return err
+		}
+	}
+
+	// A photo from before in_flower is in flower if it was filed as a
+	// flower: the only thing anybody had said. taken_at from before is
+	// filled in by inboxdb, which knows when each photo sorted from the
+	// inbox was taken; one never in the inbox stays unknown.
+	if _, err := db.ExecContext(ctx, `UPDATE photos SET in_flower = (kind = 'flower') WHERE in_flower IS NULL`); err != nil {
+		return fmt.Errorf("marking the photos from before as in flower or not: %w", err)
+	}
+
 	// After the columns, in its own statement, for the reason above. UNIQUE,
 	// so that two uploads of one photo at the same moment cannot both be
 	// kept: the second insert is refused, and a claim is one statement.
@@ -127,16 +152,18 @@ CREATE INDEX IF NOT EXISTS photos_place ON photos (place_id);
 
 const columns = `id, species_id, place_id, kind, taken_year, taken_month,
 source, credit, source_url, license, checked, format,
-large_width, large_height, small_width, small_height, created_at, updated_at, sha256, elsewhere, taken_where`
+large_width, large_height, small_width, small_height, created_at, updated_at, sha256, elsewhere, taken_where,
+taken_at, in_flower`
 
 // Create inserts a photo.
 func (s *Store) Create(ctx context.Context, p photobus.Photo) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO photos (`+columns+`)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ID.String(), orNull(p.SpeciesID), orNull(p.PlaceID), string(p.Kind), p.TakenYear, p.TakenMonth,
 		string(p.Source), p.Credit, p.SourceURL, p.License, p.Checked, p.Format,
 		p.Large.Width, p.Large.Height, p.Small.Width, p.Small.Height,
-		p.CreatedAt.UnixMilli(), p.UpdatedAt.UnixMilli(), p.SHA256, p.Elsewhere, p.TakenWhere)
+		p.CreatedAt.UnixMilli(), p.UpdatedAt.UnixMilli(), p.SHA256, p.Elsewhere, p.TakenWhere,
+		millis(p.TakenAt), p.InFlower)
 
 	switch {
 	case sqldb.IsForeignKeyViolation(err):
@@ -159,11 +186,11 @@ func (s *Store) Update(ctx context.Context, p photobus.Photo) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE photos SET
     place_id = ?, kind = ?, taken_year = ?, taken_month = ?,
     source = ?, credit = ?, source_url = ?, license = ?, checked = ?,
-    elsewhere = ?, taken_where = ?, updated_at = ?
+    elsewhere = ?, taken_where = ?, taken_at = ?, in_flower = ?, updated_at = ?
 WHERE id = ?`,
 		orNull(p.PlaceID), string(p.Kind), p.TakenYear, p.TakenMonth,
 		string(p.Source), p.Credit, p.SourceURL, p.License, p.Checked,
-		p.Elsewhere, p.TakenWhere, p.UpdatedAt.UnixMilli(), p.ID.String())
+		p.Elsewhere, p.TakenWhere, millis(p.TakenAt), p.InFlower, p.UpdatedAt.UnixMilli(), p.ID.String())
 
 	switch {
 	case sqldb.IsForeignKeyViolation(err):
@@ -249,12 +276,15 @@ func scan(row scanner) (photobus.Photo, error) {
 		species, place   sql.NullString
 		kind, source     string
 		created, updated int64
+		takenAt          sql.NullInt64
+		inFlower         sql.NullBool
 	)
 
 	err := row.Scan(&id, &species, &place, &kind, &p.TakenYear, &p.TakenMonth,
 		&source, &p.Credit, &p.SourceURL, &p.License, &p.Checked, &p.Format,
 		&p.Large.Width, &p.Large.Height, &p.Small.Width, &p.Small.Height,
-		&created, &updated, &p.SHA256, &p.Elsewhere, &p.TakenWhere)
+		&created, &updated, &p.SHA256, &p.Elsewhere, &p.TakenWhere,
+		&takenAt, &inFlower)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return photobus.Photo{}, err
@@ -284,8 +314,22 @@ func scan(row scanner) (photobus.Photo, error) {
 
 	p.CreatedAt = time.UnixMilli(created).UTC()
 	p.UpdatedAt = time.UnixMilli(updated).UTC()
+	p.InFlower = inFlower.Bool
+
+	if takenAt.Valid && takenAt.Int64 != 0 {
+		p.TakenAt = time.UnixMilli(takenAt.Int64).UTC()
+	}
 
 	return p, nil
+}
+
+// millis is a time as this store keeps it: Unix milliseconds, 0 for none.
+func millis(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+
+	return t.UnixMilli()
 }
 
 // orNull is NULL for an id not given, so the reference has nothing to check.

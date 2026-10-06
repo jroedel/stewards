@@ -9,6 +9,29 @@
 {{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below, choose the photo again, and press Add photo.</p>{{end}}
 {{if .Missing}}<p class="help">{{.Missing}} of the five kinds have no checked photo yet.</p>{{end}}
 
+{{/* The flowering record: read from the photos below, so a photo's day or
+its "In flower" corrected there corrects it here. */}}
+<section class="card flowering" aria-labelledby="flowering">
+  <h2 id="flowering">Flowering record</h2>
+  {{if .Seasons}}
+  <table class="flowering-table">
+    <thead><tr><th scope="col">Year</th><th scope="col">First flower</th><th scope="col">Last flower</th><th scope="col">First seen</th></tr></thead>
+    <tbody>
+    {{range .Seasons}}<tr>
+      <th scope="row">{{.Year}}</th>
+      <td>{{template "sighting" .FirstFlower}}</td>
+      <td>{{template "sighting" .LastFlower}}</td>
+      <td>{{template "sighting" .FirstSeen}}</td>
+    </tr>
+    <tr class="flowering-count"><td colspan="4">{{.InFlower}} of {{.Seen}} dated photos in flower</td></tr>
+    {{end}}</tbody>
+  </table>
+  <p class="help">From our own photos with a day, taken anywhere. Volunteers see only the dates from checked photos.</p>
+  {{else}}
+  <p class="muted">No dated photos yet. Each photo with a day, ticked In flower when the plant is in bloom, adds to it.</p>
+  {{end}}
+</section>
+
 {{range .Sections}}
 <section class="card photo-kind" id="{{.Kind}}" aria-labelledby="kind-{{.Kind}}">
   <h2 id="kind-{{.Kind}}">{{.Label}}</h2>
@@ -41,3 +64,5 @@
 </form>
 </div>
 {{end}}{{end}}
+
+{{define "sighting"}}{{if .ID}}<a href="/steward/photos/{{.ID}}/edit">{{.Day}}</a> <span class="row-note">{{.Where}}{{if .Unchecked}} · not checked{{end}}</span>{{else}}<span class="muted">none</span>{{end}}{{end}}

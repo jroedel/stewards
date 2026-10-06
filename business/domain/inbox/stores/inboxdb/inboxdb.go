@@ -124,6 +124,38 @@ CREATE INDEX IF NOT EXISTS inbox_place ON inbox (place_id);
 		}
 	}
 
+	// A plant's photo sorted from here before photos kept the moment they
+	// were taken (photodb's taken_at) gets it from its inbox row, which has
+	// always kept it: the flowering record then starts with every photo
+	// already sorted, not only the ones sorted since. Only rows photodb left
+	// NULL, which it writes for none but those from before, so this runs at
+	// every startup and changes nothing the second time -- nor a day a
+	// steward has since corrected.
+	const filled = `
+UPDATE photos SET taken_at = (
+    SELECT inbox.taken_at FROM inbox
+    WHERE inbox.photo_id = photos.id AND inbox.taken_at IS NOT NULL
+    ORDER BY inbox.sorted_at LIMIT 1
+)
+WHERE photos.taken_at IS NULL
+  AND EXISTS (SELECT 1 FROM inbox WHERE inbox.photo_id = photos.id AND inbox.taken_at IS NOT NULL)`
+
+	// Only where there is a photos table with the column: main runs photodb
+	// first, but the inbox table needs neither, and a test of this store
+	// alone has no photos at all.
+	var photos int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('photos') WHERE name = 'taken_at'`).Scan(&photos); err != nil {
+		return fmt.Errorf("looking for the photos' taken_at: %w", err)
+	}
+
+	if photos == 0 {
+		return nil
+	}
+
+	if _, err := db.ExecContext(ctx, filled); err != nil {
+		return fmt.Errorf("giving photos sorted from the inbox the day they were taken: %w", err)
+	}
+
 	return nil
 }
 

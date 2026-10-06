@@ -71,6 +71,8 @@ type Species interface {
 type Places interface {
 	All(ctx context.Context) ([]placebus.Place, error)
 	BySlug(ctx context.Context, slug string) (placebus.Place, error)
+	Import(ctx context.Context, f placebus.Fields) (placebus.Imported, error)
+	SetSpot(ctx context.Context, id types.ID, spot *placebus.Spot) (placebus.Place, error)
 }
 
 // Listings is what it needs from the listing rules.
@@ -199,8 +201,42 @@ func (a app) endpoints() []Endpoint {
 		},
 		{
 			Method: http.MethodGet, Path: Prefix + "/places", NeedsKey: true,
-			Summary: "Every place in the garden, in the stewards' order. A photo's place is one of these slugs.",
-			Returns: `{"places": [{slug, name, parent, card_url}]}`, handler: a.listPlaces,
+			Summary: "Every place in the garden, in the stewards' order, with what its card says about it: what it is for, its conditions, where to stand for its photo, and where it is on the map. A photo's place is one of these slugs.",
+			Returns: `{"places": [place], "map": {"width", "height"}}. A place is {slug, name, parent, purpose, conditions, photo_point, trail_anchor, sort, spot: {x, y} or absent, card_url}.`, handler: a.listPlaces,
+		},
+		{
+			Method: http.MethodGet, Path: Prefix + "/places/{slug}", NeedsKey: true,
+			Summary: "One place, as the list gives it, with the smaller places inside it.",
+			Returns: `{"place": place, "inside": [slug]}`, handler: a.onePlace,
+		},
+		{
+			Method: http.MethodPut, Path: Prefix + "/places/{slug}", NeedsKey: true,
+			Summary: "Add the place at this address, or change it. Send the whole place: a field left out is emptied. Sending what is already there changes nothing. The slug is the place's address on its card, printed on stakes and QR boards, so it is chosen once and never changes. Where it is on the map is set apart, with PUT .../spot.",
+			Body: &Body{Encoding: "json", Fields: []Field{
+				text("name", "What people call it.", true),
+				{Name: "parent", Type: "string", Description: "The slug of the place this one is part of, such as a band of the rain garden; empty for one that stands on its own. One level deep at most."},
+				text("purpose", `What it is for: "the backdrop of the gathering space".`, false),
+				text("conditions", "What a planter needs to know: sun, slope, soil, wet or dry.", false),
+				text("photo_point", `Where to stand, and which way to face, for its photo re-shot each season: "from the fire-pit bench, facing the wall".`, false),
+				{Name: "trail_anchor", Type: "string", Values: placebus.TrailAnchors, Description: "The station on the public trail page this place is, if it is one."},
+				{Name: "sort", Type: "integer", Description: "Its order in the list, lowest first; ties go by name."},
+			}},
+			Returns: `201 {"outcome": "created", "place": place}, or 200 with "updated" or "unchanged".`,
+			handler: a.putPlace,
+		},
+		{
+			Method: http.MethodPut, Path: Prefix + "/places/{slug}/spot", NeedsKey: true,
+			Summary: "Put a place on the map, or move it. The map is a drawing of the property, not a survey: x is across from its west edge and y down from its north edge, in the drawing's units (the list's map gives its size). Place it by its neighbours' spots. Only a place that stands on its own is on the map.",
+			Body: &Body{Encoding: "json", Fields: []Field{
+				{Name: "x", Type: "integer", Required: true, Description: "Across from the west edge."},
+				{Name: "y", Type: "integer", Required: true, Description: "Down from the north edge."},
+			}},
+			Returns: `200 {"place": place}`, handler: a.putSpot,
+		},
+		{
+			Method: http.MethodDelete, Path: Prefix + "/places/{slug}/spot", NeedsKey: true,
+			Summary: "Take a place off the map. The place itself stays.",
+			Returns: `200 {"place": place}`, handler: a.deleteSpot,
 		},
 		{
 			Method: http.MethodGet, Path: Prefix + "/places/{slug}/plants", NeedsKey: true,
@@ -235,6 +271,12 @@ func (a app) endpoints() []Endpoint {
 			Returns: `{"species": plant} with "photos": [photo]`, handler: a.oneSpecies,
 		},
 		{
+			Method: http.MethodGet, Path: Prefix + "/species/{slug}/flowering", NeedsKey: true,
+			Summary: "The plant's flowering record, read from its photos: for each year, newest first, the first and last day it was photographed in flower and the first day it was photographed at all, each with the photo, where it was taken and whether it is checked. Our own dated photos from anywhere count; borrowed ones never do. Volunteers' cards show only the dates from checked photos.",
+			Returns: `{"species": slug, "years": [{year, first_flower, last_flower, first_seen, in_flower, seen}]}, each date {photo_id, taken_on, place, elsewhere, taken_where, checked} or absent.`,
+			handler: a.flowering,
+		},
+		{
 			Method: http.MethodPut, Path: Prefix + "/species/{slug}", NeedsKey: true,
 			Summary: "Add the plant at this address, or change it. Sending what is already there changes nothing. A change to a confirmed plant takes its confirmation away, for a steward to give again.",
 			Body: &Body{Encoding: "json", Fields: []Field{
@@ -264,7 +306,9 @@ func (a app) endpoints() []Endpoint {
 				{Name: "credit", Type: "string", Description: "The author, as the photo's page gives it. Required when borrowed; for ours, leave it out unless the photographer wants to be named."},
 				{Name: "source_url", Type: "string", Description: "The photo's own page, https. Required when borrowed."},
 				{Name: "license", Type: "string", Description: `Its licence's short name, such as "CC BY-SA 4.0". Required when borrowed.`},
-				{Name: "taken_month", Type: "integer", Description: "1 to 12. Leave it and taken_year out to use the date the camera recorded."},
+				{Name: "taken_month", Type: "integer", Description: "1 to 12. Leave it, taken_year and taken_on out to use the date the camera recorded."},
+				{Name: "taken_on", Type: "string", Description: "The day it was taken, such as 2026-04-03, for the flowering record, when the camera did not record it. The month and year follow it."},
+				{Name: "in_flower", Type: "boolean", Description: "True when the plant is in flower in the photo, whatever the kind. A flower photo always is."},
 				{Name: "taken_year", Type: "integer", Description: "Four figures."},
 				{Name: "place", Type: "string", Description: "Where it was taken, as a place slug from /api/v1/places. For ours, taken on the property."},
 				{Name: "taken_where", Type: "string", Description: "For ours taken off the property: where, by name, such as a park. The card names it, and shows a photo taken here before it. Not with place."},
@@ -284,6 +328,8 @@ func (a app) endpoints() []Endpoint {
 				{Name: "license", Type: "string", Description: "Its licence's short name, for a borrowed one."},
 				{Name: "taken_month", Type: "integer", Description: "1 to 12, or 0 for not known."},
 				{Name: "taken_year", Type: "integer", Description: "Four figures, or 0 for not known."},
+				{Name: "taken_on", Type: "string", Description: `The day it was taken, such as "2026-04-03"; "" for not known. Sending only taken_month or taken_year says the day is not known.`},
+				{Name: "in_flower", Type: "boolean", Description: "The plant in flower in the photo, whatever its kind. A flower photo always is."},
 				{Name: "place", Type: "string", Description: `Where on the property it was taken, as a place slug; "" for not said.`},
 				{Name: "elsewhere", Type: "boolean", Description: "Taken off the property."},
 				{Name: "taken_where", Type: "string", Description: "Where off the property, such as a park's name."},
@@ -332,34 +378,6 @@ func (a app) notFound(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------ places
 
 // PlaceJSON is a place as the API shows it.
-type PlaceJSON struct {
-	Slug    string   `json:"slug"`
-	Name    TextJSON `json:"name"`
-	Parent  string   `json:"parent,omitempty"`
-	CardURL string   `json:"card_url"`
-}
-
-func (a app) listPlaces(w http.ResponseWriter, r *http.Request) {
-	all, err := a.places.All(r.Context())
-	if err != nil {
-		a.fail(w, r, "listing places", err)
-
-		return
-	}
-
-	slugs := map[types.ID]string{}
-	for _, p := range all {
-		slugs[p.ID] = p.Slug
-	}
-
-	out := []PlaceJSON{}
-	for _, p := range all {
-		out = append(out, PlaceJSON{Slug: p.Slug, Name: textOf(p.Name), Parent: slugs[p.ParentID], CardURL: a.base + "/places/" + p.Slug})
-	}
-
-	web.WriteJSON(w, http.StatusOK, map[string]any{"places": out})
-}
-
 // ------------------------------------------------------------------ species
 
 // TextJSON is a types.Text.
@@ -640,6 +658,8 @@ type PhotoJSON struct {
 	License    string    `json:"license,omitempty"`
 	TakenYear  int       `json:"taken_year,omitempty"`
 	TakenMonth int       `json:"taken_month,omitempty"`
+	TakenOn    string    `json:"taken_on,omitempty"`
+	InFlower   bool      `json:"in_flower"`
 	Place      string    `json:"place,omitempty"`
 	Elsewhere  bool      `json:"elsewhere"`
 	TakenWhere string    `json:"taken_where,omitempty"`
@@ -657,6 +677,7 @@ func (a app) photoOf(p photobus.Photo, places map[types.ID]string) PhotoJSON {
 		ID: p.ID.String(), Kind: string(p.Kind), Source: string(p.Source),
 		Credit: p.Credit, SourceURL: p.SourceURL, License: p.License,
 		TakenYear: p.TakenYear, TakenMonth: p.TakenMonth, Place: places[p.PlaceID],
+		TakenOn: photobus.DayOf(p.TakenAt), InFlower: p.InFlower,
 		Elsewhere: p.Elsewhere, TakenWhere: p.TakenWhere,
 		Checked: p.Checked, SHA256: p.SHA256,
 		LargeURL:  a.base + "/photos/" + p.ID.String() + "/large.jpg",
@@ -761,7 +782,15 @@ func photoFieldsOf(r *http.Request, places []placebus.Place) (photobus.Fields, s
 
 		// Read so that sending it is refused with photobus.Import's reason.
 		Checked: r.PostFormValue("checked") != "" && r.PostFormValue("checked") != "false",
+
+		InFlower: r.PostFormValue("in_flower") != "" && r.PostFormValue("in_flower") != "false",
 	}
+
+	day, err := photobus.Day(strings.TrimSpace(r.PostFormValue("taken_on")))
+	if err != nil {
+		return f, "taken_on", "taken_on is a day, such as 2026-04-03."
+	}
+	f.TakenAt = day
 
 	for name, dst := range map[string]*int{"taken_month": &f.TakenMonth, "taken_year": &f.TakenYear} {
 		if s := strings.TrimSpace(r.PostFormValue(name)); s != "" {

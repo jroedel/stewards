@@ -667,3 +667,98 @@ func TestAProgramsCorrectionTakesTheCheckAway(t *testing.T) {
 		t.Errorf("a photo that is not there: %v", err)
 	}
 }
+
+// A day said is the month and year said too; a flower photo is in flower;
+// the same day sent back keeps the camera's moment, and a day to come is
+// refused.
+func TestTheDayTakenAndInFlower(t *testing.T) {
+	g := setup(t)
+
+	f := ours(photobus.Leaf)
+	day, err := photobus.Day("2026-04-03")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.TakenAt, f.TakenYear, f.TakenMonth = day, 2019, 1
+
+	p, err := g.photos.Add(t.Context(), g.penstemon.ID, f, photo(t, 600, 400))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.TakenYear != 2026 || p.TakenMonth != 4 || photobus.DayOf(p.TakenAt) != "2026-04-03" || p.InFlower {
+		t.Errorf("a leaf on a day: %+v", p)
+	}
+
+	back, _ := g.photos.ByID(t.Context(), p.ID)
+	if !back.TakenAt.Equal(p.TakenAt) {
+		t.Errorf("read back %v, wrote %v", back.TakenAt, p.TakenAt)
+	}
+
+	// The camera's moment, as the inbox's sort would give it.
+	moment := time.Date(2026, 4, 3, 9, 41, 0, 0, types.Garden)
+	f = photobus.FieldsOf(back)
+	f.TakenAt = moment
+	if _, err := g.photos.Update(t.Context(), p.ID, f); err != nil {
+		t.Fatal(err)
+	}
+
+	// The form sends the day back as it showed it, and a flower kind.
+	f.TakenAt = day
+	f.Kind = photobus.Flower
+	f.Checked = false
+	got, err := g.photos.Amend(t.Context(), p.ID, f)
+	if err != nil || !got.Photo.TakenAt.Equal(moment) || !got.Photo.InFlower {
+		t.Errorf("the same day, as a flower: %+v %v", got.Photo, err)
+	}
+
+	f = photobus.FieldsOf(got.Photo)
+	f.TakenAt = g.clock.Add(72 * time.Hour)
+	if _, err := g.photos.Update(t.Context(), p.ID, f); err == nil {
+		t.Error("a day to come was taken")
+	}
+
+	if _, err := photobus.Day("3 April"); err == nil {
+		t.Error("a day not written as one was read")
+	}
+}
+
+// The flowering record: first seen, first and last in flower, a year at a
+// time, newest first; borrowed and undated photos never count, and checked
+// only when asked.
+func TestTheFloweringRecord(t *testing.T) {
+	at := func(y, m, d int) time.Time { return time.Date(y, time.Month(m), d, 10, 0, 0, 0, types.Garden) }
+	photo := func(id string, when time.Time, flower, checked bool) photobus.Photo {
+		pid, _ := types.ParseID(id)
+		return photobus.Photo{ID: pid, Source: photobus.Ours, TakenAt: when, InFlower: flower, Checked: checked}
+	}
+
+	photos := []photobus.Photo{
+		photo("aaaaaaaa000000000000000000000001", at(2026, 5, 20), true, false),
+		photo("aaaaaaaa000000000000000000000002", at(2026, 3, 12), false, true),
+		photo("aaaaaaaa000000000000000000000003", at(2026, 4, 3), true, true),
+		photo("aaaaaaaa000000000000000000000004", at(2025, 4, 10), true, true),
+		photo("aaaaaaaa000000000000000000000005", time.Time{}, true, true), // no day
+		{ID: types.NewID(), Source: photobus.Borrowed, TakenAt: at(2026, 1, 1), InFlower: true, Checked: true},
+	}
+
+	all := photobus.Flowering(photos, false)
+	if len(all) != 2 || all[0].Year != 2026 || all[1].Year != 2025 {
+		t.Fatalf("years: %+v", all)
+	}
+
+	y := all[0]
+	if y.FirstSeen.ID != photos[1].ID || y.FirstFlower.ID != photos[2].ID || y.LastFlower.ID != photos[0].ID || y.Seen != 3 || y.InFlower != 2 {
+		t.Errorf("2026: %+v", y)
+	}
+
+	// For volunteers: the unchecked last flower is not counted.
+	checked := photobus.Flowering(photos, true)
+	if checked[0].LastFlower.ID != photos[2].ID || checked[0].InFlower != 1 {
+		t.Errorf("2026, checked only: %+v", checked[0])
+	}
+
+	// Seen, never in flower: no flowering days.
+	if got := photobus.Flowering(photos[1:2], false); len(got) != 1 || !got[0].FirstFlower.ID.Zero() || got[0].Seen != 1 {
+		t.Errorf("seen in leaf only: %+v", got)
+	}
+}

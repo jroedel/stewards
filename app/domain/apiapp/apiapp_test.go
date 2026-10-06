@@ -537,6 +537,20 @@ func TestAPhotoIsCorrectedAndLosesItsCheck(t *testing.T) {
 		t.Errorf("place taken away: %+v", got)
 	}
 
+	// The day, for the flowering record, with the month and year following
+	// it; then a month alone, which says the day is not known.
+	got = decode[answer](t, patch(`{"taken_on": "2026-05-02", "in_flower": true}`))
+	if got.Photo.TakenOn != "2026-05-02" || got.Photo.TakenMonth != 5 || got.Photo.TakenYear != 2026 || !got.Photo.InFlower {
+		t.Errorf("a day, in flower: %+v", got.Photo)
+	}
+	if got := decode[answer](t, patch(`{"taken_on": "2026-05-02"}`)); got.Outcome != "unchanged" {
+		t.Errorf("the same day again: %+v", got)
+	}
+	got = decode[answer](t, patch(`{"taken_month": 6}`))
+	if got.Photo.TakenOn != "" || got.Photo.TakenMonth != 6 || got.Photo.TakenYear != 2026 {
+		t.Errorf("a month alone: %+v", got.Photo)
+	}
+
 	for name, tc := range map[string]struct {
 		body, field string
 		code        int
@@ -545,6 +559,7 @@ func TestAPhotoIsCorrectedAndLosesItsCheck(t *testing.T) {
 		"not a kind":          {`{"kind": "bark"}`, "kind", http.StatusUnprocessableEntity},
 		"not a place":         {`{"place": "moon"}`, "place", http.StatusUnprocessableEntity},
 		"not a month":         {`{"taken_month": 13}`, "taken_month", http.StatusUnprocessableEntity},
+		"not a day":           {`{"taken_on": "May 2"}`, "taken_on", http.StatusUnprocessableEntity},
 	} {
 		w := patch(tc.body)
 		if p := decode[problem](t, w); w.Code != tc.code || p.Error.Field != tc.field {
@@ -763,5 +778,151 @@ func TestAPlantIsListedAtAPlaceAndTakenOff(t *testing.T) {
 	}
 	if w := s.api(http.MethodDelete, "/api/v1/places/skinny-bed/plants/winecup", "", nil, ""); w.Code != http.StatusUnauthorized {
 		t.Errorf("taking it off with no key: %d", w.Code)
+	}
+}
+
+// A place is added, read back as its card describes it, changed, put on the
+// map and taken off it, the way a plant is: created, then unchanged when sent
+// again, then updated. Its slug never changes.
+func TestAPlaceIsAddedChangedAndPutOnTheMap(t *testing.T) {
+	s := serve(t)
+
+	put := func(slug string, body any) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(body)
+
+		return s.api(http.MethodPut, "/api/v1/places/"+slug, s.key, bytes.NewReader(b), "application/json")
+	}
+
+	type answer struct {
+		Outcome string           `json:"outcome"`
+		Place   apiapp.PlaceJSON `json:"place"`
+	}
+
+	garden := map[string]any{
+		"name":       map[string]string{"en": "Rain garden", "es": "Jardín de lluvia"},
+		"purpose":    map[string]string{"en": "The backdrop of the gathering space."},
+		"conditions": map[string]string{"en": "Part shade; wet where the pipes come in."},
+		"sort":       10,
+	}
+
+	w := put("rain-garden", garden)
+	if got := decode[answer](t, w); w.Code != http.StatusCreated || got.Outcome != "created" || got.Place.Name.ES != "Jardín de lluvia" || got.Place.Spot != nil {
+		t.Fatalf("created: %d %+v", w.Code, got)
+	}
+
+	if got := decode[answer](t, put("rain-garden", garden)); got.Outcome != "unchanged" {
+		t.Errorf("sent again: %+v", got)
+	}
+
+	// A band inside it.
+	band := map[string]any{"name": map[string]string{"en": "Inflow band"}, "parent": "rain-garden", "conditions": map[string]string{"en": "Wettest."}}
+	if got := decode[answer](t, put("inflow", band)); got.Outcome != "created" || got.Place.Parent != "rain-garden" {
+		t.Errorf("a band: %+v", got)
+	}
+
+	garden["photo_point"] = map[string]string{"en": "From the fire-pit bench, facing the wall."}
+	if got := decode[answer](t, put("rain-garden", garden)); got.Outcome != "updated" || got.Place.PhotoPoint.EN == "" || got.Place.Purpose.EN == "" {
+		t.Errorf("changed: %+v", got)
+	}
+
+	// On the map, read back, and off it again; a band is never on it.
+	spot := func(slug, method, body string) *httptest.ResponseRecorder {
+		var b io.Reader
+		if body != "" {
+			b = strings.NewReader(body)
+		}
+
+		return s.api(method, "/api/v1/places/"+slug+"/spot", s.key, b, "application/json")
+	}
+
+	if w := spot("rain-garden", http.MethodPut, `{"x": 410, "y": 220}`); w.Code != http.StatusOK {
+		t.Errorf("on the map: %d %s", w.Code, w.Body.String())
+	}
+
+	type one struct {
+		Place  apiapp.PlaceJSON `json:"place"`
+		Inside []string         `json:"inside"`
+	}
+	got := decode[one](t, s.api(http.MethodGet, "/api/v1/places/rain-garden", s.key, nil, ""))
+	if got.Place.Spot == nil || *got.Place.Spot != (apiapp.SpotJSON{X: 410, Y: 220}) || len(got.Inside) != 1 || got.Inside[0] != "inflow" ||
+		got.Place.Conditions.EN != "Part shade; wet where the pipes come in." || got.Place.CardURL != base+"/places/rain-garden" {
+		t.Errorf("read back: %+v", got)
+	}
+
+	type list struct {
+		Places []apiapp.PlaceJSON `json:"places"`
+		Map    struct{ Width, Height int }
+	}
+	all := decode[list](t, s.api(http.MethodGet, "/api/v1/places", s.key, nil, ""))
+	if len(all.Places) != 2 || all.Map.Width == 0 || all.Map.Height == 0 {
+		t.Errorf("the list: %+v", all)
+	}
+
+	for name, tc := range map[string]struct {
+		w     *httptest.ResponseRecorder
+		field string
+	}{
+		"off the edge":       {spot("rain-garden", http.MethodPut, `{"x": 9000, "y": 1}`), "spot"},
+		"half a spot":        {spot("rain-garden", http.MethodPut, `{"x": 1}`), "spot"},
+		"a band on the map":  {spot("inflow", http.MethodPut, `{"x": 1, "y": 1}`), "spot"},
+		"no name":            {put("nameless", map[string]any{"purpose": map[string]string{"en": "x"}}), "name"},
+		"a parent not there": {put("bed", map[string]any{"name": map[string]string{"en": "Bed"}, "parent": "moon"}), "parent"},
+		"another slug":       {put("rain-garden", map[string]any{"slug": "rain-bed", "name": map[string]string{"en": "R"}}), "slug"},
+		"a station not one":  {put("bed", map[string]any{"name": map[string]string{"en": "Bed"}, "trail_anchor": "moon"}), "trail_anchor"},
+	} {
+		if p := decode[problem](t, tc.w); tc.w.Code != http.StatusUnprocessableEntity || p.Error.Field != tc.field {
+			t.Errorf("%s: %d %+v", name, tc.w.Code, p.Error)
+		}
+	}
+
+	if w := spot("rain-garden", http.MethodDelete, ""); w.Code != http.StatusOK || decode[one](t, w).Place.Spot != nil {
+		t.Errorf("off the map: %d %s", w.Code, w.Body.String())
+	}
+
+	if w := put("rain-garden", garden); w.Code != http.StatusOK {
+		t.Errorf("a place sent again after its spot changed: %d", w.Code)
+	}
+
+	if w := s.api(http.MethodPut, "/api/v1/places/x", "", strings.NewReader(`{}`), "application/json"); w.Code != http.StatusUnauthorized {
+		t.Errorf("no key: %d", w.Code)
+	}
+}
+
+// The flowering record reads back from the photos: first and last in flower
+// and first seen, each with where and whether it is checked.
+func TestThePlantsFloweringRecordReadsFromItsPhotos(t *testing.T) {
+	s := serve(t)
+	s.put("winecup", winecup())
+
+	for i, f := range []map[string]string{
+		{"kind": "leaf", "source": "ours", "taken_on": "2026-03-12"},
+		{"kind": "flower", "source": "ours", "taken_on": "2026-04-03"},
+		{"kind": "mature", "source": "ours", "taken_on": "2026-05-20", "in_flower": "true", "taken_where": "Pedernales Falls State Park"},
+	} {
+		if w := s.upload("winecup", f, noisy(t, uint64(40+i))); w.Code != http.StatusCreated {
+			t.Fatalf("upload %d: %d %s", i, w.Code, w.Body.String())
+		}
+	}
+
+	type record struct {
+		Species string              `json:"species"`
+		Years   []apiapp.SeasonJSON `json:"years"`
+	}
+
+	got := decode[record](t, s.api(http.MethodGet, "/api/v1/species/winecup/flowering", s.key, nil, ""))
+	if got.Species != "winecup" || len(got.Years) != 1 {
+		t.Fatalf("the record: %+v", got)
+	}
+
+	y := got.Years[0]
+	if y.Year != 2026 || y.Seen != 3 || y.InFlower != 2 ||
+		y.FirstSeen == nil || y.FirstSeen.TakenOn != "2026-03-12" ||
+		y.FirstFlower == nil || y.FirstFlower.TakenOn != "2026-04-03" || y.FirstFlower.Checked ||
+		y.LastFlower == nil || y.LastFlower.TakenOn != "2026-05-20" || !y.LastFlower.Elsewhere || y.LastFlower.TakenWhere != "Pedernales Falls State Park" {
+		t.Errorf("2026: %+v first %+v last %+v", y, y.FirstFlower, y.LastFlower)
+	}
+
+	if w := s.api(http.MethodGet, "/api/v1/species/nothing/flowering", s.key, nil, ""); w.Code != http.StatusNotFound {
+		t.Errorf("a plant not there: %d", w.Code)
 	}
 }

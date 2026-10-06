@@ -635,3 +635,42 @@ func TestAPhotoTakenOffThePropertySaysWhere(t *testing.T) {
 		t.Errorf("a long name: %d", w.Code)
 	}
 }
+
+// The day it was taken and whether it is in flower are said on the edit
+// screen, for the flowering record, and shown there again.
+func TestAPhotosDayAndFlowerAreSaidOnItsScreen(t *testing.T) {
+	s := serve(t)
+
+	if w := s.upload(s.photosPath(), leaf(), noisy(t), true); w.Code != http.StatusSeeOther {
+		t.Fatalf("upload: %d", w.Code)
+	}
+	id := photoID.FindStringSubmatch(s.get(s.photosPath(), true).Body.String())[1]
+
+	f := leaf()
+	f.Set("taken_on", "2026-09-20")
+	f.Set("in_flower", "yes")
+	if w := s.post("/steward/photos/"+id, f); w.Code != http.StatusSeeOther {
+		t.Fatalf("saving: %d\n%s", w.Code, w.Body.String())
+	}
+
+	edit := s.get("/steward/photos/"+id+"/edit", true).Body.String()
+	if !strings.Contains(edit, `name="taken_on" type="date" value="2026-09-20"`) || !strings.Contains(edit, `name="in_flower" value="yes" checked`) {
+		t.Error("the edit screen does not show the day and the flower it was given")
+	}
+
+	// And the plant's flowering record has it, first and last, not checked.
+	list := s.get(s.photosPath(), true).Body.String()
+	if !strings.Contains(list, "Flowering record") || strings.Count(list, `/edit">20 Sep</a>`) != 3 || !strings.Contains(list, "not checked") {
+		t.Error("the flowering record does not show the photo's day")
+	}
+
+	// The month and year follow the day, whatever the boxes said.
+	if !strings.Contains(edit, `<option value="9" selected>September</option>`) || !strings.Contains(edit, `value="2026"`) {
+		t.Error("the month and year do not follow the day")
+	}
+
+	f.Set("taken_on", "20 September")
+	if w := s.post("/steward/photos/"+id, f); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "Choose the day") {
+		t.Errorf("a day that is not one: %d", w.Code)
+	}
+}
