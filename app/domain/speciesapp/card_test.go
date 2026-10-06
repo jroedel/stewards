@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/jroedel/stewards/business/domain/photo/photobus"
 )
 
 // at adds a place and lists the penstemon there, through the stewards'
@@ -156,5 +158,39 @@ func TestAnUnknownPlantSaysWhatToDo(t *testing.T) {
 	w := s.do(http.MethodGet, "/plants/no-such-plant", nil, false)
 	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "We can't find that plant") {
 		t.Errorf("an unknown plant: %d", w.Code)
+	}
+}
+
+// A volunteer reads when the plant was seen in flower, from checked photos
+// alone, a day off the property naming where.
+func TestAVolunteerReadsWhenItWasSeenInFlower(t *testing.T) {
+	s := serve(t)
+	s.post("/steward/species", penstemon())
+	sp, _ := s.species.BySlug(t.Context(), "brazos-penstemon")
+
+	add := func(shade uint8, day string, checked bool, where string) {
+		on, err := photobus.Day(day)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		f := photobus.Fields{Kind: photobus.Flower, Source: photobus.Ours, TakenAt: on, Checked: checked, TakenWhere: where}
+		if _, err := s.photos.Add(t.Context(), sp.ID, f, picture(t, shade)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	add(40, "2026-04-03", true, "")
+	add(80, "2026-05-20", true, "Pedernales Falls State Park")
+	add(120, "2026-06-30", false, "") // not checked: not for volunteers yet
+	add(160, "2025-04-10", true, "")
+
+	body := s.do(http.MethodGet, "/plants/brazos-penstemon", nil, false).Body.String()
+	want := "Seen in flower: 2026: 3 Apr – 20 May (Pedernales Falls State Park) · 2025: 10 Apr"
+	if !strings.Contains(body, want) {
+		t.Errorf("the card does not say %q", want)
+	}
+	if strings.Contains(body, "30 Jun") {
+		t.Error("the card shows a day from an unchecked photo")
 	}
 }

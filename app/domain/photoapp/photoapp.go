@@ -210,6 +210,7 @@ type fieldsView struct {
 
 type listView struct {
 	SpeciesID, Name, Slug string
+	Seasons               []season
 	Sections              []section
 	Missing               int
 	Fields                fieldsView
@@ -341,6 +342,7 @@ func (a app) showList(w http.ResponseWriter, r *http.Request, status int, sp spe
 
 	v.SpeciesID, v.Name, v.Slug = sp.ID.String(), sp.Common.EN, sp.Slug
 	v.Fields = fieldsOf(f, places)
+	v.Seasons = seasonsOf(photobus.Flowering(photos, false), names)
 
 	for _, k := range photobus.Kinds {
 		s := section{Kind: string(k), Label: k.Label()}
@@ -365,6 +367,62 @@ func (a app) showList(w http.ResponseWriter, r *http.Request, status int, sp spe
 	}
 
 	a.render.Render(w, r, status, "steward-photos", v)
+}
+
+// ------------------------------------------------------------------ flowering
+
+// season is a year of the plant's flowering record as the stewards read it:
+// every photo counted, checked or not, each date saying which.
+type season struct {
+	Year                               int
+	FirstSeen, FirstFlower, LastFlower sighting
+	Seen, InFlower                     int
+}
+
+// sighting is one date in the record: the photo's day, where it was seen,
+// and whether a steward has checked it shows this plant.
+type sighting struct {
+	ID, Day, Where string
+	Unchecked      bool
+}
+
+func seasonsOf(record []photobus.Season, names map[types.ID]string) []season {
+	var out []season
+	for _, s := range record {
+		out = append(out, season{
+			Year: s.Year, Seen: s.Seen, InFlower: s.InFlower,
+			FirstSeen: sightingOf(s.FirstSeen, names), FirstFlower: sightingOf(s.FirstFlower, names), LastFlower: sightingOf(s.LastFlower, names),
+		})
+	}
+
+	return out
+}
+
+func sightingOf(p photobus.Photo, names map[types.ID]string) sighting {
+	if p.ID.Zero() {
+		return sighting{}
+	}
+
+	return sighting{
+		ID: p.ID.String(), Day: p.TakenAt.In(types.Garden).Format("2 Jan"),
+		Where: whereSeen(p, names), Unchecked: !p.Checked,
+	}
+}
+
+// whereSeen is where one of our photos was taken, in a few words: a place
+// here, a place off the property by its name, or "here" when nobody said
+// which place.
+func whereSeen(p photobus.Photo, names map[types.ID]string) string {
+	switch {
+	case p.Elsewhere && p.TakenWhere != "":
+		return p.TakenWhere
+	case p.Elsewhere:
+		return "off the property"
+	case !p.PlaceID.Zero():
+		return names[p.PlaceID]
+	}
+
+	return "here"
 }
 
 // ------------------------------------------------------------------ one photo

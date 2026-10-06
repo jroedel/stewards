@@ -183,3 +183,70 @@ func (a app) noPhoto(w http.ResponseWriter, id string) {
 	web.WriteJSON(w, http.StatusNotFound, web.Problem("id",
 		"No plant photo has the id "+id+". GET "+Prefix+"/species/{slug} lists a plant's photos with their ids. An inbox photo is sorted, not changed here."))
 }
+
+// SeasonJSON is a year of a plant's flowering record.
+type SeasonJSON struct {
+	Year        int           `json:"year"`
+	FirstFlower *SightingJSON `json:"first_flower,omitempty"`
+	LastFlower  *SightingJSON `json:"last_flower,omitempty"`
+	FirstSeen   *SightingJSON `json:"first_seen,omitempty"`
+	InFlower    int           `json:"in_flower"`
+	Seen        int           `json:"seen"`
+}
+
+// SightingJSON is one date in the record, and the photo it is read from.
+type SightingJSON struct {
+	PhotoID    string `json:"photo_id"`
+	TakenOn    string `json:"taken_on"`
+	Place      string `json:"place,omitempty"`
+	Elsewhere  bool   `json:"elsewhere"`
+	TakenWhere string `json:"taken_where,omitempty"`
+	Checked    bool   `json:"checked"`
+}
+
+func (a app) flowering(w http.ResponseWriter, r *http.Request) {
+	sp, ok := a.loadSpecies(w, r)
+	if !ok {
+		return
+	}
+
+	photos, err := a.photos.ForSpecies(r.Context(), sp.ID)
+	if err != nil {
+		a.fail(w, r, "reading a species' photos", err)
+
+		return
+	}
+
+	places, err := a.places.All(r.Context())
+	if err != nil {
+		a.fail(w, r, "listing places", err)
+
+		return
+	}
+
+	slugs := map[types.ID]string{}
+	for _, pl := range places {
+		slugs[pl.ID] = pl.Slug
+	}
+
+	sighting := func(p photobus.Photo) *SightingJSON {
+		if p.ID.Zero() {
+			return nil
+		}
+
+		return &SightingJSON{
+			PhotoID: p.ID.String(), TakenOn: photobus.DayOf(p.TakenAt), Place: slugs[p.PlaceID],
+			Elsewhere: p.Elsewhere, TakenWhere: p.TakenWhere, Checked: p.Checked,
+		}
+	}
+
+	years := []SeasonJSON{}
+	for _, s := range photobus.Flowering(photos, false) {
+		years = append(years, SeasonJSON{
+			Year: s.Year, InFlower: s.InFlower, Seen: s.Seen,
+			FirstFlower: sighting(s.FirstFlower), LastFlower: sighting(s.LastFlower), FirstSeen: sighting(s.FirstSeen),
+		})
+	}
+
+	web.WriteJSON(w, http.StatusOK, map[string]any{"species": sp.Slug, "years": years})
+}
