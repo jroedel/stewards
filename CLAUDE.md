@@ -96,7 +96,7 @@ make test-browser  # the same in headless Chrome, against a server built for it
 ```
 
 **JavaScript** is plain ES modules with no build step and no npm, served by
-the app that owns them (`app/domain/inboxapp/static/` and `app/domain/photoapp/static/`). After
+the app that owns them (`app/domain/inboxapp/static/`, and `app/sdk/page/assets/app/js/` for a script more than one app uses). After
 changing one, run `make test-js test-browser`. A unit test is `*_test.mjs`
 beside the module; a browser test is `*_browser_test.mjs`, driven through
 `scripts/browser.mjs`. Both are found by name. The browser tests skip, and

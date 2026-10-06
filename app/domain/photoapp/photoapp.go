@@ -114,7 +114,6 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 		// The check queue; check.go.
 		"GET " + CheckPath:            a.queue,
 		"POST " + CheckPath + "/{id}": a.check,
-		"GET " + checkScriptPath:      a.script,
 	} {
 		mux.Handle(pattern, guard(h))
 	}

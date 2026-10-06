@@ -52,6 +52,14 @@ type Renderer struct {
 	cssPath string
 	cssETag string
 
+	// The one script every app may use, swap.mjs, served the same way and
+	// for the same reason. It imports nothing, so a hash in its own
+	// address is the whole of its version (inboxapp's scriptTags has why
+	// that is not so for modules importing each other).
+	swap     []byte
+	swapPath string
+	swapETag string
+
 	// Fonts and images, by file name, from fixed paths. A font or a logo
 	// changes only when the brand does, and then under a new file name: the
 	// name is the version.
@@ -87,6 +95,10 @@ type Shell struct {
 	// Manifest and AppScript are the installable app, on a steward's pages
 	// alone, and empty on everybody else's: see OfferApp.
 	Manifest, AppScript string
+
+	// Swap is where swap.mjs is served, for a page that has a #swap to
+	// load it: see that file.
+	Swap string
 
 	Data any
 }
@@ -167,13 +179,24 @@ func NewRenderer(log *slog.Logger, own ...fs.FS) (*Renderer, error) {
 	sum := sha256.Sum256(css)
 	digest := hex.EncodeToString(sum[:])[:12]
 
+	swap, err := fs.ReadFile(chrome, "js/swap.mjs")
+	if err != nil {
+		return nil, fmt.Errorf("swap.mjs could not be read: %w", err)
+	}
+
+	swapSum := sha256.Sum256(swap)
+	swapDigest := hex.EncodeToString(swapSum[:])[:12]
+
 	rn := &Renderer{
-		log:     log,
-		pages:   pages,
-		css:     css,
-		cssPath: "/static/app." + digest + ".css",
-		cssETag: `"` + digest + `"`,
-		files:   map[string]asset{},
+		log:      log,
+		pages:    pages,
+		css:      css,
+		cssPath:  "/static/app." + digest + ".css",
+		cssETag:  `"` + digest + `"`,
+		swap:     swap,
+		swapPath: "/static/js/swap." + swapDigest + ".mjs",
+		swapETag: `"` + swapDigest + `"`,
+		files:    map[string]asset{},
 	}
 
 	for pattern, kind := range map[string]string{
@@ -219,6 +242,9 @@ func (rn *Renderer) OfferApp(manifest, script string) {
 // StylesheetPath is where the stylesheet is served, including its hash.
 func (rn *Renderer) StylesheetPath() string { return rn.cssPath }
 
+// SwapPath is where swap.mjs is served, including its hash.
+func (rn *Renderer) SwapPath() string { return rn.swapPath }
+
 // Render writes a page, in the language the request asked for.
 //
 // Executed into a buffer first, and the status written only once that
@@ -256,6 +282,7 @@ func (rn *Renderer) Render(w http.ResponseWriter, r *http.Request, status int, n
 		Steward:    steward,
 		Manifest:   manifest,
 		AppScript:  appScript,
+		Swap:       rn.swapPath,
 		Data:       data,
 	}); err != nil {
 		rn.log.Error("a page could not be rendered",
@@ -292,6 +319,20 @@ func (rn *Renderer) Stylesheet() http.HandlerFunc {
 		h.Set("ETag", rn.cssETag)
 
 		http.ServeContent(w, r, "app.css", startup, bytes.NewReader(rn.css))
+	}
+}
+
+// Swap serves swap.mjs, cacheable for ever as the stylesheet is. Not behind
+// sign-in, for the same reason as the fonts: it is a file in the binary, not
+// anybody's data.
+func (rn *Renderer) Swap() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Type", "text/javascript; charset=utf-8")
+		h.Set("Cache-Control", "public, max-age=31536000, immutable")
+		h.Set("ETag", rn.swapETag)
+
+		http.ServeContent(w, r, "swap.mjs", startup, bytes.NewReader(rn.swap))
 	}
 }
 

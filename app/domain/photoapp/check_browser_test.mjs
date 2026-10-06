@@ -1,6 +1,6 @@
 // The check queue in a real Chrome against a real server: `make test-browser`.
 //
-// What only a browser can say is whether check.mjs does what it is for: that
+// What only a browser can say is whether swap.mjs does what it is for here: that
 // it runs under the header policy, that Yes, Undo and Skip change the page
 // without loading another, and -- the point of it -- that the next photo's
 // picture was fetched while the steward looked at the one before, and not
@@ -16,8 +16,8 @@ import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { launch, skip, stage } from "../../../../scripts/browser.mjs";
-import { sessionCookie, startServer } from "../../../../scripts/testserver.mjs";
+import { launch, skip, stage } from "../../../scripts/browser.mjs";
+import { sessionCookie, startServer } from "../../../scripts/testserver.mjs";
 
 let server, browser, page, ref, leaf, flower;
 
@@ -93,7 +93,7 @@ const opts = { skip: skip() };
 // fetched is how many times the page has asked for an address ending in end.
 const fetched = (end) => page.evaluate(`performance.getEntriesByType("resource").filter((e) => e.name.endsWith(${JSON.stringify(end)})).length`);
 
-const shown = (id) => `[...document.querySelectorAll("#check img")].some((i) => i.getAttribute("src") === "/photos/${id}/small.jpg" && i.complete && i.naturalWidth > 0)`;
+const shown = (id) => `[...document.querySelectorAll("#swap img")].some((i) => i.getAttribute("src") === "/photos/${id}/small.jpg" && i.complete && i.naturalWidth > 0)`;
 
 // checked is whether the server says a photo is checked: a signed-out
 // request sees only a checked photo.
@@ -130,7 +130,7 @@ test("Yes, Undo and Skip change the queue in place, with the next picture alread
   stage("Skip");
   await page.waitFor(`performance.getEntriesByType("resource").filter((e) => e.name.endsWith("/steward/check?at=${flower}")).length >= 2`);
   const pagesBefore = await fetched(`/steward/check?at=${flower}`);
-  await page.evaluate(`document.querySelector("#check a[data-swap]").click()`);
+  await page.evaluate(`document.querySelector("#swap a[data-swap]").click()`);
   await page.waitFor(shown(flower));
   assert.equal(await page.evaluate(`window.sameDocument`), true, "Skip loaded a page");
   assert.equal(await fetched(`/steward/check?at=${flower}`), pagesBefore, "Skip fetched the page it had fetched ahead");

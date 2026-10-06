@@ -51,7 +51,7 @@ func TestTheCheckQueue(t *testing.T) {
 		"2 waiting.",
 		"/photos/"+leaf+"/small.jpg", "/photos/"+ref+"/small.jpg", "On the card now",
 		"Yes, it shows Brazos penstemon", `action="/steward/check/`+leaf+`"`,
-		`data-next="/steward/check?at=`+flower+`"`, "/steward/check/static/check.mjs",
+		`data-next="/steward/check?at=`+flower+`"`,
 		"/steward/photos/"+leaf+"/edit?from=check")
 
 	w := s.post("/steward/check/"+leaf, url.Values{"checked": {"yes"}})
