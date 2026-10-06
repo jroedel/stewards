@@ -208,6 +208,27 @@ func rowOf(l nurserybus.Line, plants map[types.ID]speciesbus.Species, withPhotos
 type option struct {
 	Value, Label string
 	Selected     bool
+
+	// Also is more to find a plant by in a searchable list, not shown: see
+	// plantOption.
+	Also string
+}
+
+// plantOption is a plant as a list of plants offers it: its common name with
+// its scientific one, so that either finds it in the list's search box, and
+// its Spanish name to be found by as well, which is not shown (the page
+// package's find.mjs, data-also).
+func plantOption(sp speciesbus.Species, selected bool) option {
+	o := option{Value: sp.ID.String(), Label: sp.Common.EN, Selected: selected}
+	if sp.Scientific != "" {
+		o.Label += " (" + sp.Scientific + ")"
+	}
+
+	if sp.Common.ES != sp.Common.EN {
+		o.Also = sp.Common.ES
+	}
+
+	return o
 }
 
 type editView struct {
@@ -325,12 +346,7 @@ func (a app) showEdit(w http.ResponseWriter, r *http.Request, status int, l nurs
 
 	v.Species = []option{{Value: "", Label: "Not matched yet", Selected: chosen.Zero()}}
 	for _, sp := range plants {
-		label := sp.Common.EN
-		if sp.Scientific != "" {
-			label += " (" + sp.Scientific + ")"
-		}
-
-		v.Species = append(v.Species, option{Value: sp.ID.String(), Label: label, Selected: sp.ID == chosen})
+		v.Species = append(v.Species, plantOption(sp, sp.ID == chosen))
 	}
 
 	a.render.Render(w, r, status, "steward-nursery-line", v)

@@ -250,6 +250,8 @@ async function openPage(cdp) {
   await send("DOM.enable");
   await send("Emulation.setDeviceMetricsOverride", { width: 412, height: 915, deviceScaleFactor: 2, mobile: true });
 
+  let touching = false;
+
   const page = {
     send,
     errors,
@@ -307,6 +309,43 @@ async function openPage(cdp) {
       cdp.listen((msg) => {
         if (msg.sessionId === sessionId && msg.method === method) fn(msg.params);
       });
+    },
+
+    // tap touches the middle of what selector names, as a finger does: the
+    // events a phone sends rather than click(), because a tap moves the
+    // focus before it clicks, and a script that listens for the focus
+    // leaving sees the difference.
+    async tap(selector) {
+      if (!touching) {
+        await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+        touching = true;
+      }
+
+      const at = await page.evaluate(`(() => {
+        const e = document.querySelector(${JSON.stringify(selector)});
+        if (!e) return null;
+        e.scrollIntoView({ block: "center" });
+        const b = e.getBoundingClientRect();
+        return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+      })()`);
+      if (!at) throw new Error(`no ${selector} on the page`);
+
+      await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [at] });
+      await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    },
+
+    // type puts text where the focus is, as a phone's keyboard does: one
+    // input event, not a key at a time.
+    async type(text) {
+      await send("Input.insertText", { text });
+    },
+
+    // press presses a key: Enter, Escape, ArrowDown or ArrowUp.
+    async press(key) {
+      const codes = { Enter: 13, Escape: 27, ArrowUp: 38, ArrowDown: 40 };
+      const down = { key, code: key, windowsVirtualKeyCode: codes[key], nativeVirtualKeyCode: codes[key] };
+      await send("Input.dispatchKeyEvent", { type: key === "Enter" ? "keyDown" : "rawKeyDown", ...down, ...(key === "Enter" ? { text: "\r" } : {}) });
+      await send("Input.dispatchKeyEvent", { type: "keyUp", ...down });
     },
 
     async setCookie(cookie) {

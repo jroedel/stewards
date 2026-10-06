@@ -193,6 +193,7 @@ The phase 1 mockups are at <https://claude.ai/artifact/EZV9C92thqqWH5drvW2AQr>.
 - **Bloom strip:** twelve month cells with filled flower-color swatches, plus markers for key dates (for example, Feb 6).
 - **Protect and Pull panels:** a pair, always side by side, always with icon and word.
 - **Empty state:** the isotype watermark with one sentence and one action.
+- **Plant picker:** wherever a steward chooses one of our plants from the whole list, a box with a magnifying glass rather than a long list. Any part of any word finds it, common, scientific or Spanish ("drum" finds the Turk's caps), the part typed marked on each match, the scientific name under the common one, and a tap chooses. Without its script it is the plain list it replaced.
 
 ---
 

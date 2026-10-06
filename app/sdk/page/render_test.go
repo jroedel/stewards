@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -17,8 +18,10 @@ func renderer(t *testing.T) *page.Renderer {
 	t.Helper()
 
 	fsys := fstest.MapFS{
-		"templates/hello.html":  {Data: []byte(`{{define "content"}}<p>{{say .Lang .Data}}</p>{{end}}`)},
-		"templates/broken.html": {Data: []byte(`{{define "content"}}{{.Data.NoSuchField}}{{end}}`)},
+		"templates/hello.html":   {Data: []byte(`{{define "content"}}<p>{{say .Lang .Data}}</p>{{end}}`)},
+		"templates/broken.html":  {Data: []byte(`{{define "content"}}{{.Data.NoSuchField}}{{end}}`)},
+		"templates/scripts.html": {Data: []byte(`{{define "content"}}<script type="module" src="{{$.Script "swap.mjs"}}"></script><script type="module" src="{{$.Script "find.mjs"}}"></script>{{end}}`)},
+		"templates/no-such.html": {Data: []byte(`{{define "content"}}<script type="module" src="{{$.Script "nothing.mjs"}}"></script>{{end}}`)},
 	}
 
 	rn, err := page.NewRenderer(slog.New(slog.DiscardHandler), fsys)
@@ -138,5 +141,49 @@ func TestAProblemBecomesASentence(t *testing.T) {
 		if got := page.Sentence(in); got != want {
 			t.Errorf("Sentence(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// A shared script is linked under a name holding its hash, and served from
+// there for ever; the tests beside the scripts are not served, and a page
+// naming a script there is none of fails rather than linking nothing.
+func TestTheSharedScriptsAreServedByTheirHash(t *testing.T) {
+	rn := renderer(t)
+
+	body := render(t, rn, "scripts", nil, "en").Body.String()
+
+	for _, name := range []string{"swap", "find"} {
+		m := regexp.MustCompile(`src="(/static/js/` + name + `\.[0-9a-f]{12}\.mjs)"`).FindStringSubmatch(body)
+		if m == nil {
+			t.Fatalf("no %s.mjs with its hash in the page:\n%s", name, body)
+		}
+
+		r := httptest.NewRequest(http.MethodGet, m[1], nil)
+		r.SetPathValue("file", strings.TrimPrefix(m[1], "/static/js/"))
+		rec := httptest.NewRecorder()
+		rn.Scripts().ServeHTTP(rec, r)
+
+		if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/javascript") {
+			t.Errorf("%s: status %d, type %q", m[1], rec.Code, rec.Header().Get("Content-Type"))
+		}
+
+		if !strings.Contains(rec.Header().Get("Cache-Control"), "immutable") {
+			t.Errorf("%s is not cached for ever: %q", m[1], rec.Header().Get("Cache-Control"))
+		}
+	}
+
+	for _, file := range []string{"find_test.mjs", "find.mjs", "swap.000000000000.mjs"} {
+		r := httptest.NewRequest(http.MethodGet, "/static/js/"+file, nil)
+		r.SetPathValue("file", file)
+		rec := httptest.NewRecorder()
+		rn.Scripts().ServeHTTP(rec, r)
+
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status %d, want 404", file, rec.Code)
+		}
+	}
+
+	if rec := render(t, rn, "no-such", nil, "en"); rec.Code != http.StatusInternalServerError {
+		t.Errorf("a page naming a script that is not there: status %d, want 500", rec.Code)
 	}
 }

@@ -194,14 +194,14 @@ func addsFor(p placebus.Place, species map[types.ID]speciesbus.Species, listed [
 		here[l.SpeciesID] = true
 
 		if sp, ok := species[l.SpeciesID]; ok && l.Action == listingbus.Protect && !l.Planned {
-			growing = append(growing, option{Value: l.SpeciesID.String(), Label: sp.Common.EN})
+			growing = append(growing, plantOption(sp, false))
 		}
 	}
 
 	var opts []option
 	for id, sp := range species {
 		if !here[id] {
-			opts = append(opts, option{Value: id.String(), Label: sp.Common.EN})
+			opts = append(opts, plantOption(sp, false))
 		}
 	}
 

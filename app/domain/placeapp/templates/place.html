@@ -99,6 +99,7 @@
 {{end}}
 
 {{with .EditURL}}<a class="onward" href="{{.}}" lang="en"><span>{{say $l $.Data.Copy.Edit}}</span><span aria-hidden="true">›</span></a>{{end}}
+{{with .Adds}}<script type="module" src="{{$.Script "find.mjs"}}"></script>{{end}}
 {{end}}{{end}}
 
 {{/* A list's "+ Add", for a signed-in steward only: see cardAdd. In English,
@@ -114,9 +115,9 @@
   {{if .Planned}}<input type="hidden" name="planned" value="yes">{{end}}
   <input type="hidden" name="return" value="card">
   <label for="{{.ID}}-species">Plant</label>
-  <select id="{{.ID}}-species" name="species" required><option value="">Choose a plant</option>
-    {{if .Growing}}<optgroup label="Not here yet">{{end}}{{range .Species}}<option value="{{.Value}}">{{.Label}}</option>{{end}}{{if .Growing}}</optgroup>
-    <optgroup label="Already growing here: plant more">{{range .Growing}}<option value="{{.Value}}">{{.Label}}</option>{{end}}</optgroup>{{end}}
+  <select id="{{.ID}}-species" name="species" required data-find="Type any part of the plant's name"><option value="">Choose a plant</option>
+    {{if .Growing}}<optgroup label="Not here yet">{{end}}{{range .Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}>{{.Label}}</option>{{end}}{{if .Growing}}</optgroup>
+    <optgroup label="Already growing here: plant more">{{range .Growing}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}>{{.Label}}</option>{{end}}</optgroup>{{end}}
   </select>
   <label for="{{.ID}}-note_en">Note <span class="optional">optional{{if .Growing}}; left empty, a plant already here keeps its note{{end}}</span></label>
   <input id="{{.ID}}-note_en" name="note_en" type="text" maxlength="500">

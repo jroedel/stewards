@@ -220,6 +220,27 @@ func (a app) index(w http.ResponseWriter, r *http.Request) {
 type option struct {
 	Value, Label string
 	Selected     bool
+
+	// Also is more to find a plant by in a searchable list, not shown: see
+	// plantOption.
+	Also string
+}
+
+// plantOption is a plant as a list of plants offers it: its common name with
+// its scientific one, so that either finds it in the list's search box, and
+// its Spanish name to be found by as well, which is not shown (the page
+// package's find.mjs, data-also).
+func plantOption(sp speciesbus.Species, selected bool) option {
+	o := option{Value: sp.ID.String(), Label: sp.Common.EN, Selected: selected}
+	if sp.Scientific != "" {
+		o.Label += " (" + sp.Scientific + ")"
+	}
+
+	if sp.Common.ES != sp.Common.EN {
+		o.Also = sp.Common.ES
+	}
+
+	return o
 }
 
 // formView is the form as the steward sees it: every value as they typed it,

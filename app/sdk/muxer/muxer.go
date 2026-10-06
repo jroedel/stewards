@@ -105,7 +105,7 @@ func New(cfg Config) (http.Handler, error) {
 	mux.Handle("GET /healthz", health.Handler(cfg.Log, cfg.DB, cfg.Expected))
 
 	mux.HandleFunc("GET "+render.StylesheetPath(), render.Stylesheet())
-	mux.HandleFunc("GET "+render.SwapPath(), render.Swap())
+	mux.HandleFunc("GET /static/js/{file}", render.Scripts())
 	mux.HandleFunc("GET /static/fonts/{file}", render.Files("fonts"))
 	mux.HandleFunc("GET /static/img/{file}", render.Files("img"))
 
