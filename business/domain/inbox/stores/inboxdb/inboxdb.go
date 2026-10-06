@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/jroedel/stewards/business/domain/inbox/inboxbus"
+	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/types"
 	"github.com/jroedel/stewards/foundation/sqldb"
 )
@@ -47,7 +48,7 @@ var Expected = sqldb.Expected{
 		"large_width", "large_height", "small_width", "small_height",
 		"created_at", "updated_at",
 		"outcome", "species_id", "photo_id", "sorted_by", "sorted_at",
-		"nursery_line_id", "pruned_at",
+		"nursery_line_id", "pruned_at", "kind",
 	},
 }
 
@@ -109,6 +110,10 @@ CREATE INDEX IF NOT EXISTS inbox_place ON inbox (place_id);
 		// were removed, which they are some months later.
 		{"nursery_line_id", "TEXT"},
 		{"pruned_at", "INTEGER"},
+
+		// photobus.Kind it was sorted as, for a plant's photo or a
+		// planting; '' otherwise, and for one sorted before it was kept.
+		{"kind", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := sqldb.AddColumn(ctx, db, "inbox", c.name, c.decl); err != nil {
 			return err
@@ -120,7 +125,7 @@ CREATE INDEX IF NOT EXISTS inbox_place ON inbox (place_id);
 
 const columns = `id, from_user_id, at, place_id, note, taken_at, lat, lon, status, format, sha256,
 large_width, large_height, small_width, small_height, created_at, updated_at,
-outcome, species_id, photo_id, sorted_by, sorted_at, nursery_line_id, pruned_at`
+outcome, species_id, photo_id, sorted_by, sorted_at, nursery_line_id, pruned_at, kind`
 
 // open is the statuses a photo can still be sorted from, as SQL.
 const open = `status IN ('` + string(inboxbus.New) + `', '` + string(inboxbus.Unsure) + `')`
@@ -146,13 +151,13 @@ func (s *Store) Create(ctx context.Context, it inboxbus.Item) error {
 	}
 
 	_, err := s.db.ExecContext(ctx, `INSERT INTO inbox (`+columns+`)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		it.ID.String(), orNull(it.FromID), string(it.At), orNull(it.PlaceID), it.Note,
 		taken, lat, lon, string(it.Status), it.Format, it.SHA256,
 		it.Large.Width, it.Large.Height, it.Small.Width, it.Small.Height,
 		it.CreatedAt.UnixMilli(), it.UpdatedAt.UnixMilli(),
 		string(it.Outcome), orNull(it.SpeciesID), orNull(it.PhotoID), orNull(it.SortedBy), sorted,
-		orNull(it.LineID), pruned)
+		orNull(it.LineID), pruned, string(it.Kind))
 
 	switch {
 	case sqldb.IsForeignKeyViolation(err):
@@ -216,9 +221,9 @@ func (s *Store) Count(ctx context.Context, status inboxbus.Status) (int, error) 
 // one statement, so of two at once exactly one changes a row.
 func (s *Store) Claim(ctx context.Context, id types.ID, c inboxbus.Claim) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE inbox SET
-    status = ?, outcome = ?, species_id = ?, sorted_by = ?, sorted_at = ?, updated_at = ?
+    status = ?, outcome = ?, species_id = ?, kind = ?, sorted_by = ?, sorted_at = ?, updated_at = ?
 WHERE id = ? AND `+open,
-		string(c.Status), string(c.Outcome), orNull(c.SpeciesID), orNull(c.By), c.At.UnixMilli(), c.At.UnixMilli(),
+		string(c.Status), string(c.Outcome), orNull(c.SpeciesID), string(c.Kind), orNull(c.By), c.At.UnixMilli(), c.At.UnixMilli(),
 		id.String())
 	if err != nil {
 		return fmt.Errorf("claiming an inbox photo: %w", err)
@@ -230,7 +235,7 @@ WHERE id = ? AND `+open,
 // Unclaim puts a claimed photo back.
 func (s *Store) Unclaim(ctx context.Context, id types.ID, was inboxbus.Status, at time.Time) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE inbox SET
-    status = ?, outcome = '', species_id = NULL, photo_id = NULL, sorted_by = NULL, sorted_at = NULL, updated_at = ?
+    status = ?, outcome = '', species_id = NULL, kind = '', photo_id = NULL, sorted_by = NULL, sorted_at = NULL, updated_at = ?
 WHERE id = ?`, string(was), at.UnixMilli(), id.String())
 	if err != nil {
 		return fmt.Errorf("putting an inbox photo back: %w", err)
@@ -344,14 +349,14 @@ func scan(row scanner) (inboxbus.Item, error) {
 		line             sql.NullString
 		lat, lon         sql.NullFloat64
 		created, updated int64
-		outcome          string
+		outcome, kind    string
 		species, photo   sql.NullString
 		by               sql.NullString
 	)
 
 	err := row.Scan(&id, &from, &at, &place, &it.Note, &taken, &lat, &lon, &status, &it.Format, &it.SHA256,
 		&it.Large.Width, &it.Large.Height, &it.Small.Width, &it.Small.Height, &created, &updated,
-		&outcome, &species, &photo, &by, &sorted, &line, &pruned)
+		&outcome, &species, &photo, &by, &sorted, &line, &pruned, &kind)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return inboxbus.Item{}, err
@@ -360,7 +365,7 @@ func scan(row scanner) (inboxbus.Item, error) {
 		return inboxbus.Item{}, fmt.Errorf("reading an inbox photo: %w", err)
 	}
 
-	it.At, it.Status, it.Outcome = inboxbus.At(at), inboxbus.Status(status), inboxbus.Outcome(outcome)
+	it.At, it.Status, it.Outcome, it.Kind = inboxbus.At(at), inboxbus.Status(status), inboxbus.Outcome(outcome), photobus.Kind(kind)
 
 	if it.ID, err = types.ParseID(id); err != nil {
 		return inboxbus.Item{}, fmt.Errorf("an inbox photo has an unreadable id %q: %w", id, err)

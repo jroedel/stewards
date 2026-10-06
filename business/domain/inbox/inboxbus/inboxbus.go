@@ -169,6 +169,10 @@ type Item struct {
 	SortedBy  types.ID
 	SortedAt  time.Time
 
+	// Kind is the kind of plant's photo it was sorted as, for AsPhoto and
+	// AsPlanted. Empty for a photo sorted before it was kept.
+	Kind photobus.Kind
+
 	// LineID is the line of nursery stock it became, for AsStock; and
 	// PrunedAt when its pictures were removed, StockKept after it was
 	// taken.
@@ -264,6 +268,7 @@ type Claim struct {
 	Status    Status
 	Outcome   Outcome
 	SpeciesID types.ID
+	Kind      photobus.Kind
 	By        types.ID
 	At        time.Time
 }
@@ -581,7 +586,7 @@ func (b *Business) Sort(ctx context.Context, id, by types.ID, s Sorting) (Result
 	}
 
 	if it.Status == Sorted || it.Status == Discarded {
-		if it.Outcome == s.Outcome && it.SpeciesID == s.SpeciesID && (s.Outcome == AsPhoto || s.Outcome == AsPlanted || s.Outcome == AsStock || s.Outcome == AsDiscard) {
+		if sameSort(it, s) {
 			return Result{Item: it, Unchanged: true}, nil
 		}
 
@@ -644,7 +649,7 @@ func (b *Business) Sort(ctx context.Context, id, by types.ID, s Sorting) (Result
 
 	was := it.Status
 
-	if err := b.store.Claim(ctx, id, Claim{Status: Sorted, Outcome: s.Outcome, SpeciesID: s.SpeciesID, By: by, At: now}); err != nil {
+	if err := b.store.Claim(ctx, id, Claim{Status: Sorted, Outcome: s.Outcome, SpeciesID: s.SpeciesID, Kind: s.Kind, By: by, At: now}); err != nil {
 		return Result{}, b.taken(ctx, id, err)
 	}
 
@@ -666,7 +671,7 @@ func (b *Business) Sort(ctx context.Context, id, by types.ID, s Sorting) (Result
 		return Result{}, err
 	}
 
-	it.Status, it.Outcome, it.SpeciesID, it.PhotoID = Sorted, s.Outcome, s.SpeciesID, res.Photo.ID
+	it.Status, it.Outcome, it.SpeciesID, it.PhotoID, it.Kind = Sorted, s.Outcome, s.SpeciesID, res.Photo.ID, s.Kind
 	it.SortedBy, it.SortedAt, it.UpdatedAt = by, now, now
 	res.Item = it
 
@@ -836,6 +841,28 @@ func (b *Business) listing(ctx context.Context, placeID, speciesID types.ID) (*l
 	}
 
 	return nil, nil
+}
+
+// sameSort is whether s is the sort the photo already had: the same request
+// sent twice, a double tap or a retry after a lost answer, which is told it
+// is done rather than that somebody else did it. A photo of the plant is the
+// same only as the same kind. A leaf sorted again as a flower is somebody
+// else's different answer, and they need to hear what the first one was
+// (found 2026-10-06, when CI ran two sorts one after the other and the
+// flower was told "unchanged" with a leaf made).
+func sameSort(it Item, s Sorting) bool {
+	if it.Outcome != s.Outcome || it.SpeciesID != s.SpeciesID {
+		return false
+	}
+
+	switch s.Outcome {
+	case AsPhoto, AsPlanted:
+		return it.Kind == s.Kind
+	case AsStock, AsDiscard:
+		return true
+	}
+
+	return false
 }
 
 // taken turns a refused claim into the photo as somebody else sorted it.
