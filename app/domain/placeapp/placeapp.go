@@ -57,10 +57,12 @@ type SpeciesReader interface {
 	All(ctx context.Context) ([]speciesbus.Species, error)
 }
 
-// PhotoReader is what the place card needs from the photo rules: a picture
-// beside each plant on its "To plant" list.
+// PhotoReader is what these screens need from the photo rules: a picture
+// beside each plant on a place card's "To plant" list, and on the stewards'
+// front page how many photos wait to be checked.
 type PhotoReader interface {
 	ForSpecies(ctx context.Context, speciesID types.ID) ([]photobus.Photo, error)
+	Unchecked(ctx context.Context) ([]photobus.Photo, error)
 }
 
 // Listings is what they need from the listing rules.
@@ -146,6 +148,9 @@ type indexView struct {
 	Inbox   bool
 	Waiting int
 	Nursery bool
+
+	// ToCheck is how many photos wait in the check queue.
+	ToCheck int
 }
 
 func (a app) index(w http.ResponseWriter, r *http.Request) {
@@ -176,6 +181,12 @@ func (a app) index(w http.ResponseWriter, r *http.Request) {
 
 	// A count that cannot be read is no reason to keep a steward from the
 	// places: logged, and the link shown without it.
+	if unchecked, err := a.photos.Unchecked(r.Context()); err != nil {
+		a.log.WarnContext(r.Context(), "counting the photos to check", "request_id", web.RequestIDFrom(r.Context()), "error", err)
+	} else {
+		v.ToCheck = len(unchecked)
+	}
+
 	if a.inbox != nil {
 		v.Inbox, v.Nursery = true, a.nursery
 

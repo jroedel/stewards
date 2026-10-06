@@ -56,6 +56,8 @@ type Photos interface {
 	ByID(ctx context.Context, id types.ID) (photobus.Photo, error)
 	ForSpecies(ctx context.Context, speciesID types.ID) ([]photobus.Photo, error)
 	Open(ctx context.Context, id types.ID, size photobus.Size) (photobus.Photo, photobus.File, error)
+	Unchecked(ctx context.Context) ([]photobus.Photo, error)
+	SetChecked(ctx context.Context, id types.ID, checked bool) (photobus.Photo, error)
 }
 
 // SpeciesReader is what it needs from the species rules.
@@ -108,6 +110,11 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 		"GET /steward/photos/{id}/edit":    a.editForm,
 		"POST /steward/photos/{id}":        a.update,
 		"POST /steward/photos/{id}/delete": a.remove,
+
+		// The check queue; check.go.
+		"GET " + CheckPath:            a.queue,
+		"POST " + CheckPath + "/{id}": a.check,
+		"GET " + checkScriptPath:      a.script,
 	} {
 		mux.Handle(pattern, guard(h))
 	}
@@ -440,6 +447,11 @@ type editView struct {
 	Fields              fieldsView
 	Problems            map[string]string
 	DeleteProblem       string
+
+	// FromCheck is set when the steward came from the check queue's
+	// Change, so that saving goes back there rather than to the plant's
+	// photos, which would leave them three page loads from where they were.
+	FromCheck bool
 }
 
 func (a app) editForm(w http.ResponseWriter, r *http.Request) {
@@ -448,7 +460,8 @@ func (a app) editForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.showEdit(w, r, http.StatusOK, p, sp, editView{Problems: map[string]string{}}, photobus.FieldsOf(p))
+	v := editView{Problems: map[string]string{}, FromCheck: r.URL.Query().Get("from") == "check"}
+	a.showEdit(w, r, http.StatusOK, p, sp, v, photobus.FieldsOf(p))
 }
 
 func (a app) update(w http.ResponseWriter, r *http.Request) {
@@ -463,7 +476,7 @@ func (a app) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v := editView{Problems: map[string]string{}}
+	v := editView{Problems: map[string]string{}, FromCheck: r.PostFormValue("from") == "check"}
 	f := fieldsFrom(r, v.Problems)
 
 	if len(v.Problems) == 0 {
@@ -472,6 +485,10 @@ func (a app) update(w http.ResponseWriter, r *http.Request) {
 		invalid, isInvalid := errors.AsType[photobus.Invalid](err)
 
 		switch {
+		case err == nil && v.FromCheck:
+			http.Redirect(w, r, CheckPath+"?at="+p.ID.String()+"&done=saved&last="+p.ID.String(), http.StatusSeeOther)
+
+			return
 		case err == nil:
 			http.Redirect(w, r, listPath(sp.ID)+"?done=saved#"+string(f.Kind), http.StatusSeeOther)
 
