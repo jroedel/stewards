@@ -148,7 +148,7 @@ func (a app) loadPlace(w http.ResponseWriter, r *http.Request) (placebus.Place, 
 	switch {
 	case errors.Is(err, placebus.ErrNotFound):
 		web.WriteJSON(w, http.StatusNotFound, web.Problem("slug",
-			fmt.Sprintf("No place has the slug %q. GET %s/places lists the ones there are; a place is added by a steward on its screen.", slug, Prefix)))
+			fmt.Sprintf("No place has the slug %q. GET %s/places lists the ones there are; PUT %s/places/%s adds it.", slug, Prefix, Prefix, slug)))
 
 		return placebus.Place{}, false
 	case err != nil:

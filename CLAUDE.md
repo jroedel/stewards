@@ -164,8 +164,8 @@ A question about *behaviour* starts in `business/domain/…bus`. A question abou
   with the steward's own key from `STEWARDS_API_KEY`. That is the steward
   using their app, not an agent operating the server, so it is not a way
   around the rule above: never as a test, never while developing, and never
-  to read or change anything but plants, photos, listings, the steward's
-  photo inbox and nursery stock. The API
+  to read or change anything but places, plants, photos, listings, the
+  steward's photo inbox and nursery stock (places since 2026-10-06). The API
   confirms no plant and checks no photo, so neither reaches a volunteer
   until a person has looked at it, and a change to a checked photo takes
   the check away again. A listing is the exception -- it is on the place

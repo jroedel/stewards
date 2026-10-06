@@ -71,6 +71,8 @@ type Species interface {
 type Places interface {
 	All(ctx context.Context) ([]placebus.Place, error)
 	BySlug(ctx context.Context, slug string) (placebus.Place, error)
+	Import(ctx context.Context, f placebus.Fields) (placebus.Imported, error)
+	SetSpot(ctx context.Context, id types.ID, spot *placebus.Spot) (placebus.Place, error)
 }
 
 // Listings is what it needs from the listing rules.
@@ -199,8 +201,42 @@ func (a app) endpoints() []Endpoint {
 		},
 		{
 			Method: http.MethodGet, Path: Prefix + "/places", NeedsKey: true,
-			Summary: "Every place in the garden, in the stewards' order. A photo's place is one of these slugs.",
-			Returns: `{"places": [{slug, name, parent, card_url}]}`, handler: a.listPlaces,
+			Summary: "Every place in the garden, in the stewards' order, with what its card says about it: what it is for, its conditions, where to stand for its photo, and where it is on the map. A photo's place is one of these slugs.",
+			Returns: `{"places": [place], "map": {"width", "height"}}. A place is {slug, name, parent, purpose, conditions, photo_point, trail_anchor, sort, spot: {x, y} or absent, card_url}.`, handler: a.listPlaces,
+		},
+		{
+			Method: http.MethodGet, Path: Prefix + "/places/{slug}", NeedsKey: true,
+			Summary: "One place, as the list gives it, with the smaller places inside it.",
+			Returns: `{"place": place, "inside": [slug]}`, handler: a.onePlace,
+		},
+		{
+			Method: http.MethodPut, Path: Prefix + "/places/{slug}", NeedsKey: true,
+			Summary: "Add the place at this address, or change it. Send the whole place: a field left out is emptied. Sending what is already there changes nothing. The slug is the place's address on its card, printed on stakes and QR boards, so it is chosen once and never changes. Where it is on the map is set apart, with PUT .../spot.",
+			Body: &Body{Encoding: "json", Fields: []Field{
+				text("name", "What people call it.", true),
+				{Name: "parent", Type: "string", Description: "The slug of the place this one is part of, such as a band of the rain garden; empty for one that stands on its own. One level deep at most."},
+				text("purpose", `What it is for: "the backdrop of the gathering space".`, false),
+				text("conditions", "What a planter needs to know: sun, slope, soil, wet or dry.", false),
+				text("photo_point", `Where to stand, and which way to face, for its photo re-shot each season: "from the fire-pit bench, facing the wall".`, false),
+				{Name: "trail_anchor", Type: "string", Values: placebus.TrailAnchors, Description: "The station on the public trail page this place is, if it is one."},
+				{Name: "sort", Type: "integer", Description: "Its order in the list, lowest first; ties go by name."},
+			}},
+			Returns: `201 {"outcome": "created", "place": place}, or 200 with "updated" or "unchanged".`,
+			handler: a.putPlace,
+		},
+		{
+			Method: http.MethodPut, Path: Prefix + "/places/{slug}/spot", NeedsKey: true,
+			Summary: "Put a place on the map, or move it. The map is a drawing of the property, not a survey: x is across from its west edge and y down from its north edge, in the drawing's units (the list's map gives its size). Place it by its neighbours' spots. Only a place that stands on its own is on the map.",
+			Body: &Body{Encoding: "json", Fields: []Field{
+				{Name: "x", Type: "integer", Required: true, Description: "Across from the west edge."},
+				{Name: "y", Type: "integer", Required: true, Description: "Down from the north edge."},
+			}},
+			Returns: `200 {"place": place}`, handler: a.putSpot,
+		},
+		{
+			Method: http.MethodDelete, Path: Prefix + "/places/{slug}/spot", NeedsKey: true,
+			Summary: "Take a place off the map. The place itself stays.",
+			Returns: `200 {"place": place}`, handler: a.deleteSpot,
 		},
 		{
 			Method: http.MethodGet, Path: Prefix + "/places/{slug}/plants", NeedsKey: true,
@@ -332,34 +368,6 @@ func (a app) notFound(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------ places
 
 // PlaceJSON is a place as the API shows it.
-type PlaceJSON struct {
-	Slug    string   `json:"slug"`
-	Name    TextJSON `json:"name"`
-	Parent  string   `json:"parent,omitempty"`
-	CardURL string   `json:"card_url"`
-}
-
-func (a app) listPlaces(w http.ResponseWriter, r *http.Request) {
-	all, err := a.places.All(r.Context())
-	if err != nil {
-		a.fail(w, r, "listing places", err)
-
-		return
-	}
-
-	slugs := map[types.ID]string{}
-	for _, p := range all {
-		slugs[p.ID] = p.Slug
-	}
-
-	out := []PlaceJSON{}
-	for _, p := range all {
-		out = append(out, PlaceJSON{Slug: p.Slug, Name: textOf(p.Name), Parent: slugs[p.ParentID], CardURL: a.base + "/places/" + p.Slug})
-	}
-
-	web.WriteJSON(w, http.StatusOK, map[string]any{"places": out})
-}
-
 // ------------------------------------------------------------------ species
 
 // TextJSON is a types.Text.

@@ -1,6 +1,6 @@
 ---
 name: stewards-api
-description: Add plants, their photos and where they grow to the live garden steward app through its API, sort the steward's photo inbox, and read nursery stock for planning a bed, as the steward whose key is in STEWARDS_API_KEY. Use when the person asks to upload, import or add species data, species photos or a place's plants to the site, to sort, go through or identify the photos in their inbox, or to plan a bed from what the nurseries have — not for developing the app.
+description: Add plants, their photos and where they grow to the live garden steward app through its API, add or describe the garden's places, sort the steward's photo inbox, and read nursery stock for planning a bed, as the steward whose key is in STEWARDS_API_KEY. Use when the person asks to upload, import or add species data, species photos or a place's plants to the site, to sort, go through or identify the photos in their inbox, or to plan a bed from what the nurseries have — not for developing the app.
 ---
 
 # Adding plants, photos and listings, and sorting the inbox, through the API
@@ -125,6 +125,30 @@ photo already kept answers `"duplicate": true`.
   speaker, never from machine translation (design.md).
 - Notes are for someone standing in the sun with dirty hands: short, plain,
   practical.
+
+## Places
+
+Places are the named areas people stand in and work in: the rain garden,
+its three bands, the switchbacks. `GET /api/v1/places` gives each as its
+card describes it -- `purpose`, `conditions`, `photo_point`, its `parent`,
+its `spot` on the map -- so read it before saying anything about a place.
+
+- **Add or change one** with `PUT /api/v1/places/<slug>`, sending the whole
+  place: a field left out is emptied, so read it first and send it back with
+  your change. Do it only when the person has described the place or asked
+  for the change; a place is theirs to name.
+- **The slug is forever.** It is the card's address, printed on stakes and
+  QR boards. Choose a short, plain one (`skinny-bed`, `inflow`) and ask the
+  person before creating a place whose slug you made up.
+- **A smaller place inside another** (a band of the rain garden) names it as
+  `parent`. Only where it helps: the switchbacks can stay one place.
+- **The map** is a drawing of the property, not a survey. Put a place on it
+  with `PUT /api/v1/places/<slug>/spot` (`{"x", "y"}` in the drawing's
+  units, which the list's `map` gives) only when the person has said where it
+  is relative to places already on it, and tell them to check it on the map
+  screen. A place inside another is never on the map.
+- English only, as for plants.
+- Removing a place is the person's, on its screen.
 
 ## Photos
 
