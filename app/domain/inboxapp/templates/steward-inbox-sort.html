@@ -30,6 +30,8 @@ ordinary forms and links. */}}
 
 <form class="card form" method="post" action="/steward/inbox/{{.ID}}" data-swap>
   <input type="hidden" name="as" value="{{.As}}">
+  {{with .Group}}<input type="hidden" name="group" value="{{.}}">{{end}}
+  {{with .Plant}}<input type="hidden" name="plant" value="{{.}}">{{end}}
   {{with index .Problems "outcome"}}<p class="field-problem">{{.}}</p>{{end}}
 
   {{if or (eq .As "photo") (eq .As "planted")}}
@@ -37,6 +39,7 @@ ordinary forms and links. */}}
   <fieldset>
     <legend>Which plant</legend>
     {{with index .Problems "species"}}<p class="field-problem">{{.}}</p>{{end}}
+    {{if .Carried}}<p class="help">Chosen for the {{.Chosen}} photos you picked together. Tap another if this one is different.</p>{{end}}
     {{if .Recent}}<div class="chips">{{range .Recent}}
       <label class="chip"><input type="radio" name="species" value="{{.Value}}"{{if .Selected}} checked{{end}}><span>{{.Label}}</span></label>{{end}}
     </div>{{end}}
@@ -133,11 +136,11 @@ ordinary forms and links. */}}
 </form>
 
 <p class="sort-else"><span>Or:</span>
-  {{if ne .As "photo"}}<a href="/steward/inbox/{{.ID}}?as=photo" data-swap>A plant's photo</a>{{end}}
-  {{if and .Here (ne .As "planted")}}<a href="/steward/inbox/{{.ID}}?as=planted" data-swap>Just planted</a>{{end}}
-  {{if and .Stock (ne .As "stock")}}<a href="/steward/inbox/{{.ID}}?as=stock" data-swap>Nursery stock</a>{{end}}
-  {{if ne .As "unsure"}}<a href="/steward/inbox/{{.ID}}?as=unsure" data-swap>Not sure yet</a>{{end}}
-  {{if ne .As "discard"}}<a class="sort-discard" href="/steward/inbox/{{.ID}}?as=discard" data-swap>Discard</a>{{end}}
+  {{if ne .As "photo"}}<a href="/steward/inbox/{{.ID}}?as=photo{{with .Group}}&amp;group={{.}}{{end}}{{with .Plant}}&amp;plant={{.}}{{end}}" data-swap>A plant's photo</a>{{end}}
+  {{if and .Here (ne .As "planted")}}<a href="/steward/inbox/{{.ID}}?as=planted{{with .Group}}&amp;group={{.}}{{end}}{{with .Plant}}&amp;plant={{.}}{{end}}" data-swap>Just planted</a>{{end}}
+  {{if and .Stock (ne .As "stock")}}<a href="/steward/inbox/{{.ID}}?as=stock{{with .Group}}&amp;group={{.}}{{end}}{{with .Plant}}&amp;plant={{.}}{{end}}" data-swap>Nursery stock</a>{{end}}
+  {{if ne .As "unsure"}}<a href="/steward/inbox/{{.ID}}?as=unsure{{with .Group}}&amp;group={{.}}{{end}}{{with .Plant}}&amp;plant={{.}}{{end}}" data-swap>Not sure yet</a>{{end}}
+  {{if ne .As "discard"}}<a class="sort-discard" href="/steward/inbox/{{.ID}}?as=discard{{with .Group}}&amp;group={{.}}{{end}}{{with .Plant}}&amp;plant={{.}}{{end}}" data-swap>Discard</a>{{end}}
 </p>
 {{end}}
 </div>

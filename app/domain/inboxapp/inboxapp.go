@@ -293,6 +293,7 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 	for pattern, h := range map[string]http.HandlerFunc{
 		"GET " + IndexPath:                  a.list,
 		"GET " + IndexPath + "/new":         a.newForm,
+		"GET " + TogetherPath:               a.together,
 		UploadPattern:                       a.upload,
 		SendPattern:                         a.sendOne,
 		SharePattern:                        a.shared,
@@ -320,6 +321,12 @@ type itemRow struct {
 type day struct {
 	Label string
 	Items []itemRow
+
+	// Tags and Notes are where the day's photos were taken and what they
+	// were sent with, each once: the grid of a day's photos has no room
+	// for them under every picture, and a day is mostly one batch.
+	Tags, Notes []string
+	Open        bool // a photo with no place said
 }
 
 type listView struct {
@@ -327,6 +334,9 @@ type listView struct {
 	Days  []day
 	Aside []itemRow
 	Done  string
+
+	// Problem is why the photos chosen to sort together were not.
+	Problem string
 }
 
 func (a app) list(w http.ResponseWriter, r *http.Request) {
@@ -361,6 +371,8 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 		n, _ := strconv.Atoi(q.Get("n"))
 		d, _ := strconv.Atoi(q.Get("d"))
 		v.Done = sentWords(max(n, 0), max(d, 0))
+	case "none-chosen":
+		v.Problem = "No photos were chosen. Tap the photos of one plant, then Sort the chosen photos together."
 	default:
 		v.Done = sortedWords(q.Get("done"))
 	}
@@ -381,10 +393,32 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 		}
 
 		last := &v.Days[len(v.Days)-1]
-		last.Items = append(last.Items, rowOf(it, names))
+		row := rowOf(it, names)
+		last.Items = append(last.Items, row)
+
+		switch {
+		case !row.Here:
+			last.Tags = appendOnce(last.Tags, row.Away)
+		case row.Where != "":
+			last.Tags = appendOnce(last.Tags, row.Where)
+		default:
+			last.Open = true
+		}
+
+		if row.Note != "" {
+			last.Notes = appendOnce(last.Notes, row.Note)
+		}
 	}
 
 	a.render.Render(w, r, http.StatusOK, "steward-inbox", v)
+}
+
+func appendOnce(list []string, s string) []string {
+	if slices.Contains(list, s) {
+		return list
+	}
+
+	return append(list, s)
 }
 
 func rowOf(it inboxbus.Item, names map[types.ID]string) itemRow {
@@ -436,6 +470,7 @@ func sortedWords(done string) string {
 		return "Discarded."
 	case "taken":
 		return "That photo had already been sorted, by somebody else or on another screen."
+
 	}
 
 	return ""
@@ -915,7 +950,19 @@ type sortView struct {
 	// Position is where this photo is in the inbox, "3 of 12", and Next
 	// the next one's screen: Skip goes there, and swap.mjs fetches it
 	// ahead. Both empty for a photo set aside, which is not in the order.
+	// For one of a group (together.go), both are within the group.
 	Position, Next string
+
+	// Group is the group the photo is being sorted with, as its address
+	// carries it, and Plant the plant chosen for it so far: both sent
+	// again with the form, so the next screen is one of the group too.
+	// Chosen is how many it holds, and Carried whether the plant was
+	// chosen on an earlier photo of it rather than here.
+	Group, Plant string
+	Chosen       int
+	Carried      bool
+
+	group group
 
 	Species, Kinds, Places []option
 	NoPlants               bool
@@ -975,7 +1022,26 @@ func (a app) sortForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	v := sortView{As: as, Problems: map[string]string{}, Done: sortedWords(r.URL.Query().Get("done"))}
-	a.showSort(w, r, http.StatusOK, it, v, inboxbus.Sorting{Outcome: inboxbus.Outcome(as), PlaceID: it.PlaceID})
+	s := inboxbus.Sorting{Outcome: inboxbus.Outcome(as), PlaceID: it.PlaceID}
+
+	// One of a group, after the first: the plant chosen for the group is
+	// chosen here too, for a photo or a planting.
+	var plant types.ID
+	if v.group, plant = groupOf(r.URL.Query(), it); !plant.Zero() && (s.Outcome == inboxbus.AsPhoto || s.Outcome == inboxbus.AsPlanted) {
+		s.SpeciesID, v.Carried = plant, true
+	}
+
+	v.Plant = plantOf(plant)
+	a.showSort(w, r, http.StatusOK, it, v, s)
+}
+
+// plantOf is a plant's id for the form, or nothing.
+func plantOf(id types.ID) string {
+	if id.Zero() {
+		return ""
+	}
+
+	return id.String()
 }
 
 func (a app) sort(w http.ResponseWriter, r *http.Request) {
@@ -1071,10 +1137,25 @@ func (a app) sort(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Where to go after: the next photo in the inbox, so a batch is sorted
-	// in one go rather than from the list each time. Found before sorting,
-	// while this one still has its place in the order.
-	next, err := a.nextAfter(r.Context(), it.ID)
-	if err != nil {
+	// in one go rather than from the list each time -- or, sorting a group,
+	// the next of the group, and the inbox after its last. Found before
+	// sorting, while this one still has its place in the order.
+	g, plant := groupOf(r.PostForm, it)
+	v.group, v.Plant = g, plantOf(plant)
+
+	var next types.ID
+	var err error
+
+	if g != nil {
+		open, err := a.inInbox(r)
+		if err != nil {
+			a.fail(w, r, "finding the next photo to sort", err)
+
+			return
+		}
+
+		next, _ = g.after(it.ID, open)
+	} else if next, err = a.nextAfter(r.Context(), it.ID); err != nil {
 		a.fail(w, r, "finding the next photo to sort", err)
 
 		return
@@ -1097,9 +1178,13 @@ func (a app) sort(w http.ResponseWriter, r *http.Request) {
 			done += "-checked"
 		}
 
+		if !s.SpeciesID.Zero() {
+			plant = s.SpeciesID
+		}
+
 		to := IndexPath + "?done=" + done
 		if !next.Zero() {
-			to = IndexPath + "/" + next.String() + "?done=" + done
+			to = sortURL(next, g, plant, done)
 		}
 
 		http.Redirect(w, r, to, http.StatusSeeOther)
@@ -1228,7 +1313,23 @@ func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inb
 		return
 	}
 
-	if i := slices.IndexFunc(waiting, func(w inboxbus.Item) bool { return w.ID == it.ID }); i >= 0 {
+	switch i := slices.IndexFunc(waiting, func(w inboxbus.Item) bool { return w.ID == it.ID }); {
+	case v.group != nil:
+		open, err := a.inInbox(r)
+		if err != nil {
+			a.fail(w, r, "listing the inbox", err)
+
+			return
+		}
+
+		plant, _ := types.ParseID(v.Plant)
+		v.Group, v.Chosen = v.group.String(), len(v.group)
+		v.Position = fmt.Sprintf("%d of the %d chosen", slices.Index(v.group, it.ID)+1, len(v.group))
+
+		if next, ok := v.group.after(it.ID, open); ok {
+			v.Next = sortURL(next, v.group, plant, "")
+		}
+	case i >= 0:
 		v.Position = fmt.Sprintf("%d of %d", i+1, len(waiting))
 
 		if len(waiting) > 1 {
