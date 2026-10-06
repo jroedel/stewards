@@ -58,6 +58,13 @@ func Policy() web.PolicyFor {
 				// opened which page, from which address.
 				"font-src 'self'",
 				"img-src 'self' data:",
+
+				// The inbox's manifest, which is what lets Chrome install
+				// the app and offer it in the phone's share sheet. Without
+				// this it falls to default-src and is refused. The share
+				// target's worker needs no line of its own: worker-src
+				// falls back to script-src, and that is 'self'.
+				"manifest-src 'self'",
 				"form-action 'self'",
 				"base-uri 'none'",
 				"frame-ancestors 'none'",

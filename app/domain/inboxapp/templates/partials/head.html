@@ -1,0 +1,6 @@
+{{/* The inbox and the send screen link the app's manifest, so that Chrome
+offers to install the stewards app from them, and with it the share target
+the phone's photos app sends to. Only these two: share.mjs, which they load,
+registers the worker that catches a share, so an app installed from here has
+its worker before its first share. A volunteer's page offers no install. */}}
+{{define "inbox-head"}}<link rel="manifest" href="/steward/inbox/app.webmanifest">{{end}}
