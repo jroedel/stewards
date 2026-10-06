@@ -16,7 +16,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jroedel/stewards/app/domain/inboxapp"
 	"github.com/jroedel/stewards/app/sdk/mid"
@@ -105,7 +107,20 @@ func serve(t *testing.T) *site {
 		listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
 	}
 	s.nursery = nurserybus.NewBusiness(nurserydb.NewStore(db), nil)
-	s.inbox = inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, inboxbus.Deps{Photos: s.photos, Listings: s.listings, Stock: s.nursery}, nil)
+	// The inbox's clock is noon today in the garden, a millisecond on each
+	// time it is read. A photo with no date of its own is dated when it is
+	// sent, and its nursery visit is on that day; on the real clock a test
+	// run at midnight in Austin sent one tag before it and one after, and
+	// they were two visits (CI, 2026-10-06 05:00 UTC). Today's, not a fixed
+	// day, because the stock screen shows a visit's photos for 90 days by
+	// the real clock.
+	y, m, d := time.Now().In(types.Garden).Date()
+	var ticks atomic.Int64
+	noon := func() time.Time {
+		return time.Date(y, m, d, 12, 0, 0, 0, types.Garden).Add(time.Duration(ticks.Add(1)) * time.Millisecond)
+	}
+
+	s.inbox = inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, inboxbus.Deps{Photos: s.photos, Listings: s.listings, Stock: s.nursery}, noon)
 
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
