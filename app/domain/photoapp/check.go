@@ -31,8 +31,9 @@ type checkView struct {
 	Count int
 
 	// Done is what the last button did, and Undo the photo it did it to
-	// when it can be undone. Problem is why it could not be done.
-	Done, Undo, Problem string
+	// when its check can be undone, UndoLabel the button's word for that.
+	// Problem is why it could not be done.
+	Done, Undo, UndoLabel, Problem string
 
 	Empty bool
 
@@ -49,6 +50,14 @@ type checkView struct {
 	Ref        string
 	RefW, RefH int
 	Next       string
+
+	// Sheet is the Change sheet (change.go). form is what was sent from it
+	// for the photo formOf, to be shown again with probs to fix; nil when
+	// the sheet says what the photo says.
+	Sheet  changeSheet
+	form   *changeForm
+	formOf types.ID
+	probs  map[string]string
 }
 
 // queue shows one photo of the queue: the one ?at= names, or the first.
@@ -75,7 +84,11 @@ func (a app) showQueue(w http.ResponseWriter, r *http.Request, status int, at st
 			if sp, err := a.species.ByID(ctx, p.SpeciesID); err == nil {
 				switch {
 				case q.Get("done") == "checked" && p.Checked:
-					v.Done, v.Undo = "Checked: "+sp.Common.EN+", "+lower(p.Kind.Label())+".", p.ID.String()
+					v.Done, v.Undo, v.UndoLabel = "Checked: "+sp.Common.EN+", "+lower(p.Kind.Label())+".", p.ID.String(), "Undo"
+				case q.Get("done") == "changed-checked" && p.Checked:
+					v.Done, v.Undo, v.UndoLabel = "Changed and checked: "+sp.Common.EN+", "+lower(p.Kind.Label())+".", p.ID.String(), "Uncheck"
+				case q.Get("done") == "changed" && !p.Checked:
+					v.Done = "Changed: " + sp.Common.EN + ", " + lower(p.Kind.Label()) + ". It waits here to be checked."
 				case q.Get("done") == "unchecked" && !p.Checked:
 					v.Done = "Not checked any more. It is back in the queue."
 				case q.Get("done") == "saved":
@@ -103,7 +116,7 @@ func (a app) showQueue(w http.ResponseWriter, r *http.Request, status int, at st
 		return
 	}
 
-	_, names, err := a.placeOptions(ctx, types.ID{})
+	places, names, err := a.placeOptions(ctx, types.ID{})
 	if err != nil {
 		a.fail(w, r, "naming places for the photos to check", err)
 
@@ -133,6 +146,18 @@ func (a app) showQueue(w http.ResponseWriter, r *http.Request, status int, at st
 
 	if next, ok := after(queue, i); ok {
 		v.Next = CheckPath + "?at=" + next.ID.String()
+	}
+
+	form := changeForm{SpeciesID: p.SpeciesID, Kind: p.Kind, InFlower: p.InFlower, InFruit: p.InFruit, PlaceID: p.PlaceID}
+	var problems map[string]string
+	if v.form != nil && v.formOf == p.ID {
+		form, problems = *v.form, v.probs
+	}
+
+	if v.Sheet, err = a.sheet(ctx, p, form, places, problems); err != nil {
+		a.fail(w, r, "making the Change sheet", err)
+
+		return
 	}
 
 	a.render.Render(w, r, status, "steward-check", v)

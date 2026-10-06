@@ -1226,16 +1226,6 @@ func (a app) sort(w http.ResponseWriter, r *http.Request) {
 	a.showSort(w, r, http.StatusUnprocessableEntity, it, v, s)
 }
 
-// tileWords is each kind's name on its button.
-var tileWords = map[photobus.Kind]string{
-	photobus.Young:  "Young plant",
-	photobus.Leaf:   "Leaf",
-	photobus.Flower: "Flower",
-	photobus.Fruit:  "Fruit or seed",
-	photobus.Mature: "Mature plant",
-	photobus.Winter: "In winter",
-}
-
 // recentPlants is how many of the plants last sorted to are offered as a
 // button each: a row or two on a phone.
 const recentPlants = 6
@@ -1402,7 +1392,7 @@ func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inb
 	// the short name of each fits a button on one line, where "Leaf
 	// close-up" broke in the middle of a word.
 	for _, k := range photobus.Kinds {
-		v.Kinds = append(v.Kinds, option{Value: string(k), Label: tileWords[k], Selected: k == kind})
+		v.Kinds = append(v.Kinds, option{Value: string(k), Label: k.Word(), Selected: k == kind})
 	}
 
 	place := s.PlaceID

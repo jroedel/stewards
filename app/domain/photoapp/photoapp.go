@@ -58,11 +58,14 @@ type Photos interface {
 	Open(ctx context.Context, id types.ID, size photobus.Size) (photobus.Photo, photobus.File, error)
 	Unchecked(ctx context.Context) ([]photobus.Photo, error)
 	SetChecked(ctx context.Context, id types.ID, checked bool) (photobus.Photo, error)
+	Refile(ctx context.Context, id, speciesID types.ID, f photobus.Fields) (photobus.Photo, error)
+	RecentSpecies(ctx context.Context, n int) ([]types.ID, error)
 }
 
 // SpeciesReader is what it needs from the species rules.
 type SpeciesReader interface {
 	ByID(ctx context.Context, id types.ID) (speciesbus.Species, error)
+	All(ctx context.Context) ([]speciesbus.Species, error)
 }
 
 // PlaceReader is what it needs from the place rules: the list a photo's
@@ -112,8 +115,9 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 		"POST /steward/photos/{id}/delete": a.remove,
 
 		// The check queue; check.go.
-		"GET " + CheckPath:            a.queue,
-		"POST " + CheckPath + "/{id}": a.check,
+		"GET " + CheckPath:                   a.queue,
+		"POST " + CheckPath + "/{id}":        a.check,
+		"POST " + CheckPath + "/{id}/change": a.change,
 	} {
 		mux.Handle(pattern, guard(h))
 	}
@@ -187,6 +191,10 @@ func (a app) file(w http.ResponseWriter, r *http.Request) {
 type option struct {
 	Value, Label string
 	Selected     bool
+
+	// Also is more to find a plant by in a searchable list, not shown: see
+	// plantOption.
+	Also string
 }
 
 type photoRow struct {

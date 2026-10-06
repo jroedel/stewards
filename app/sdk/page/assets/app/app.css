@@ -624,6 +624,30 @@ input[type="file"] { display: block; width: 100%; min-height: 48px; padding: 10p
 .check-yes .button { width: 100%; min-height: 60px; font-size: 18px; }
 .check-other { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
 .check-other .button { display: flex; align-items: center; justify-content: center; text-decoration: none; }
+/* The Change sheet: the popover rising from the bottom of the phone over
+   the dimmed queue, as wide as the page's column, scrolling within itself,
+   with its two buttons held at its foot so neither needs a scroll to find.
+   Sent back with something to fix, the same form sits in the page as a
+   card (sheet-open), since a popover cannot be sent open. */
+.sheet[popover] {
+  position: fixed; inset: auto 0 0 0; width: 100%; max-width: 40rem; max-height: 92dvh; margin: 0 auto;
+  padding: 4px 16px 0; overflow-y: auto; overscroll-behavior: contain;
+  border: 0; border-radius: 18px 18px 0 0; background: var(--sf-white); color: var(--sf-ink);
+}
+.sheet::backdrop { background: rgba(35, 31, 32, .55); }
+.sheet .form { margin-top: 8px; }
+.sheet-open { margin-top: 20px; scroll-margin-top: 12px; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sheet-head h2 { margin: 0; }
+.sheet-close {
+  flex: none; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 10px; cursor: pointer;
+  background: var(--sf-neutral) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23293896' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E") center / 20px no-repeat;
+}
+.sheet-actions { position: sticky; bottom: 0; z-index: 1; display: flex; flex-direction: column; gap: 8px; margin: 8px -16px 0; padding: 8px 16px 12px; background: var(--sf-white); border-top: 1px solid var(--rule); }
+.sheet-open .sheet-actions { position: static; margin: 8px 0 0; padding: 8px 0 0; }
+.sheet-actions .button { margin: 0; }
+.sheet .help:last-child { margin: 4px 0 20px; }
+
 .check-done { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 4px; padding-bottom: 4px; }
 .check-done form { margin: 0; }
 .check-done .linkish { min-height: 44px; font-weight: 700; }

@@ -115,7 +115,7 @@
   {{if .Planned}}<input type="hidden" name="planned" value="yes">{{end}}
   <input type="hidden" name="return" value="card">
   <label for="{{.ID}}-species">Plant</label>
-  <select id="{{.ID}}-species" name="species" required data-find="Type any part of the plant's name"><option value="">Choose a plant</option>
+  <select id="{{.ID}}-species" name="species" required data-find="Type part of its name"><option value="">Choose a plant</option>
     {{if .Growing}}<optgroup label="Not here yet">{{end}}{{range .Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}>{{.Label}}</option>{{end}}{{if .Growing}}</optgroup>
     <optgroup label="Already growing here: plant more">{{range .Growing}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}>{{.Label}}</option>{{end}}</optgroup>{{end}}
   </select>

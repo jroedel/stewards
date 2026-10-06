@@ -125,3 +125,109 @@ func TestCheckingAndUndoing(t *testing.T) {
 		t.Errorf("checking a photo that is not there: %v, want ErrNotFound", err)
 	}
 }
+
+// The Change sheet's refile: a leaf filed under the wrong plant moves to the
+// right one, saying a flower now and checked, in one write; and what cannot
+// be moved is refused with a sentence about the plant.
+func TestARefiledPhotoMovesToItsPlant(t *testing.T) {
+	g := setup(t)
+
+	turksCap, err := g.species.Create(t.Context(), speciesbus.Fields{Slug: "turks-cap", Common: types.Text{EN: "Turk's cap"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f := ours(photobus.Leaf)
+	f.Checked = false
+	p, err := g.photos.Add(t.Context(), g.penstemon.ID, f, photo(t, 400, 300))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	*g.clock = g.clock.Add(time.Hour)
+
+	f = photobus.FieldsOf(p)
+	f.Kind, f.Checked = photobus.Flower, true
+	moved, err := g.photos.Refile(t.Context(), p.ID, turksCap.ID, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if moved.SpeciesID != turksCap.ID || moved.Kind != photobus.Flower || !moved.InFlower || !moved.Checked || !moved.UpdatedAt.Equal(*g.clock) {
+		t.Errorf("refiled: %+v", moved)
+	}
+
+	if left, _ := g.photos.ForSpecies(t.Context(), g.penstemon.ID); len(left) != 0 {
+		t.Errorf("the penstemon still has %d photos", len(left))
+	}
+
+	if got, _ := g.photos.ForSpecies(t.Context(), turksCap.ID); len(got) != 1 || got[0].ID != p.ID {
+		t.Errorf("the Turk's cap has %v, want the photo", got)
+	}
+
+	for name, to := range map[string]types.ID{"no plant": {}, "a plant not there": types.NewID()} {
+		if _, err := g.photos.Refile(t.Context(), p.ID, to, f); err == nil {
+			t.Errorf("%s: refiled", name)
+		} else if invalid, ok := errors.AsType[photobus.Invalid](err); !ok || invalid.Field != "species" {
+			t.Errorf("%s: %v, want a problem with the species", name, err)
+		}
+	}
+
+	// The penstemon has the same picture sent again: moving this one back
+	// would make it twice.
+	if _, err := g.photos.Add(t.Context(), g.penstemon.ID, ours(photobus.Leaf), photo(t, 400, 300)); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = g.photos.Refile(t.Context(), p.ID, g.penstemon.ID, f)
+	if invalid, ok := errors.AsType[photobus.Invalid](err); !ok || invalid.Field != "species" {
+		t.Errorf("moving a picture to a plant that has it: %v, want a problem with the species", err)
+	}
+}
+
+// The plants offered on the Change sheet: those whose photos changed last,
+// each once, as many as asked for.
+func TestThePlantsWorkedOnLately(t *testing.T) {
+	g := setup(t)
+
+	turksCap, err := g.species.Create(t.Context(), speciesbus.Fields{Slug: "turks-cap", Common: types.Text{EN: "Turk's cap"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	add := func(sp speciesbus.Species, size int) photobus.Photo {
+		t.Helper()
+
+		*g.clock = g.clock.Add(time.Minute)
+		p, err := g.photos.Add(t.Context(), sp.ID, ours(photobus.Leaf), photo(t, size, 200))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return p
+	}
+
+	add(g.penstemon, 300)
+	capLeaf := add(turksCap, 310)
+	add(g.penstemon, 320)
+
+	got, err := g.photos.RecentSpecies(t.Context(), 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if want := []types.ID{g.penstemon.ID, turksCap.ID}; !slices.Equal(got, want) {
+		t.Errorf("recent %v, want %v", got, want)
+	}
+
+	// A change to the Turk's cap's photo -- its check taken away -- makes
+	// the Turk's cap the plant worked on last.
+	*g.clock = g.clock.Add(time.Minute)
+	if _, err := g.photos.SetChecked(t.Context(), capLeaf.ID, false); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, _ := g.photos.RecentSpecies(t.Context(), 1); len(got) != 1 || got[0] != turksCap.ID {
+		t.Errorf("one asked for: %v", got)
+	}
+}
