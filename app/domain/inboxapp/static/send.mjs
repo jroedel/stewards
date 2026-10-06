@@ -20,10 +20,10 @@
 // drives this page in a real browser against a real server.
 import { shrink } from "./shrink.mjs";
 
-// Photos shared from the phone's photos app arrive in the file input by
-// way of share.mjs, before anybody presses Send; from there they are sent as
-// though they had been chosen.
-import "./share.mjs";
+// Photos shared from the phone's photos app arrive in the file input by way
+// of share.mjs, which every steward's page loads (ShareScript), before
+// anybody presses Send; from there they are sent as though they had been
+// chosen.
 
 (() => {
   const form = document.querySelector("form[data-send]");

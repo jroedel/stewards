@@ -2,11 +2,11 @@
 // registers the worker that catches them (share-worker.mjs), and on the send
 // screen puts them in the file input, as though they had been chosen there.
 //
-// It is loaded by both inbox screens a steward installs the app from, the
-// inbox and the send screen, so that the worker is in place before the first
-// share: the manifest that offers "Install app" is linked from those two
-// pages and no others. A share that comes before the worker does reaches the
-// server instead, which asks for it again (inboxapp's shared handler).
+// It is loaded by every page a steward is signed in on, with the manifest
+// that offers "Install app" (page.Renderer's OfferApp), so that the worker is
+// in place before the first share whichever page the app was installed from.
+// A share that comes before the worker does reaches the server instead,
+// which asks for it again (inboxapp's shared handler).
 //
 // The photos wait in Cache Storage, under STASH, from the share until the
 // inbox opens again, which is where a batch that was sent ends up. So a
@@ -22,6 +22,7 @@
 const WORKER = "/steward/inbox/static/share-worker.mjs";
 const SHARED = "/steward/inbox/shared";
 const STASH = "shared-photos";
+const INBOX = "/steward/inbox";
 
 (async () => {
   if (!window.isSecureContext) {
@@ -36,15 +37,18 @@ const STASH = "shared-photos";
     return;
   }
 
-  const form = document.querySelector("form[data-send]");
-  if (!form) {
-    // The inbox: whatever was shared has been sent, or was left.
+  if (location.pathname === INBOX) {
+    // Where a sent batch ends up: whatever was shared has been sent, or
+    // was left. Only here, not on every page: a steward who looks
+    // something up on another page between the share and Send comes back
+    // to the photos still there.
     await caches.delete(STASH).catch(() => {});
     return;
   }
 
+  const form = document.querySelector("form[data-send]");
   const shared = new URLSearchParams(location.search).get("shared");
-  if (shared && /^[0-9]+$/.test(shared) && Number(shared) > 0) {
+  if (form && shared && /^[0-9]+$/.test(shared) && Number(shared) > 0) {
     await fill(form);
   }
 })();

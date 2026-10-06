@@ -507,27 +507,31 @@ func TestTheSendScreenLinksItsScript(t *testing.T) {
 	}
 }
 
-// The inbox and the send screen are where the stewards app is installed from:
-// they link the manifest, and load the script that registers the share
-// target's worker, so the worker is in place before the first share.
-func TestTheInboxOffersTheAppAndItsShareTarget(t *testing.T) {
+// Every page a steward is signed in on offers the stewards app: it links the
+// manifest, and loads the script that registers the share target's worker,
+// so an app installed from any of them is ready for its first share. The
+// first try was from the front page, which then offered neither, and Chrome
+// said the app could not be installed.
+func TestEveryStewardsPageOffersTheAppAndItsShareTarget(t *testing.T) {
 	s := serve(t)
 
-	for _, path := range []string{"/steward/inbox", "/steward/inbox/new"} {
+	link := `<link rel="manifest" href="` + inboxapp.ManifestPath + `">`
+	script := `<script type="module" src="` + inboxapp.ShareScript + `"></script>`
+
+	// A steward's own pages, and a volunteer's page while a steward is
+	// signed in on it: once each, the send screen's included, though its
+	// own script imports nothing of it.
+	for _, path := range []string{"/steward", "/steward/inbox", "/steward/inbox/new", "/"} {
 		page := s.get(path, true).Body.String()
 
-		if !strings.Contains(page, `<link rel="manifest" href="`+inboxapp.ManifestPath+`">`) {
-			t.Errorf("%s does not link the manifest", path)
+		if strings.Count(page, link) != 1 || strings.Count(page, script) != 1 {
+			t.Errorf("%s, signed in: the manifest %d times and the script %d, want once each", path, strings.Count(page, link), strings.Count(page, script))
 		}
 	}
 
-	if !strings.Contains(s.get("/steward/inbox", true).Body.String(), `<script type="module" src="/steward/inbox/static/share.mjs"></script>`) {
-		t.Error("the inbox does not load the script that registers the worker")
-	}
-
-	// Nor is anywhere else: a volunteer's page offers no install.
-	if page := s.get("/steward", true).Body.String(); strings.Contains(page, `rel="manifest"`) {
-		t.Error("the stewards' front page links the manifest too")
+	// Everybody else is offered nothing to install.
+	if page := s.get("/", false).Body.String(); strings.Contains(page, `rel="manifest"`) || strings.Contains(page, "share.mjs") {
+		t.Error("the front page offers the stewards app to somebody signed out")
 	}
 
 	// Chrome fetches the manifest without cookies.

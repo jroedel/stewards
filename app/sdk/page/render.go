@@ -56,6 +56,9 @@ type Renderer struct {
 	// changes only when the brand does, and then under a new file name: the
 	// name is the version.
 	files map[string]asset
+
+	// The installable app a steward's pages offer, if any: see OfferApp.
+	manifest, appScript string
 }
 
 type asset struct {
@@ -80,6 +83,10 @@ type Shell struct {
 	// way to sign out, because a phone passed between stewards is a phone
 	// signed in as whoever had it last.
 	Steward string
+
+	// Manifest and AppScript are the installable app, on a steward's pages
+	// alone, and empty on everybody else's: see OfferApp.
+	Manifest, AppScript string
 
 	Data any
 }
@@ -193,6 +200,22 @@ func NewRenderer(log *slog.Logger, own ...fs.FS) (*Renderer, error) {
 	return rn, nil
 }
 
+// OfferApp has every page a steward is signed in on link manifest and load
+// script, and no page anybody else sees.
+//
+// It is how a steward installs the stewards app from Chrome on a phone, from
+// whichever page they are on, and with it Android's share target. The paths
+// come from the app that owns them, through the muxer, so this layer knows
+// that there is an installable app and not which: today it is the inbox's,
+// whose script registers the worker that catches a share. Linking the
+// manifest only where that script runs as well is what makes an app
+// installed from any page ready for its first share.
+//
+// Called while the routes are built, before anything is served.
+func (rn *Renderer) OfferApp(manifest, script string) {
+	rn.manifest, rn.appScript = manifest, script
+}
+
 // StylesheetPath is where the stylesheet is served, including its hash.
 func (rn *Renderer) StylesheetPath() string { return rn.cssPath }
 
@@ -217,9 +240,10 @@ func (rn *Renderer) Render(w http.ResponseWriter, r *http.Request, status int, n
 		other = types.English
 	}
 
-	var steward string
+	var steward, manifest, appScript string
 	if u, ok := mid.StewardFrom(r.Context()); ok {
 		steward = u.Email.String()
+		manifest, appScript = rn.manifest, rn.appScript
 	}
 
 	var buf bytes.Buffer
@@ -230,6 +254,8 @@ func (rn *Renderer) Render(w http.ResponseWriter, r *http.Request, status int, n
 		OtherLang:  other,
 		OtherURL:   mid.SwitchURL(r, other),
 		Steward:    steward,
+		Manifest:   manifest,
+		AppScript:  appScript,
 		Data:       data,
 	}); err != nil {
 		rn.log.Error("a page could not be rendered",

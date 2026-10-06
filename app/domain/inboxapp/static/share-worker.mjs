@@ -1,8 +1,8 @@
 // The service worker that catches photos shared to the stewards app from the
 // phone's own photos app, and nothing else.
 //
-// A steward who has installed the app from Chrome ("Install app", which the
-// inbox's pages offer through their manifest) finds "Garden stewards" in
+// A steward who has installed the app from Chrome ("Install app", which
+// every steward's page offers through its manifest) finds "Garden stewards" in
 // Android's share sheet. Choosing it makes Chrome post the photos, as one
 // multipart form, to the manifest's share_target: SharePattern. This worker's
 // scope is that one address, so the post comes here instead of to the
