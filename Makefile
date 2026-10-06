@@ -74,11 +74,11 @@ test-unit: ## Run unit tests, with the race detector
 	@GO=$(GO) scripts/go-test -race ./...
 
 .PHONY: test-js
-test-js: ## The send screen's JavaScript, under Node's own test runner. No browser
+test-js: ## The JavaScript's unit tests, under Node's own test runner. No browser
 	@scripts/js-test unit
 
 .PHONY: test-browser
-test-browser: ## The send screen in headless Chrome, against a server built for it
+test-browser: ## The pages with scripts, in headless Chrome against a server built for it
 	@scripts/js-test browser
 
 .PHONY: test

@@ -1,0 +1,53 @@
+{{define "title"}}Photos to check · Garden stewards{{end}}
+{{define "content"}}{{with .Data}}
+{{/* Everything the queue's script swaps is inside #check, and data-next is
+the page it fetches ahead (check.go, check.mjs). Without the script these are
+ordinary forms and links. */}}
+<div lang="en" id="check" class="check-queue"{{with .Next}} data-next="{{.}}"{{end}}>
+<p class="eyebrow"><a href="/steward">Places</a></p>
+<h1 tabindex="-1">Photos to check</h1>
+
+{{with .Done}}<div class="done check-done" role="status" tabindex="-1"><span>{{.}}</span>{{with $.Data.Undo}}
+  <form method="post" action="/steward/check/{{.}}" data-swap><input type="hidden" name="checked" value="no"><button class="linkish" type="submit">Undo</button></form>{{end}}
+</div>{{end}}
+{{with .Problem}}<p class="problem" role="alert" tabindex="-1">{{.}}</p>{{end}}
+
+{{if .Empty}}
+<div class="card empty"><p>Nothing to check. Photos sorted through the API, or added without the Checked tick, wait here.</p></div>
+{{else}}
+<p class="lead">{{if eq .Count 1}}This is the last one.{{else}}{{.Count}} waiting.{{end}} Volunteers see a photo once it is checked.</p>
+
+<div class="compare">
+  <figure>
+    <a class="photo-zoom" href="/plants/{{.Slug}}/photos/{{.ID}}"><span class="sr-only">Zoom in on this photo</span><img src="/photos/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt=""></a>
+    <figcaption><strong>This photo</strong>{{with .Taken}}, {{.}}{{end}}</figcaption>
+  </figure>
+  {{if .Ref}}<figure>
+    <a class="photo-zoom" href="/plants/{{.Slug}}/photos/{{.Ref}}"><span class="sr-only">Zoom in on the checked photo</span><img src="/photos/{{.Ref}}/small.jpg" width="{{.RefW}}" height="{{.RefH}}" alt=""></a>
+    <figcaption>On the card now</figcaption>
+  </figure>
+  {{else}}<div class="compare-none">
+    <p>No checked {{.KindWord}} of {{.Name}} yet{{if .Sources}}. Compare it with the sources below{{end}}.</p>
+  </div>{{end}}
+</div>
+
+<div class="card check-says">
+  <p class="check-name">{{.Name}}</p>
+  {{with .Scientific}}<p class="row-note"><i>{{.}}</i></p>{{end}}
+  <p class="row-tags"><span class="tag">{{.Kind}}</span>{{if .InFlower}}<span class="tag tag-sun">In flower</span>{{end}}{{if .InFruit}}<span class="tag tag-sun">In fruit or seed</span>{{end}}</p>
+  <p class="row-note">{{.Caption}} · {{template "photo-id" .ID}}</p>
+  {{if .Sources}}<p class="row-note">Sources: {{range $i, $s := .Sources}}{{if $i}}, {{end}}{{if .URL}}<a href="{{.URL}}" rel="noopener" target="_blank">{{.Label}}</a>{{else}}{{.Label}}{{end}}{{end}}</p>{{end}}
+</div>
+
+<form class="check-yes" method="post" action="/steward/check/{{.ID}}" data-swap>
+  <input type="hidden" name="checked" value="yes">
+  <button class="button button-block" type="submit">Yes, it shows {{.Name}}</button>
+</form>
+<div class="check-other">
+  <a class="button button-quiet button-small" href="/steward/photos/{{.ID}}/edit?from=check">Change</a>
+  {{with .Next}}<a class="button button-quiet button-small" href="{{.}}" data-swap>Skip</a>{{end}}
+</div>
+{{end}}
+</div>
+{{with .Script}}<script type="module" src="{{.}}"></script>{{end}}
+{{end}}{{end}}

@@ -1,7 +1,7 @@
 {{define "title"}}{{.Data.Kind}} of {{.Data.Name}} · Garden stewards{{end}}
 {{define "content"}}{{with .Data}}
 <div lang="en">
-<p class="eyebrow"><a href="/steward/species/{{.SpeciesID}}/photos">Photos of {{.Name}}</a></p>
+<p class="eyebrow">{{if .FromCheck}}<a href="/steward/check?at={{.ID}}">Photos to check</a>{{else}}<a href="/steward/species/{{.SpeciesID}}/photos">Photos of {{.Name}}</a>{{end}}</p>
 <h1>{{.Kind}}</h1>
 
 <p class="photo-large"><img src="/photos/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="The photo being edited"></p>
@@ -10,6 +10,7 @@
 {{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below and press Save again.</p>{{end}}
 
 <form class="card form" method="post" action="/steward/photos/{{.ID}}">
+  {{if .FromCheck}}<input type="hidden" name="from" value="check">{{end}}
   {{template "photo-fields" .}}
   <button class="button" type="submit">Save</button>
 </form>
