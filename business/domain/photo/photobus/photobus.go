@@ -124,6 +124,15 @@ type Photo struct {
 	// PlaceID is where it was taken, for one of ours; zero when not said.
 	PlaceID types.ID
 
+	// Elsewhere is one of ours taken off the property: in a park, at a
+	// nursery, in a friend's garden. TakenWhere names it if anybody said;
+	// it may be empty, and the card then says only that it was not taken
+	// here. Kept apart from the name because the name is optional where a
+	// photo is sent, and a photo from a park with no name given must still
+	// never be shown as if it were of this garden.
+	Elsewhere  bool
+	TakenWhere string
+
 	Kind Kind
 
 	// The month it was taken. Either may be zero: a borrowed photo often
@@ -161,6 +170,8 @@ type Photo struct {
 type Fields struct {
 	Kind                  Kind
 	PlaceID               types.ID
+	Elsewhere             bool
+	TakenWhere            string
 	TakenYear, TakenMonth int
 	Source                Source
 	Credit                string
@@ -541,16 +552,13 @@ func Lead(photos []Photo) (Photo, bool) {
 }
 
 // Better orders two photos of the same kind, the one to show first first: our
-// own before a borrowed one, because "our Winecup, rim of the rain garden"
-// beats any nursery photo (the plan); then the more recently taken; then the
-// more recently added.
+// own taken here, because "our Winecup, rim of the rain garden" beats any
+// nursery photo (the plan); then our own from elsewhere, which is still a
+// plant we have seen; then a borrowed one; and among those the more recently
+// taken, then the more recently added.
 func Better(x, y Photo) int {
-	if x.Source != y.Source {
-		if x.Source == Ours {
-			return -1
-		}
-
-		return 1
+	if c := cmp.Compare(rank(x), rank(y)); c != 0 {
+		return c
 	}
 
 	if c := cmp.Compare(y.TakenYear*12+y.TakenMonth, x.TakenYear*12+x.TakenMonth); c != 0 {
@@ -558,6 +566,18 @@ func Better(x, y Photo) int {
 	}
 
 	return y.CreatedAt.Compare(x.CreatedAt)
+}
+
+// rank is how near a photo is to the garden a volunteer is standing in.
+func rank(p Photo) int {
+	switch {
+	case p.Source == Borrowed:
+		return 2
+	case p.Elsewhere:
+		return 1
+	}
+
+	return 0
 }
 
 // Name is the file a picture is kept in. Public so the store and its tests
@@ -709,7 +729,7 @@ func (b *Business) remove(names []string) {
 }
 
 func (p *Photo) apply(f Fields) {
-	p.Kind, p.PlaceID = f.Kind, f.PlaceID
+	p.Kind, p.PlaceID, p.Elsewhere, p.TakenWhere = f.Kind, f.PlaceID, f.Elsewhere, f.TakenWhere
 	p.TakenYear, p.TakenMonth = f.TakenYear, f.TakenMonth
 	p.Source, p.Credit, p.SourceURL, p.License = f.Source, f.Credit, f.SourceURL, f.License
 	p.Checked = f.Checked
@@ -723,6 +743,19 @@ func tidy(f Fields) Fields {
 	f.Credit = strings.TrimSpace(f.Credit)
 	f.SourceURL = strings.TrimSpace(f.SourceURL)
 	f.License = strings.TrimSpace(f.License)
+	f.TakenWhere = strings.Join(strings.Fields(f.TakenWhere), " ")
+
+	// Where a photo was taken off the property is a name, which makes it
+	// off the property. Neither means anything for a borrowed photo, whose
+	// page says where; and a place here is the answer to where for one
+	// taken here, so a place chosen wins over a name left from before.
+	if f.TakenWhere != "" {
+		f.Elsewhere = true
+	}
+
+	if f.Source == Borrowed || !f.PlaceID.Zero() {
+		f.Elsewhere, f.TakenWhere = false, ""
+	}
 
 	if f.Source == Ours {
 		f.SourceURL, f.License = "", ""
@@ -747,6 +780,8 @@ func (b *Business) check(f Fields) error {
 		return Invalid{Field: "license", Problem: "the licence is longer than 100 characters. Write its short name, such as CC BY-SA 4.0"}
 	case len(f.SourceURL) > 500:
 		return Invalid{Field: "source_url", Problem: "the address is longer than 500 characters. Use the photo's own page rather than a search"}
+	case utf8.RuneCountInString(f.TakenWhere) > 100:
+		return Invalid{Field: "taken_where", Problem: "the name of where it was taken is longer than 100 characters. Shorten it"}
 	}
 
 	if f.Source != Borrowed {

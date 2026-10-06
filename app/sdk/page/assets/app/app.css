@@ -550,6 +550,10 @@ form:has(input[name="at"][value="property"]:checked) :is(.for-nursery, .for-else
 form:has(input[name="at"][value="nursery"]:checked) :is(.for-property, .for-elsewhere),
 form:has(input[name="at"][value="elsewhere"]:checked) :is(.for-property, .for-nursery) { display: none; }
 
+/* The same on a photo's screen, where "Somewhere else" is one of the places
+   in the list: the name of the place shows only with it. */
+form:not(:has(select[name="place"] option[value="elsewhere"]:checked)) .for-taken-elsewhere { display: none; }
+
 /* A nursery in the register: its map, website and phone as a row of links
    tall enough for a thumb, wrapping onto a second line on a narrow phone. */
 .nursery-links { display: flex; flex-wrap: wrap; gap: 0 20px; margin: 0; }

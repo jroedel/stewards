@@ -58,6 +58,10 @@ type cardWording struct {
 
 	OurPhoto, PhotoBy, Source, Photos types.Text
 
+	// NotHere is where one of our photos was taken off the property, when
+	// nobody said where: still never to be taken for this garden.
+	NotHere types.Text
+
 	// The photo on a page of its own, to look closer.
 	ZoomIn, Pinch, ByItself types.Text
 }
@@ -87,6 +91,7 @@ var cardWords = cardWording{
 	Edit:              types.Text{EN: "Edit this plant"},
 	Photos:            types.Text{EN: "Photos of this plant"},
 	OurPhoto:          types.Text{EN: "Our photo"},
+	NotHere:           types.Text{EN: "not taken here"},
 	PhotoBy:           types.Text{EN: "Photo:"},
 	Source:            types.Text{EN: "source"},
 	ZoomIn:            types.Text{EN: "Zoom in:"},
@@ -336,8 +341,9 @@ func placeNames(places []placebus.Place) map[types.ID]types.Text {
 }
 
 // figureOf is a photo as the card shows it, with its credit: "Our photo ·
-// Rain garden: Inflow band · April 2027", or the author, licence and source of
-// a borrowed one, which its licence requires beside the picture.
+// Rain garden: Inflow band · April 2027", "Our photo · Pedernales Falls State
+// Park · May 2027" for one taken elsewhere, or the author, licence and source
+// of a borrowed one, which its licence requires beside the picture.
 func figureOf(p photobus.Photo, sp speciesbus.Species, names map[types.ID]types.Text) figure {
 	kind := cardWords.Kinds[p.Kind]
 
@@ -362,6 +368,16 @@ func figureOf(p photobus.Photo, sp speciesbus.Species, names map[types.ID]types.
 			f.Credit = types.Text{EN: p.Credit}
 		}
 		f.Where = names[p.PlaceID]
+
+		// A volunteer looking at a park's plant must not think it grows
+		// here, so a photo from elsewhere says where, or that it was not
+		// here.
+		if p.Elsewhere {
+			f.Where = cardWords.NotHere
+			if p.TakenWhere != "" {
+				f.Where = types.Text{EN: p.TakenWhere}
+			}
+		}
 	}
 
 	return f

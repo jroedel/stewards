@@ -142,7 +142,11 @@ better.
   cultivar. A cultivar that looks like the species shares its record, and is
   named in the note.
 - **Our own** photos are `source=ours`, with `place` as a slug from
-  `/api/v1/places` when the person says where it was taken.
+  `/api/v1/places` when the person says where it was taken. One of ours
+  taken off the property, in a park or on a trail, has `taken_where` with
+  the spot's name instead (or `elsewhere=true` when nobody said where), and
+  never a `place`: the card says where it was taken, so nobody takes it for
+  a plant in this garden, and shows a photo taken here before it.
 - **Never upload a photo in which a person can be recognised.** Volunteers are
   in some of the garden's own photos (CLAUDE.md, "Photos and people"); leave
   those for the person to decide about on the screen.
@@ -162,7 +166,8 @@ inbox in batches, and sorts them later. "Sort my inbox" means this:
    trail, a friend's garden), with `where` naming the nursery or the spot if
    the steward said; a `note`; and when the camera says it was taken. A photo
    from elsewhere can only be a `photo` of its plant (or set aside): never
-   `planted`, never `stock`, and never given a `place`.
+   `planted`, never `stock`, and never given a `place`. The plant's photo
+   keeps the batch's `where` as its `taken_where`.
 2. **Look at each photo.** Download its `large_url` into `photos/inbox/`
    (gitignored), named by its id, and read it:
 

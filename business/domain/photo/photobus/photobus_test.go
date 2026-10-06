@@ -473,6 +473,61 @@ func TestTheBestPhotoIsOursAndRecentAndChecked(t *testing.T) {
 	if _, ok := photobus.Best(all, photobus.Winter); ok {
 		t.Error("a photo was found for a kind that has none")
 	}
+
+	// One of ours from a park is newer than all of them, and still comes
+	// after ours from here; but before a borrowed one.
+	park := mk("f", photobus.Ours, true, at(2028, 6), func(p *photobus.Photo) { p.Elsewhere = true })
+
+	if best, _ := photobus.Best(append(all, park), photobus.Leaf); best.ID != oursNew.ID {
+		t.Errorf("best leaf with a park photo %v, want ours from here", best.ID)
+	}
+
+	if best, _ := photobus.Best([]photobus.Photo{borrowedNew, park}, photobus.Leaf); best.ID != park.ID {
+		t.Errorf("best leaf of a borrowed one and a park one %v, want the park one", best.ID)
+	}
+}
+
+// Where one of ours was taken off the property: a name makes it so, a place
+// here unmakes it, and a borrowed photo has neither.
+func TestWhereAPhotoWasTakenOffTheProperty(t *testing.T) {
+	g := setup(t)
+
+	for name, tc := range map[string]struct {
+		f          photobus.Fields
+		elsewhere  bool
+		takenWhere string
+	}{
+		"a park, named":        {photobus.Fields{TakenWhere: "  Pedernales  Falls "}, true, "Pedernales Falls"},
+		"a park, not named":    {photobus.Fields{Elsewhere: true}, true, ""},
+		"a place here instead": {photobus.Fields{Elsewhere: true, TakenWhere: "Pedernales Falls", PlaceID: g.inflow.ID}, false, ""},
+		"here":                 {photobus.Fields{}, false, ""},
+	} {
+		f := tc.f
+		f.Kind, f.Source = photobus.Leaf, photobus.Ours
+
+		p, err := g.photos.Add(t.Context(), g.penstemon.ID, f, photo(t, 600+len(name), 400))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+
+		back, _ := g.photos.ByID(t.Context(), p.ID)
+		if back.Elsewhere != tc.elsewhere || back.TakenWhere != tc.takenWhere {
+			t.Errorf("%s: kept as elsewhere=%v %q", name, back.Elsewhere, back.TakenWhere)
+		}
+	}
+
+	b := borrowed(photobus.Leaf)
+	b.Elsewhere, b.TakenWhere = true, "Somewhere"
+
+	p, err := g.photos.Add(t.Context(), g.penstemon.ID, b, photo(t, 700, 400))
+	if err != nil || p.Elsewhere || p.TakenWhere != "" {
+		t.Errorf("a borrowed photo: %+v, %v", p, err)
+	}
+
+	long := photobus.Fields{Kind: photobus.Leaf, Source: photobus.Ours, TakenWhere: strings.Repeat("x", 101)}
+	if _, err := g.photos.Add(t.Context(), g.penstemon.ID, long, photo(t, 710, 400)); !isInvalid(err, "taken_where") {
+		t.Errorf("a long name: %v", err)
+	}
 }
 
 // The same photo twice: refused on the screen, already done for an import.
@@ -562,4 +617,10 @@ func TestLeadGoesByKindThenChecked(t *testing.T) {
 	if _, ok := photobus.Lead(nil); ok {
 		t.Error("a plant with no photos has a lead photo")
 	}
+}
+
+func isInvalid(err error, field string) bool {
+	invalid, ok := errors.AsType[photobus.Invalid](err)
+
+	return ok && invalid.Field == field
 }
