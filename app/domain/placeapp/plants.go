@@ -190,7 +190,7 @@ func (a app) showPlants(w http.ResponseWriter, r *http.Request, status int, p pl
 
 	for _, sp := range all {
 		if !here[sp.ID] {
-			v.Add.Species = append(v.Add.Species, option{Value: sp.ID.String(), Label: sp.Common.EN, Selected: sp.ID.String() == chosen})
+			v.Add.Species = append(v.Add.Species, plantOption(sp, sp.ID.String() == chosen))
 		}
 	}
 

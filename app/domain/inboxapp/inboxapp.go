@@ -506,6 +506,27 @@ func sentWords(kept, already int) string {
 type option struct {
 	Value, Label string
 	Selected     bool
+
+	// Also is more to find a plant by in a searchable list, not shown: see
+	// plantOption.
+	Also string
+}
+
+// plantOption is a plant as a list of plants offers it: its common name with
+// its scientific one, so that either finds it in the list's search box, and
+// its Spanish name to be found by as well, which is not shown (the page
+// package's find.mjs, data-also).
+func plantOption(sp speciesbus.Species, selected bool) option {
+	o := option{Value: sp.ID.String(), Label: sp.Common.EN, Selected: selected}
+	if sp.Scientific != "" {
+		o.Label += " (" + sp.Scientific + ")"
+	}
+
+	if sp.Common.ES != sp.Common.EN {
+		o.Also = sp.Common.ES
+	}
+
+	return o
 }
 
 type newView struct {
@@ -1369,12 +1390,7 @@ func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inb
 
 	v.Species = []option{{Value: "", Label: first, Selected: s.SpeciesID.Zero() || chosen}}
 	for _, sp := range plants {
-		label := sp.Common.EN
-		if sp.Scientific != "" {
-			label += " (" + sp.Scientific + ")"
-		}
-
-		v.Species = append(v.Species, option{Value: sp.ID.String(), Label: label, Selected: sp.ID == s.SpeciesID && !chosen})
+		v.Species = append(v.Species, plantOption(sp, sp.ID == s.SpeciesID && !chosen))
 	}
 
 	kind := s.Kind

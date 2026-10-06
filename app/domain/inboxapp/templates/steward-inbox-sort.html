@@ -44,7 +44,7 @@ ordinary forms and links. */}}
       <label class="chip"><input type="radio" name="species" value="{{.Value}}"{{if .Selected}} checked{{end}}><span>{{.Label}}</span></label>{{end}}
     </div>{{end}}
     <label class="sr-only" for="species_other">{{if .Recent}}Another plant{{else}}Which plant{{end}}</label>
-    <select id="species_other" name="species_other" aria-describedby="species-help">{{range .Species}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+    <select id="species_other" name="species_other" aria-describedby="species-help" data-find="{{if .Recent}}Another plant: type any part of its name{{else}}Type any part of the plant's name{{end}}" data-find-with="species">{{range .Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
     <p class="help" id="species-help">{{if .NoPlants}}There are no plants yet.{{else}}Not in the list?{{end}} <a href="/steward/species/new">Add the plant</a>, then come back to this photo.</p>
   </fieldset>
 
@@ -91,7 +91,7 @@ ordinary forms and links. */}}
   <label for="species">Which of our plants it is <span class="optional">optional</span></label>
   <p class="help" id="species-help">Only if you are sure. A tag can be wrong, and a plant for sale is not an identification.</p>
   {{with index .Problems "species"}}<p class="field-problem">{{.}}</p>{{end}}
-  <select id="species" name="species" aria-describedby="species-help">{{range .Species}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{if .Value}}{{.Label}}{{else}}Not matched yet{{end}}</option>{{end}}</select>
+  <select id="species" name="species" aria-describedby="species-help" data-find="Type any part of the plant's name">{{range .Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}{{if .Selected}} selected{{end}}>{{if .Value}}{{.Label}}{{else}}Not matched yet{{end}}</option>{{end}}</select>
 
   <div class="pair">
     <div>
@@ -144,5 +144,6 @@ ordinary forms and links. */}}
 </p>
 {{end}}
 </div>
-<script type="module" src="{{$.Swap}}"></script>
+<script type="module" src="{{$.Script "swap.mjs"}}"></script>
+<script type="module" src="{{$.Script "find.mjs"}}"></script>
 {{end}}{{end}}

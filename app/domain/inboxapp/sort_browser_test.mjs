@@ -115,7 +115,7 @@ test("a batch is sorted photo after photo without a page load", opts, async () =
 
   stage("the first, from the list, sure");
   assert.equal(await page.evaluate(`document.querySelectorAll("input[name=species]").length`), 0, "a plant is a button before any sort");
-  await page.evaluate(`document.getElementById("species_other").value = ${JSON.stringify(speciesID)}`);
+  await page.evaluate(`document.querySelector("select[name=species_other]").value = ${JSON.stringify(speciesID)}`);
   await click("input[name=kind][value=leaf]");
   await click("input[name=checked]");
   await click("#swap form button[type=submit]");

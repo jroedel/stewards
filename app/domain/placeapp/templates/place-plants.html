@@ -40,7 +40,7 @@
 {{else}}
 <form class="card form" method="post" action="/steward/places/{{.PlaceID}}/plants">
   <label for="species">Plant</label>
-  <select id="species" name="species" required>{{range .Add.Species}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+  <select id="species" name="species" required data-find="Type any part of the plant's name">{{range .Add.Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
   <label for="action">What to do with it here</label>
   <select id="action" name="action">{{range .Add.Actions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
   <label class="check"><input type="checkbox" name="planned" value="yes"{{if .Add.Planned}} checked{{end}}> To plant: not in the ground yet, or more are going in</label>
@@ -52,6 +52,7 @@
   <input id="note_es" name="note_es" type="text" value="{{.Add.NoteES}}" maxlength="500" lang="es">
   <button class="button" type="submit">List it here</button>
 </form>
+<script type="module" src="{{$.Script "find.mjs"}}"></script>
 {{end}}
 </div>
 {{end}}{{end}}

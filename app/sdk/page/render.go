@@ -52,13 +52,14 @@ type Renderer struct {
 	cssPath string
 	cssETag string
 
-	// The one script every app may use, swap.mjs, served the same way and
-	// for the same reason. It imports nothing, so a hash in its own
-	// address is the whole of its version (inboxapp's scriptTags has why
-	// that is not so for modules importing each other).
-	swap     []byte
-	swapPath string
-	swapETag string
+	// The scripts every app may use -- swap.mjs, find.mjs -- served the
+	// same way and for the same reason, by the name of the file served
+	// (swap.<hash>.mjs). Each imports nothing, so a hash in its own address
+	// is the whole of its version (inboxapp's scriptTags has why that is
+	// not so for modules importing each other). scriptPaths is the same
+	// the other way round, by the file's own name, for Shell.Script.
+	scripts     map[string]asset
+	scriptPaths map[string]string
 
 	// Fonts and images, by file name, from fixed paths. A font or a logo
 	// changes only when the brand does, and then under a new file name: the
@@ -96,11 +97,23 @@ type Shell struct {
 	// alone, and empty on everybody else's: see OfferApp.
 	Manifest, AppScript string
 
-	// Swap is where swap.mjs is served, for a page that has a #swap to
-	// load it: see that file.
-	Swap string
+	// scripts is where each shared script is served: see Script.
+	scripts map[string]string
 
 	Data any
+}
+
+// Script is where one of the scripts every app may use is served, by its
+// file's name: {{$.Script "swap.mjs"}} for a page with a #swap, see that
+// file. A name that is not one fails the page, rather than linking a script
+// that is not there.
+func (s Shell) Script(name string) (string, error) {
+	p, ok := s.scripts[name]
+	if !ok {
+		return "", fmt.Errorf("there is no shared script called %s", name)
+	}
+
+	return p, nil
 }
 
 // NewRenderer parses the layout and every page template in the given
@@ -179,24 +192,42 @@ func NewRenderer(log *slog.Logger, own ...fs.FS) (*Renderer, error) {
 	sum := sha256.Sum256(css)
 	digest := hex.EncodeToString(sum[:])[:12]
 
-	swap, err := fs.ReadFile(chrome, "js/swap.mjs")
-	if err != nil {
-		return nil, fmt.Errorf("swap.mjs could not be read: %w", err)
+	rn := &Renderer{
+		log:         log,
+		pages:       pages,
+		css:         css,
+		cssPath:     "/static/app." + digest + ".css",
+		cssETag:     `"` + digest + `"`,
+		scripts:     map[string]asset{},
+		scriptPaths: map[string]string{},
+		files:       map[string]asset{},
 	}
 
-	swapSum := sha256.Sum256(swap)
-	swapDigest := hex.EncodeToString(swapSum[:])[:12]
+	// Every module in js/ but the tests beside them, which the embed takes
+	// along: they are a few kilobytes, and a pattern that left them out
+	// would be one more rule to keep in step with scripts/js-test.
+	modules, err := fs.Glob(chrome, "js/*.mjs")
+	if err != nil {
+		return nil, fmt.Errorf("listing the scripts: %w", err)
+	}
 
-	rn := &Renderer{
-		log:      log,
-		pages:    pages,
-		css:      css,
-		cssPath:  "/static/app." + digest + ".css",
-		cssETag:  `"` + digest + `"`,
-		swap:     swap,
-		swapPath: "/static/js/swap." + swapDigest + ".mjs",
-		swapETag: `"` + swapDigest + `"`,
-		files:    map[string]asset{},
+	for _, name := range modules {
+		if strings.HasSuffix(name, "_test.mjs") {
+			continue
+		}
+
+		body, err := fs.ReadFile(chrome, name)
+		if err != nil {
+			return nil, fmt.Errorf("%s could not be read: %w", name, err)
+		}
+
+		sum := sha256.Sum256(body)
+		hash := hex.EncodeToString(sum[:])[:12]
+		base := path.Base(name)
+		served := strings.TrimSuffix(base, ".mjs") + "." + hash + ".mjs"
+
+		rn.scripts[served] = asset{body: body, etag: `"` + hash + `"`, kind: "text/javascript; charset=utf-8"}
+		rn.scriptPaths[base] = "/static/js/" + served
 	}
 
 	for pattern, kind := range map[string]string{
@@ -242,9 +273,6 @@ func (rn *Renderer) OfferApp(manifest, script string) {
 // StylesheetPath is where the stylesheet is served, including its hash.
 func (rn *Renderer) StylesheetPath() string { return rn.cssPath }
 
-// SwapPath is where swap.mjs is served, including its hash.
-func (rn *Renderer) SwapPath() string { return rn.swapPath }
-
 // Render writes a page, in the language the request asked for.
 //
 // Executed into a buffer first, and the status written only once that
@@ -282,7 +310,7 @@ func (rn *Renderer) Render(w http.ResponseWriter, r *http.Request, status int, n
 		Steward:    steward,
 		Manifest:   manifest,
 		AppScript:  appScript,
-		Swap:       rn.swapPath,
+		scripts:    rn.scriptPaths,
 		Data:       data,
 	}); err != nil {
 		rn.log.Error("a page could not be rendered",
@@ -322,17 +350,28 @@ func (rn *Renderer) Stylesheet() http.HandlerFunc {
 	}
 }
 
-// Swap serves swap.mjs, cacheable for ever as the stylesheet is. Not behind
-// sign-in, for the same reason as the fonts: it is a file in the binary, not
-// anybody's data.
-func (rn *Renderer) Swap() http.HandlerFunc {
+// Scripts serves the scripts every app may use, from /static/js/{file},
+// cacheable for ever as the stylesheet is: the name served holds the hash.
+// Not behind sign-in, for the same reason as the fonts: it is a file in the
+// binary, not anybody's data. A name that is not one, an old hash
+// included, is a plain 404.
+func (rn *Renderer) Scripts() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		h := w.Header()
-		h.Set("Content-Type", "text/javascript; charset=utf-8")
-		h.Set("Cache-Control", "public, max-age=31536000, immutable")
-		h.Set("ETag", rn.swapETag)
+		file := r.PathValue("file")
 
-		http.ServeContent(w, r, "swap.mjs", startup, bytes.NewReader(rn.swap))
+		s, ok := rn.scripts[file]
+		if !ok {
+			http.NotFound(w, r)
+
+			return
+		}
+
+		h := w.Header()
+		h.Set("Content-Type", s.kind)
+		h.Set("Cache-Control", "public, max-age=31536000, immutable")
+		h.Set("ETag", s.etag)
+
+		http.ServeContent(w, r, file, startup, bytes.NewReader(s.body))
 	}
 }
 

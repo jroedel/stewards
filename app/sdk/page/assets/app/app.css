@@ -697,6 +697,47 @@ input[type="file"] { display: block; width: 100%; min-height: 48px; padding: 10p
 .together-bar .button { width: 100%; }
 .together-bar .button::after { content: " (" counter(chosen) ")"; white-space: pre; }
 
+/* A list of plants searched by typing (find.mjs): a box with a magnifying
+   glass, and under it, in the page rather than floating over it, the plants
+   with what was typed somewhere in their names, the typed part on a pale
+   yellow, the scientific name under the common one. In the page because a
+   phone's keyboard comes and goes under a floating list; the script puts the
+   box at the top of the screen as it is tapped, so the list has the half the
+   keyboard leaves. Each plant is a 52px target. */
+.find { position: relative; display: flex; flex-direction: column; scroll-margin-top: 12px; }
+.form .find input[type="text"] {
+  padding-left: 42px; padding-right: 48px;
+  background: var(--sf-white) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233F3F46' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5L21 21'/%3E%3C/svg%3E") 12px center / 20px no-repeat;
+}
+.find input[aria-expanded="true"] { border-color: var(--sf-blue); }
+.find-clear {
+  position: absolute; top: 0; right: 0; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 10px; cursor: pointer;
+  background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233F3F46' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E") center / 18px no-repeat;
+}
+.find-clear[hidden], .find select { display: none; }
+.find-list {
+  margin: 6px 0 0; padding: 0; list-style: none;
+  max-height: min(24rem, 45vh); overflow-y: auto; overscroll-behavior: contain;
+  border: 1.5px solid var(--sf-blue); border-radius: 10px; background: var(--sf-white);
+}
+.find-list[hidden] { display: none; }
+.find-list [role="option"] {
+  display: flex; flex-direction: column; justify-content: center; gap: 1px;
+  min-height: 52px; padding: 7px 14px; border-top: 1px solid var(--rule); cursor: pointer;
+}
+.find-list > :first-child { border-top: 0; }
+.find-name { font-weight: 600; line-height: 1.3; }
+.find-sub { font-size: 15px; font-style: italic; line-height: 1.3; color: var(--muted); }
+.find-list mark { border-radius: 2px; background: var(--tos-sun-tint); color: inherit; border-bottom: 2px solid var(--sf-yellow); }
+.find-list [aria-current] { background: #E8EAF5; }
+.find-list [aria-selected="true"] { padding-left: 10px; border-left: 4px solid var(--sf-blue); }
+.find-list [aria-selected="true"] .find-name { color: var(--sf-blue); }
+.find-list [aria-selected="true"] .find-name::after { content: " · chosen"; font-weight: 400; font-size: 15px; color: var(--muted); }
+.find-group { padding: 10px 14px 4px; border-top: 1px solid var(--rule); background: var(--sf-neutral); font: 700 14px var(--font-body); color: var(--muted); }
+.find-none { margin: 6px 0 0; font-size: 15px; color: var(--muted); }
+.find-none:empty { display: none; }
+@media (hover: hover) { .find-list [role="option"]:hover { background: #E8EAF5; } }
+
 /* ---------------------------------------------------------------- API keys */
 
 .key-new { margin-bottom: 12px; border: 1.5px solid var(--tos-protect); }
