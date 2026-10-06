@@ -1,11 +1,17 @@
 {{define "title"}}Sort a photo · Garden stewards{{end}}
 {{define "content"}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow"><a href="/steward/inbox">Photo inbox</a></p>
-<h1>What is this photo?</h1>
+{{/* Everything swap.mjs swaps is inside #swap, and data-next is the photo it
+fetches ahead (the page package's swap.mjs). Without the script these are
+ordinary forms and links. */}}
+<div lang="en" id="swap" class="sort"{{with .Next}} data-next="{{.}}"{{end}}>
+<div class="sort-top">
+  <p class="eyebrow"><a href="/steward/inbox">Photo inbox</a></p>
+  {{if not .Sorted}}<p class="sort-where">{{with .Position}}<span>{{.}}</span>{{end}}{{with .Next}}<a class="sort-skip" href="{{.}}" data-swap>Skip</a>{{end}}</p>{{end}}
+</div>
+<h1 tabindex="-1">What is this photo?</h1>
 
-{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
-{{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below and press the button again.</p>{{end}}
+{{with .Done}}<p class="done" role="status" tabindex="-1">{{.}}</p>{{end}}
+{{if .Problems}}<p class="problem" role="alert" tabindex="-1">Nothing was saved yet. Fix what is marked below and press the button again.</p>{{end}}
 
 {{if .Sorted}}
 <p class="lead">{{.Sorted}}</p>
@@ -22,44 +28,52 @@
   </div>
 </div>
 
-{{if not .As}}
-<a class="button button-block" href="/steward/inbox/{{.ID}}?as=photo">A plant: add it to the plant's photos</a>
-{{if .Here}}<a class="button button-block" href="/steward/inbox/{{.ID}}?as=planted">Just planted: list it at its place</a>{{end}}
-{{if .Stock}}<a class="button button-block" href="/steward/inbox/{{.ID}}?as=stock">Nursery stock: add it to the nursery's list</a>{{end}}
-<a class="button button-block button-quiet" href="/steward/inbox/{{.ID}}?as=unsure">Not sure yet: set it aside</a>
-<a class="button button-block button-quiet" href="/steward/inbox/{{.ID}}?as=discard">Discard</a>
-{{else}}
-
-<form class="card form" method="post" action="/steward/inbox/{{.ID}}">
+<form class="card form" method="post" action="/steward/inbox/{{.ID}}" data-swap>
   <input type="hidden" name="as" value="{{.As}}">
   {{with index .Problems "outcome"}}<p class="field-problem">{{.}}</p>{{end}}
 
   {{if or (eq .As "photo") (eq .As "planted")}}
-  <label for="species">Which plant</label>
-  {{if .NoPlants}}<p class="help">There are no plants yet. <a href="/steward/species/new">Add the plant</a>, then come back to this photo.</p>{{else}}<p class="help" id="species-help">Not in the list? <a href="/steward/species/new">Add the plant</a>, then come back to this photo.</p>{{end}}
-  {{with index .Problems "species"}}<p class="field-problem">{{.}}</p>{{end}}
-  <select id="species" name="species" required aria-describedby="species-help">{{range .Species}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+  {{if eq .As "planted"}}<h2 class="sort-as">Just planted</h2>{{end}}
+  <fieldset>
+    <legend>Which plant</legend>
+    {{with index .Problems "species"}}<p class="field-problem">{{.}}</p>{{end}}
+    {{if .Recent}}<div class="chips">{{range .Recent}}
+      <label class="chip"><input type="radio" name="species" value="{{.Value}}"{{if .Selected}} checked{{end}}><span>{{.Label}}</span></label>{{end}}
+    </div>{{end}}
+    <label class="sr-only" for="species_other">{{if .Recent}}Another plant{{else}}Which plant{{end}}</label>
+    <select id="species_other" name="species_other" aria-describedby="species-help">{{range .Species}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+    <p class="help" id="species-help">{{if .NoPlants}}There are no plants yet.{{else}}Not in the list?{{end}} <a href="/steward/species/new">Add the plant</a>, then come back to this photo.</p>
+  </fieldset>
 
-  <label for="kind">What it shows</label>
-  {{with index .Problems "kind"}}<p class="field-problem">{{.}}</p>{{end}}
-  <select id="kind" name="kind" required>{{range .Kinds}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+  <fieldset>
+    <legend>What it shows</legend>
+    {{with index .Problems "kind"}}<p class="field-problem">{{.}}</p>{{end}}
+    <div class="tiles">{{range .Kinds}}
+      <label class="tile"><input type="radio" name="kind" value="{{.Value}}" required{{if .Selected}} checked{{end}}><span>{{.Label}}</span></label>{{end}}
+    </div>
+  </fieldset>
 
-  <label class="check"><input type="checkbox" name="in_flower" value="yes"{{if .InFlower}} checked{{end}}> In flower</label>
-  <label class="check"><input type="checkbox" name="in_fruit" value="yes"{{if .InFruit}} checked{{end}}> In fruit or seed</label>
-  <p class="help">Tick what the plant is doing, whatever the photo shows; a flower or a fruit photo always counts. The plant's first and last days in flower and in fruit each year are kept from these.</p>
+  <div class="pills">
+    <label class="pill"><input type="checkbox" name="in_flower" value="yes"{{if .InFlower}} checked{{end}}><span>In flower</span></label>
+    <label class="pill"><input type="checkbox" name="in_fruit" value="yes"{{if .InFruit}} checked{{end}}><span>In fruit or seed</span></label>
+  </div>
+  <p class="help">What the plant is doing, whatever the photo shows. A flower or a fruit photo always counts.</p>
 
   {{if .Here}}
   <label for="place">{{if eq .As "planted"}}Where it was planted{{else}}Where it was taken <span class="optional">optional</span>{{end}}</label>
   {{with index .Problems "place"}}<p class="field-problem">{{.}}</p>{{end}}
   <select id="place" name="place"{{if eq .As "planted"}} required{{end}}>{{range .Places}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
   {{end}}
-
   {{if eq .As "planted"}}<p class="help">It is listed there to protect, and comes off the To plant list if it was on it.</p>{{end}}
-  <p class="help">The photo goes to the plant's photos not yet checked. Volunteers see it once a steward checks it there.</p>
-  <button class="button" type="submit">{{if eq .As "planted"}}Save the planting{{else}}Add the photo{{end}}</button>
+
+  <label class="check sure"><input type="checkbox" name="checked" value="yes"{{if .Checked}} checked{{end}} aria-describedby="sure-help"> I'm sure: mark it checked</label>
+  <p class="help" id="sure-help">When you know this plant well enough to put the photo on its card now. Left unticked, it waits in Photos to check.</p>
+
+  <button class="button button-block sort-save" type="submit">{{if eq .As "planted"}}Save the planting{{else if .Next}}Save, next photo{{else}}Save{{end}}</button>
   {{end}}
 
   {{if eq .As "stock"}}
+  <h2 class="sort-as">Nursery stock</h2>
   <label for="nursery">Which nursery</label>
   <p class="help" id="nursery-help">Choose one from the list, or write a new one's name: it is added to the <a href="/steward/nurseries">nurseries</a>.</p>
   {{with index .Problems "nursery"}}<p class="field-problem">{{.}}</p>{{end}}
@@ -97,26 +111,35 @@
   {{with index .Problems "note"}}<p class="field-problem">{{.}}</p>{{end}}
   <input id="stock_note" name="stock_note" type="text" value="{{.StockNote}}" maxlength="300" placeholder="healthy, in bloom, on the shade table">
   <p class="help">Nursery stock is for planning beds. Volunteers never see it, and the photo is removed after three months.</p>
-  <button class="button" type="submit">Add to the nursery's list</button>
+  <button class="button button-block" type="submit">Add to the nursery's list</button>
   {{end}}
 
   {{if eq .As "unsure"}}
+  <h2 class="sort-as">Not sure yet</h2>
   <label for="note">The question <span class="optional">optional</span></label>
   <p class="help" id="note-help">What would settle it, such as "frostweed or wingstem? check the leaf base".</p>
   {{with index .Problems "note"}}<p class="field-problem">{{.}}</p>{{end}}
   <input id="note" name="note" type="text" value="{{.Question}}" maxlength="300" aria-describedby="note-help">
-  <button class="button" type="submit">Set it aside</button>
+  <button class="button button-block" type="submit">Set it aside</button>
   {{end}}
 
   {{if eq .As "discard"}}
+  <h2 class="sort-as">Discard</h2>
   <p class="help">The photo is deleted. This cannot be undone.</p>
   {{with index .Problems "confirm"}}<p class="field-problem">{{.}}</p>{{end}}
   <label class="check"><input type="checkbox" name="confirm" value="yes"> Yes, discard this photo</label>
-  <button class="button" type="submit">Discard</button>
+  <button class="button button-block" type="submit">Discard</button>
   {{end}}
 </form>
-<a class="onward" href="/steward/inbox/{{.ID}}"><span>Choose something else</span><span aria-hidden="true">›</span></a>
-{{end}}
+
+<p class="sort-else"><span>Or:</span>
+  {{if ne .As "photo"}}<a href="/steward/inbox/{{.ID}}?as=photo" data-swap>A plant's photo</a>{{end}}
+  {{if and .Here (ne .As "planted")}}<a href="/steward/inbox/{{.ID}}?as=planted" data-swap>Just planted</a>{{end}}
+  {{if and .Stock (ne .As "stock")}}<a href="/steward/inbox/{{.ID}}?as=stock" data-swap>Nursery stock</a>{{end}}
+  {{if ne .As "unsure"}}<a href="/steward/inbox/{{.ID}}?as=unsure" data-swap>Not sure yet</a>{{end}}
+  {{if ne .As "discard"}}<a class="sort-discard" href="/steward/inbox/{{.ID}}?as=discard" data-swap>Discard</a>{{end}}
+</p>
 {{end}}
 </div>
+<script type="module" src="{{$.Swap}}"></script>
 {{end}}{{end}}

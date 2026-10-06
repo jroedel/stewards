@@ -1,15 +1,10 @@
 package photoapp
 
 import (
-	"bytes"
-	"crypto/sha256"
-	_ "embed"
-	"encoding/hex"
 	"errors"
 	"net/http"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
@@ -21,39 +16,16 @@ import (
 // each beside the plant's checked photo of the same kind, with one button
 // that checks it and goes on to the next (photobus.Unchecked has why).
 //
-// It is a page of plain forms and links, and works as one. check.mjs makes
-// it quick: an unchecked picture is served no-store (file, above), so a
-// phone cannot be handed the next one from its cache, and the script fetches
-// the next photo's page while the steward is still looking at this one and
-// swaps it in place. Without the script each Yes is a page load and the
-// picture arrives after it, which is slower and no less right.
+// It is a page of plain forms and links, and works as one. The page
+// package's swap.mjs makes it quick: an unchecked picture is served no-store
+// (file, above), so a phone cannot be handed the next one from its cache,
+// and the script fetches the next photo's page while the steward is still
+// looking at this one and swaps it in place. Without the script each Yes is
+// a page load and the picture arrives after it, which is slower and no less
+// right.
 
 // CheckPath is the queue. The stewards' front page links to it.
 const CheckPath = "/steward/check"
-
-// checkScript is the queue's one module, served from beside the queue. One
-// file, so its ETag is the whole of what a phone runs (the inbox's
-// scriptTags has why that matters for modules importing each other).
-//
-//go:embed static/check.mjs
-var checkScript []byte
-
-var checkTag = func() string {
-	sum := sha256.Sum256(checkScript)
-
-	return `"` + hex.EncodeToString(sum[:])[:16] + `"`
-}()
-
-const checkScriptPath = CheckPath + "/static/check.mjs"
-
-func (a app) script(w http.ResponseWriter, r *http.Request) {
-	h := w.Header()
-	h.Set("Content-Type", "text/javascript; charset=utf-8")
-	h.Set("Cache-Control", "private, no-cache")
-	h.Set("ETag", checkTag)
-
-	http.ServeContent(w, r, "check.mjs", time.Time{}, bytes.NewReader(checkScript))
-}
 
 type checkView struct {
 	Count int
@@ -74,9 +46,9 @@ type checkView struct {
 
 	// Ref is the plant's checked photo of the same kind, the one the card
 	// shows: what this one is compared with. Empty when there is none yet.
-	Ref          string
-	RefW, RefH   int
-	Next, Script string
+	Ref        string
+	RefW, RefH int
+	Next       string
 }
 
 // queue shows one photo of the queue: the one ?at= names, or the first.
@@ -150,7 +122,6 @@ func (a app) showQueue(w http.ResponseWriter, r *http.Request, status int, at st
 	v.Kind, v.KindWord, v.InFlower, v.InFruit = p.Kind.Label(), lower(p.Kind.Label()), p.InFlower, p.InFruit
 	v.Width, v.Height = p.Small.Width, p.Small.Height
 	v.Caption = caption(p, names)
-	v.Script = checkScriptPath
 
 	if !p.TakenAt.IsZero() {
 		v.Taken = p.TakenAt.In(types.Garden).Format("2 January 2006")

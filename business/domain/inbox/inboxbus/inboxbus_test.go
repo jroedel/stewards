@@ -41,6 +41,7 @@ type garden struct {
 	photos   *photobus.Business
 	listings *listingbus.Business
 	nursery  *nurserybus.Business
+	species  *speciesbus.Business
 	dir      string
 	clock    *time.Time
 
@@ -103,8 +104,8 @@ func setup(t *testing.T) *garden {
 	g.nursery = nurserybus.NewBusiness(nurserydb.NewStore(db), now)
 	g.inbox = inboxbus.NewBusiness(inboxdb.NewStore(db), files, inboxbus.Deps{Photos: g.photos, Listings: g.listings, Stock: g.nursery}, now)
 
-	species := speciesbus.NewBusiness(speciesdb.NewStore(db), nil)
-	if g.penstemon, err = species.Create(t.Context(), speciesbus.Fields{Slug: "brazos-penstemon", Common: types.Text{EN: "Brazos penstemon"}}); err != nil {
+	g.species = speciesbus.NewBusiness(speciesdb.NewStore(db), nil)
+	if g.penstemon, err = g.species.Create(t.Context(), speciesbus.Fields{Slug: "brazos-penstemon", Common: types.Text{EN: "Brazos penstemon"}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -901,4 +902,67 @@ func isInvalidField(err error, field string) bool {
 	invalid, ok := errors.AsType[inboxbus.Invalid](err)
 
 	return ok && invalid.Field == field
+}
+
+// A steward sure of a plant checks it as they sort: the plant's photo is
+// made checked, and is on the card without a visit to the check queue.
+func TestASortCanCheckThePhoto(t *testing.T) {
+	g := setup(t)
+	it := g.sent(t, g.atInflow(), 30)
+
+	res, err := g.inbox.Sort(t.Context(), it.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsPhoto, SpeciesID: g.penstemon.ID, Kind: photobus.Leaf, Checked: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if p, err := g.photos.ByID(t.Context(), res.Photo.ID); err != nil || !p.Checked {
+		t.Errorf("sorted as checked, the photo is checked %v (%v)", p.Checked, err)
+	}
+
+	if queue, _ := g.photos.Unchecked(t.Context()); len(queue) != 0 {
+		t.Errorf("a photo checked as it was sorted is in the check queue: %d", len(queue))
+	}
+}
+
+// The plants offered as one tap: the ones last sorted to, newest first, each
+// once, however the photo was sorted.
+func TestThePlantsSortedToLately(t *testing.T) {
+	g := setup(t)
+
+	turksCap, err := g.species.Create(t.Context(), speciesbus.Fields{Slug: "turks-cap", Common: types.Text{EN: "Turk's cap"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got, _ := g.inbox.RecentPlants(t.Context(), 6); len(got) != 0 {
+		t.Errorf("before any sort, recent plants %v", got)
+	}
+
+	for i, sp := range []speciesbus.Species{g.penstemon, turksCap, g.penstemon} {
+		*g.clock = g.clock.Add(time.Minute)
+
+		it := g.sent(t, g.atInflow(), uint8(40+i))
+		if _, err := g.inbox.Sort(t.Context(), it.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsPhoto, SpeciesID: sp.ID, Kind: photobus.Leaf}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Set aside, which names no plant: not a plant sorted to.
+	unsure := g.sent(t, g.atInflow(), 50)
+	if _, err := g.inbox.Sort(t.Context(), unsure.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsUnsure}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := g.inbox.RecentPlants(t.Context(), 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if want := []types.ID{g.penstemon.ID, turksCap.ID}; !slices.Equal(got, want) {
+		t.Errorf("recent plants %v, want the penstemon then Turk's cap", got)
+	}
+
+	if got, _ := g.inbox.RecentPlants(t.Context(), 1); len(got) != 1 || got[0] != g.penstemon.ID {
+		t.Errorf("the one most recent plant %v, want the penstemon", got)
+	}
 }

@@ -1,9 +1,9 @@
 {{define "title"}}Photos to check · Garden stewards{{end}}
 {{define "content"}}{{with .Data}}
-{{/* Everything the queue's script swaps is inside #check, and data-next is
-the page it fetches ahead (check.go, check.mjs). Without the script these are
-ordinary forms and links. */}}
-<div lang="en" id="check" class="check-queue"{{with .Next}} data-next="{{.}}"{{end}}>
+{{/* Everything swap.mjs swaps is inside #swap, and data-next is the page it
+fetches ahead (check.go, and the page package's swap.mjs). Without the
+script these are ordinary forms and links. */}}
+<div lang="en" id="swap" class="check-queue"{{with .Next}} data-next="{{.}}"{{end}}>
 <p class="eyebrow"><a href="/steward">Places</a></p>
 <h1 tabindex="-1">Photos to check</h1>
 
@@ -49,5 +49,5 @@ ordinary forms and links. */}}
 </div>
 {{end}}
 </div>
-{{with .Script}}<script type="module" src="{{.}}"></script>{{end}}
+<script type="module" src="{{$.Swap}}"></script>
 {{end}}{{end}}

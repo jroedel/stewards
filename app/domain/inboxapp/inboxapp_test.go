@@ -52,6 +52,7 @@ type site struct {
 	nursery  *nurserybus.Business
 	photos   *photobus.Business
 	listings *listingbus.Business
+	species  *speciesbus.Business
 	cookie   *http.Cookie
 
 	inflow    placebus.Place
@@ -103,6 +104,7 @@ func serve(t *testing.T) *site {
 
 	s := &site{
 		t:        t,
+		species:  species,
 		photos:   photobus.NewBusiness(photodb.NewStore(db), photoFiles, nil),
 		listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
 	}
@@ -838,15 +840,21 @@ func TestABatchIsSortedOneAfterAnother(t *testing.T) {
 	fields.Set("place", s.inflow.ID.String())
 	ids := s.sent(fields, file{"IMG_0010.JPG", noisy(t, 10)}, file{"IMG_0011.JPG", noisy(t, 11)})
 
+	// The plant's photo form at once, with the other outcomes a tap away,
+	// where it is in the batch, and the next photo to skip to.
 	first := s.get("/steward/inbox/"+ids[0], true).Body.String()
-	for _, want := range []string{"A plant: add it to the plant's photos", "Just planted: list it at its place", "Not sure yet", "Discard", "Inflow band"} {
+	for _, want := range []string{
+		`name="as" value="photo"`, `name="kind"`, "Which plant", "Save, next photo",
+		"?as=planted", "Just planted", "?as=unsure", "?as=discard", "Inflow band",
+		"1 of 2", `href="/steward/inbox/` + ids[1] + `" data-swap>Skip`, `data-next="/steward/inbox/` + ids[1] + `"`,
+	} {
 		if !strings.Contains(first, want) {
 			t.Errorf("the sort screen does not offer %q", want)
 		}
 	}
 
 	form := s.get("/steward/inbox/"+ids[0]+"?as=photo", true).Body.String()
-	if !strings.Contains(form, "Brazos penstemon (Penstemon tenuis)") || !strings.Contains(form, "Flower close-up") {
+	if !strings.Contains(form, "Brazos penstemon (Penstemon tenuis)") || !strings.Contains(form, `name="kind" value="flower"`) {
 		t.Error("the photo form does not list the plants and the kinds")
 	}
 	if !strings.Contains(form, `name="in_flower"`) || !strings.Contains(form, `name="in_fruit"`) || !strings.Contains(form, "Fruit or seed") {
@@ -998,8 +1006,8 @@ func TestNurseryPhotosAreSortedIntoStock(t *testing.T) {
 	s := serve(t)
 	ids := s.sent(url.Values{"at": {"nursery"}}, file{"IMG_0020.JPG", noisy(t, 20)}, file{"IMG_0021.JPG", noisy(t, 21)})
 
-	if body := s.get("/steward/inbox/"+ids[0], true).Body.String(); !strings.Contains(body, "Nursery stock: add it") {
-		t.Fatal("a nursery photo is not offered as stock")
+	if body := s.get("/steward/inbox/"+ids[0], true).Body.String(); !strings.Contains(body, `name="as" value="stock"`) || !strings.Contains(body, "?as=photo") {
+		t.Fatal("a nursery photo does not open as stock, with a plant's photo a tap away")
 	}
 
 	w := s.post("/steward/inbox/"+ids[0], url.Values{
