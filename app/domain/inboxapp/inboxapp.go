@@ -29,6 +29,14 @@
 // below are sized for that. It is a fallback now, not the way a batch is meant
 // to arrive, and it is kept because a send screen that does nothing without
 // script is worse than a slow one.
+//
+// A batch can also start in the phone's own photos app, where a steward finds
+// the photos on its map and shares them to the stewards app. That is Chrome's
+// share target, and it needs the app installed from Chrome, which the inbox's
+// manifest (ManifestPath) offers. The share is caught on the phone by a
+// service worker (static/share-worker.mjs) and lands on the send screen with
+// the photos already chosen, so it, too, ends in the script sending a photo
+// at a time. SharePattern on the server is only for a share the worker missed.
 package inboxapp
 
 import (
@@ -115,10 +123,11 @@ const (
 // scripts are the send screen's modules: send.mjs, which the page loads, and
 // what it imports. They are served from this app rather than with the shared
 // stylesheet and fonts, because they are about the inbox and nothing else,
-// and behind the same sign-in as every inbox route. Named one by one rather
-// than as static/*.mjs, so the tests beside them are never served.
+// and behind the same sign-in as every inbox route but one, the share
+// target's worker (see Routes). Named one by one rather than as
+// static/*.mjs, so the tests beside them are never served.
 //
-//go:embed static/send.mjs static/shrink.mjs static/jpeg.mjs
+//go:embed static/send.mjs static/shrink.mjs static/jpeg.mjs static/share.mjs static/share-worker.mjs
 var scripts embed.FS
 
 // scriptDir is where the modules are served from. They import each other by
@@ -144,6 +153,67 @@ var scriptTags = func() map[string]string {
 
 	return tags
 }()
+
+// SharePattern is the share target in the manifest: where Chrome posts photos
+// a steward shares to the installed app from the phone's photos app, as one
+// multipart form with each photo under "photo".
+//
+// The service worker share.mjs registers takes that post on the phone and
+// never sends it here. This route is for when it did not: the app was
+// installed and used before the inbox was next opened, or Chrome cleared the
+// worker for room. The muxer gives it the batch's limits, because it is a
+// batch, and all it does with one is read it to the end and ask for it again
+// -- by then the worker is registered, because the send screen it redirects
+// to registers it. Reading it rather than keeping it, because a batch that
+// arrives this way has not been told where it was taken, and the inbox
+// should never guess that for a whole batch.
+const SharePattern = "POST " + IndexPath + "/shared"
+
+// ManifestPath is the web app manifest the inbox's pages link, which is what
+// lets Chrome install the stewards app and list it in the share sheet.
+const ManifestPath = IndexPath + "/app.webmanifest"
+
+// workerName is the share target's service worker, among the scripts. Served
+// with Service-Worker-Allowed, because its scope, SharePattern, is not under
+// the directory it is served from.
+const workerName = "share-worker.mjs"
+
+// manifestJSON is the stewards app as Chrome installs it.
+//
+// Its start is the stewards' front page, and its scope the whole site, so
+// that Android can open a sign-in link from email in the app, rather than in
+// another browser whose cookies the app cannot see. The icons are the isotype on white, and
+// a maskable one with it small enough for any launcher's crop.
+//
+// The share target takes any image, though the inbox keeps JPEG and PNG
+// alone: Android lists an app in the share sheet only when it takes every
+// type in the selection, and a phone may say image/* of a mixed one. A photo
+// the inbox cannot keep is refused on its own, as from the file input.
+var manifestJSON = []byte(`{
+  "id": "/steward",
+  "name": "Garden stewards",
+  "short_name": "Stewards",
+  "description": "Send photos from the garden to the stewards' photo inbox, and look after the places and plants.",
+  "start_url": "/steward",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FFFFFF",
+  "icons": [
+    {"src": "/static/img/stewards-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/static/img/stewards-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "/static/img/stewards-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ],
+  "share_target": {
+    "action": "` + IndexPath + `/shared",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [{"name": "photo", "accept": ["image/*"]}]
+    }
+  }
+}
+`)
 
 // Inbox is what this app needs from the inbox rules.
 type Inbox interface {
@@ -199,14 +269,26 @@ type app struct {
 
 // Routes mounts the inbox, every route behind guard. Its pictures too: an
 // inbox photo is a steward's alone, whatever it shows.
+//
+// But for two, which are files in the binary rather than anybody's data:
+// the manifest, which Chrome fetches without cookies, and the share target's
+// worker, which it fetches again on its own schedule, whether the session
+// has run out or not.
 func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 	a := app{log: cfg.Log, render: cfg.Render, inbox: cfg.Inbox, places: cfg.Places, species: cfg.Species, nursery: cfg.Nursery}
+
+	mux.HandleFunc("GET "+ManifestPath, a.manifest)
+	mux.HandleFunc("GET "+scriptDir+workerName, func(w http.ResponseWriter, r *http.Request) {
+		r.SetPathValue("file", workerName)
+		a.script(w, r)
+	})
 
 	for pattern, h := range map[string]http.HandlerFunc{
 		"GET " + IndexPath:                  a.list,
 		"GET " + IndexPath + "/new":         a.newForm,
 		UploadPattern:                       a.upload,
 		SendPattern:                         a.sendOne,
+		SharePattern:                        a.shared,
 		"GET " + scriptDir + "{file}":       a.script,
 		"GET " + IndexPath + "/{id}":        a.sortForm,
 		"POST " + IndexPath + "/{id}":       a.sort,
@@ -401,6 +483,10 @@ type newView struct {
 	// Script is the send screen's script, and SendURL where it sends each
 	// photo.
 	Script, SendURL string
+
+	// Shared is why photos shared from the phone are not in the form, when
+	// the server knows; share.mjs says the rest.
+	Shared string
 }
 
 type refusal struct {
@@ -410,8 +496,54 @@ type refusal struct {
 func (a app) newForm(w http.ResponseWriter, r *http.Request) {
 	// On the property, every time the screen opens. A nursery setting that
 	// carried over would file next week's garden photos as stock.
-	a.showNew(w, r, http.StatusOK, newView{Problems: map[string]string{}}, inboxbus.Fields{At: inboxbus.Property})
+	v := newView{Problems: map[string]string{}, Shared: sharedWords(r.URL.Query().Get("shared"))}
+	a.showNew(w, r, http.StatusOK, v, inboxbus.Fields{At: inboxbus.Property})
 }
+
+// sharedWords is the sentence for a share that did not arrive, chosen by the
+// word the redirect carries: "again" from the server, "lost" from the worker.
+// Nothing for a count, which is a share that did, and is share.mjs's to
+// describe.
+func sharedWords(shared string) string {
+	switch shared {
+	case "again":
+		return "Those photos did not arrive: the app was not ready for them yet. It is now. Share them again from your photos app."
+	case "lost":
+		return "Those photos did not arrive: the phone could not keep them for this page, perhaps for want of room. Share them again, or choose them below."
+	}
+
+	return ""
+}
+
+// shared is a share the phone's worker did not catch: see SharePattern. It
+// reads the batch to the end, so the phone hears an answer rather than a
+// connection closed while it was still sending, and sends the steward to the
+// send screen, which registers the worker and asks for the share again.
+func (a app) shared(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	_ = rc.SetReadDeadline(time.Now().Add(uploadTime))
+
+	if _, err := io.Copy(io.Discard, r.Body); err != nil {
+		a.log.Info("a share that reached the server was cut off", "id", web.RequestIDFrom(r.Context()), "err", err)
+	}
+
+	http.Redirect(w, r, IndexPath+"/new?shared=again", http.StatusSeeOther)
+}
+
+// manifest serves the app's manifest. Cached for a day rather than for ever:
+// Chrome reads it again to update an installed app, and a change to it
+// should reach the phones that installed it within the week.
+func (a app) manifest(w http.ResponseWriter, r *http.Request) {
+	h := w.Header()
+	h.Set("Content-Type", "application/manifest+json")
+	h.Set("Cache-Control", "public, max-age=86400")
+
+	http.ServeContent(w, r, "app.webmanifest", startup, bytes.NewReader(manifestJSON))
+}
+
+// startup is the modification time reported for the manifest, which is in
+// the binary and so changes only when the binary does.
+var startup = time.Now()
 
 func (a app) upload(w http.ResponseWriter, r *http.Request) {
 	rc := http.NewResponseController(w)
@@ -663,6 +795,10 @@ func (a app) script(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Type", "text/javascript; charset=utf-8")
 	h.Set("Cache-Control", "private, no-cache")
 	h.Set("ETag", tag)
+
+	if name == workerName {
+		h.Set("Service-Worker-Allowed", strings.TrimPrefix(SharePattern, "POST "))
+	}
 
 	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(body))
 }

@@ -1,4 +1,5 @@
 {{define "title"}}Send photos · Garden stewards{{end}}
+{{define "head"}}{{template "inbox-head" .}}{{end}}
 {{define "content"}}{{with .Data}}
 <div lang="en">
 <p class="eyebrow"><a href="/steward/inbox">Photo inbox</a></p>
@@ -11,6 +12,9 @@
   <ul>{{range .Refused}}<li><strong>{{.Name}}</strong>: {{.Problem}}</li>{{end}}</ul>
 </div>{{end}}
 {{if .Problems}}<p class="problem" role="alert">Nothing was sent yet. Fix what is marked below, choose the photos again, and press Send.</p>{{end}}
+{{/* Photos shared from the phone's photos app: share.mjs says here that they
+are in the form, and the server that a share did not arrive. */}}
+<div id="shared"{{if not .Shared}} hidden{{end}}>{{with .Shared}}<p class="problem" role="alert">{{.}}</p>{{end}}</div>
 {{/* Where the script says how a batch it sent went, when it stays on this page. */}}
 <div id="sent" hidden></div>
 

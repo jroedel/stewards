@@ -468,8 +468,8 @@ func TestTheSendScreenLinksItsScript(t *testing.T) {
 
 	// Each module, and each import in it, is served: a module whose import
 	// 404s fails as a whole, silently, and the page is back to one post.
-	imports := regexp.MustCompile(`from "\./([a-z]+\.mjs)"`)
-	for _, name := range []string{"send.mjs", "shrink.mjs", "jpeg.mjs"} {
+	imports := regexp.MustCompile(`(?:from|import) "\./([a-z-]+\.mjs)"`)
+	for _, name := range []string{"send.mjs", "shrink.mjs", "jpeg.mjs", "share.mjs"} {
 		js := s.get("/steward/inbox/static/"+name, true)
 		if js.Code != http.StatusOK || js.Header().Get("Content-Type") != "text/javascript; charset=utf-8" {
 			t.Errorf("%s: %d %q", name, js.Code, js.Header().Get("Content-Type"))
@@ -504,6 +504,166 @@ func TestTheSendScreenLinksItsScript(t *testing.T) {
 
 	if w := s.get("/steward/inbox/static/send.mjs", false); w.Code == http.StatusOK {
 		t.Error("the script was served to somebody signed out")
+	}
+}
+
+// The inbox and the send screen are where the stewards app is installed from:
+// they link the manifest, and load the script that registers the share
+// target's worker, so the worker is in place before the first share.
+func TestTheInboxOffersTheAppAndItsShareTarget(t *testing.T) {
+	s := serve(t)
+
+	for _, path := range []string{"/steward/inbox", "/steward/inbox/new"} {
+		page := s.get(path, true).Body.String()
+
+		if !strings.Contains(page, `<link rel="manifest" href="`+inboxapp.ManifestPath+`">`) {
+			t.Errorf("%s does not link the manifest", path)
+		}
+	}
+
+	if !strings.Contains(s.get("/steward/inbox", true).Body.String(), `<script type="module" src="/steward/inbox/static/share.mjs"></script>`) {
+		t.Error("the inbox does not load the script that registers the worker")
+	}
+
+	// Nor is anywhere else: a volunteer's page offers no install.
+	if page := s.get("/steward", true).Body.String(); strings.Contains(page, `rel="manifest"`) {
+		t.Error("the stewards' front page links the manifest too")
+	}
+
+	// Chrome fetches the manifest without cookies.
+	w := s.get(inboxapp.ManifestPath, false)
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/manifest+json" {
+		t.Fatalf("the manifest, signed out: %d %q", w.Code, w.Header().Get("Content-Type"))
+	}
+
+	var m struct {
+		Name     string
+		StartURL string `json:"start_url"`
+		Scope    string
+		Display  string
+		Icons    []struct{ Src, Sizes string }
+
+		ShareTarget struct {
+			Action, Method, Enctype string
+			Params                  struct {
+				Files []struct {
+					Name   string
+					Accept []string
+				}
+			}
+		} `json:"share_target"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &m); err != nil {
+		t.Fatalf("the manifest is not JSON: %v", err)
+	}
+
+	if m.Name == "" || m.StartURL != "/steward" || m.Scope != "/" || m.Display != "standalone" {
+		t.Errorf("the manifest is not an app Chrome installs: %+v", m)
+	}
+
+	// Chrome installs an app with a 192 and a 512 pixel icon, and each is
+	// served, at the size it says.
+	sizes := map[string]bool{}
+	for _, ic := range m.Icons {
+		sizes[ic.Sizes] = true
+
+		img := s.get(ic.Src, false)
+		if img.Code != http.StatusOK {
+			t.Errorf("the icon %s: %d", ic.Src, img.Code)
+
+			continue
+		}
+
+		cfg, _, err := image.DecodeConfig(bytes.NewReader(img.Body.Bytes()))
+		if err != nil || strconv.Itoa(cfg.Width)+"x"+strconv.Itoa(cfg.Height) != ic.Sizes {
+			t.Errorf("the icon %s says %s and is %dx%d (%v)", ic.Src, ic.Sizes, cfg.Width, cfg.Height, err)
+		}
+	}
+	if !sizes["192x192"] || !sizes["512x512"] {
+		t.Errorf("the manifest's icons are %v; Chrome wants a 192 and a 512", sizes)
+	}
+
+	st := m.ShareTarget
+	if "POST "+st.Action != inboxapp.SharePattern || st.Method != "POST" || st.Enctype != "multipart/form-data" {
+		t.Errorf("the share target does not post to the route for it: %+v", st)
+	}
+	if len(st.Params.Files) != 1 || st.Params.Files[0].Name != "photo" {
+		t.Errorf("the share target does not send the photos as photo: %+v", st.Params.Files)
+	}
+
+	csp := w.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "manifest-src 'self'") {
+		t.Errorf("the header policy refuses the manifest: %s", csp)
+	}
+
+	// The worker is served signed out too, and may take the share target
+	// as its scope though it is served from another directory.
+	worker := s.get("/steward/inbox/static/share-worker.mjs", false)
+	if worker.Code != http.StatusOK || worker.Header().Get("Content-Type") != "text/javascript; charset=utf-8" {
+		t.Fatalf("the worker, signed out: %d %q", worker.Code, worker.Header().Get("Content-Type"))
+	}
+	if got := worker.Header().Get("Service-Worker-Allowed"); "POST "+got != inboxapp.SharePattern {
+		t.Errorf("the worker may take %q as its scope, not the share target", got)
+	}
+	if !strings.Contains(worker.Body.String(), `"`+st.Action+`"`) {
+		t.Error("the worker does not catch the manifest's share target")
+	}
+
+	// Its scope is not every script's: send.mjs gets no such header.
+	if got := s.get("/steward/inbox/static/send.mjs", true).Header().Get("Service-Worker-Allowed"); got != "" {
+		t.Errorf("send.mjs may be a worker over %q", got)
+	}
+}
+
+// A share the phone's worker missed reaches the server as one batch. It is
+// read and not kept -- nobody has said where the photos were taken -- and the
+// steward is sent to the send screen, which asks for the share again.
+func TestAShareTheWorkerMissedIsAskedForAgain(t *testing.T) {
+	s := serve(t)
+
+	// As Chrome sends a share: a browser's own navigation, so no Origin
+	// and Sec-Fetch-Site none.
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, _ := mw.CreateFormFile("photo", "PXL_20261006_101500.jpg")
+	_, _ = part.Write(noisy(t, 41))
+	part, _ = mw.CreateFormFile("photo", "PXL_20261006_101530.jpg")
+	_, _ = part.Write(noisy(t, 42))
+	_ = mw.Close()
+
+	r := httptest.NewRequest(http.MethodPost, "/steward/inbox/shared", &body)
+	r.Header.Set("Content-Type", mw.FormDataContentType())
+	r.AddCookie(s.cookie)
+	r.Header.Set("Sec-Fetch-Site", "none")
+
+	w := httptest.NewRecorder()
+	s.h.ServeHTTP(w, r)
+
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/steward/inbox/new?shared=again" {
+		t.Fatalf("a share that reached the server: %d to %q\n%s", w.Code, w.Header().Get("Location"), w.Body)
+	}
+
+	if items, err := s.inbox.Waiting(t.Context()); err != nil || len(items) != 0 {
+		t.Errorf("a share that reached the server was kept: %d photos (%v)", len(items), err)
+	}
+
+	page := s.get("/steward/inbox/new?shared=again", true).Body.String()
+	if !strings.Contains(page, "Share them again from your photos app.") {
+		t.Error("the send screen does not ask for the share again")
+	}
+
+	// A count is a share that arrived, which share.mjs describes: the
+	// server says nothing, and keeps the place for it hidden.
+	page = s.get("/steward/inbox/new?shared=3", true).Body.String()
+	if !strings.Contains(page, `<div id="shared" hidden></div>`) {
+		t.Error("the send screen says something of its own about a share that arrived")
+	}
+
+	// Signed out, the send screen is the sign-in, which comes back to it
+	// with the shared photos still waiting on the phone.
+	w = s.get("/steward/inbox/new?shared=3", false)
+	if loc := w.Header().Get("Location"); w.Code != http.StatusSeeOther || !strings.Contains(loc, url.QueryEscape("/steward/inbox/new?shared=3")) {
+		t.Errorf("the send screen, signed out: %d to %q", w.Code, loc)
 	}
 }
 
