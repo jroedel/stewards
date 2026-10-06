@@ -73,8 +73,10 @@ async function share(photos) {
 }
 
 test("photos shared to the app wait in the send screen, and are sent from there", opts, async () => {
-  stage("opening the inbox, which registers the worker");
-  await page.goto(`${base}/steward/inbox`);
+  // The front page, where the steward first tried to install the app: any
+  // steward's page registers the worker.
+  stage("opening the stewards' front page, which registers the worker");
+  await page.goto(`${base}/steward`);
   await page.waitFor(workerReady);
 
   await share([["PXL_20261006_093000.jpg", "#b03030"], ["Señora's yard.jpg", "#30a040"]]);
@@ -90,7 +92,9 @@ test("photos shared to the app wait in the send screen, and are sent from there"
   );
   assert.match(await page.evaluate(`document.querySelector("#shared").innerText`), /2 photos from your phone, ready to send/);
 
-  // Reloaded, as Android does to a tab it put away: still there.
+  // Looking something up on another page and coming back -- or Android
+  // reloading a tab it put away -- finds them still there.
+  await page.goto(`${base}/steward`);
   await page.goto(`${base}/steward/inbox/new?shared=2`);
   await page.waitFor(`document.querySelector("#photo").files.length === 2`);
 

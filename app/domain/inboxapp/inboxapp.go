@@ -32,8 +32,8 @@
 //
 // A batch can also start in the phone's own photos app, where a steward finds
 // the photos on its map and shares them to the stewards app. That is Chrome's
-// share target, and it needs the app installed from Chrome, which the inbox's
-// manifest (ManifestPath) offers. The share is caught on the phone by a
+// share target, and it needs the app installed from Chrome, which every
+// steward's page offers through the manifest (ManifestPath). The share is caught on the phone by a
 // service worker (static/share-worker.mjs) and lands on the send screen with
 // the photos already chosen, so it, too, ends in the script sending a photo
 // at a time. SharePattern on the server is only for a share the worker missed.
@@ -169,9 +169,15 @@ var scriptTags = func() map[string]string {
 // should never guess that for a whole batch.
 const SharePattern = "POST " + IndexPath + "/shared"
 
-// ManifestPath is the web app manifest the inbox's pages link, which is what
-// lets Chrome install the stewards app and list it in the share sheet.
+// ManifestPath is the web app manifest every steward's page links, which is
+// what lets Chrome install the stewards app and list it in the share sheet.
 const ManifestPath = IndexPath + "/app.webmanifest"
+
+// ShareScript is the script every steward's page loads with the manifest. It
+// registers the share target's worker, so an app installed from any of those
+// pages is ready for its first share; on the send screen it also puts the
+// shared photos in the form.
+const ShareScript = scriptDir + "share.mjs"
 
 // workerName is the share target's service worker, among the scripts. Served
 // with Service-Worker-Allowed, because its scope, SharePattern, is not under

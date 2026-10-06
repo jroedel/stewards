@@ -152,6 +152,11 @@ func New(cfg Config) (http.Handler, error) {
 
 			inboxapp.Routes(mux, inboxCfg, guard)
 
+			// The stewards app, installable from any steward's page, with
+			// the inbox's share target: its manifest, and the script that
+			// registers the worker a share is caught by.
+			render.OfferApp(inboxapp.ManifestPath, inboxapp.ShareScript)
+
 			if cfg.Nursery != nil {
 				nurseryapp.Routes(mux, nurseryapp.Config{Log: cfg.Log, Render: render, Stock: cfg.Nursery, Species: cfg.Species}, guard)
 			}

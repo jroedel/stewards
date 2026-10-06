@@ -6,7 +6,8 @@
 <title>{{block "title" .}}Garden stewards{{end}}</title>
 <link rel="stylesheet" href="{{.Stylesheet}}">
 <link rel="icon" type="image/png" href="/static/img/isotype-512.png">
-{{block "head" .}}{{/* A page's own additions to the head: the inbox's manifest. */}}{{end}}
+{{with .Manifest}}<link rel="manifest" href="{{.}}">{{end}}
+{{with .AppScript}}<script type="module" src="{{.}}"></script>{{end}}
 </head>
 <body>
 <header class="masthead">
