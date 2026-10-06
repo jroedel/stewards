@@ -101,6 +101,13 @@ type Size string
 const (
 	Large Size = "large"
 	Small Size = "small"
+
+	// Full is the photo at the size it was kept -- up to 4096 pixels on its
+	// long side since the send screen shrinks in the phone, and whatever it
+	// came at before -- with what its camera wrote about it taken out
+	// (imaging.Stripped). For seeing the leaves on a whole plant, which
+	// 1600 pixels do not show. Made the first time it is asked for, and kept.
+	Full Size = "full"
 )
 
 // Dimensions is a picture's size in pixels, for the page to reserve the space
@@ -391,7 +398,7 @@ func (b *Business) Delete(ctx context.Context, id types.ID) error {
 	}
 
 	var errs []error
-	for _, name := range []string{Name(p.ID, Large), Name(p.ID, Small), originalName(p)} {
+	for _, name := range []string{Name(p.ID, Large), Name(p.ID, Small), originalName(p), FullName(p.ID, p.Format)} {
 		if err := b.files.Remove(name); err != nil {
 			errs = append(errs, err)
 		}
@@ -447,15 +454,25 @@ func (b *Business) BySpecies(ctx context.Context) (map[types.ID][]Photo, error) 
 }
 
 // Open reads one of a photo's pictures. The caller decides who may see it:
-// Checked is on the Photo it returns.
+// Checked is on the Photo it returns. A Full picture is a JPEG or a PNG, as
+// the photo's Format says; the others are always JPEGs.
 func (b *Business) Open(ctx context.Context, id types.ID, size Size) (Photo, File, error) {
-	if size != Large && size != Small {
+	if size != Large && size != Small && size != Full {
 		return Photo{}, nil, ErrNotFound
 	}
 
 	p, err := b.store.ByID(ctx, id)
 	if err != nil {
 		return Photo{}, nil, err
+	}
+
+	if size == Full {
+		f, err := OpenFull(ctx, b.files, p.ID, p.Format)
+		if err != nil {
+			return Photo{}, nil, err
+		}
+
+		return p, f, nil
 	}
 
 	f, err := b.files.Open(Name(p.ID, size))
@@ -547,13 +564,125 @@ func Better(x, y Photo) int {
 // agree on it without repeating the pattern.
 func Name(id types.ID, size Size) string { return id.String() + "-" + string(size) + ".jpg" }
 
-func originalName(p Photo) string {
-	ext := "jpg"
-	if p.Format == "png" {
-		ext = "png"
+func originalName(p Photo) string { return p.ID.String() + "-original." + Ext(p.Format) }
+
+// ServedName is the last part of the address a picture is served at:
+// large.jpg, small.jpg, and full.jpg or full.png as the photo's format is.
+// The large and small are always JPEGs, made that way; the full one is the
+// original's own picture, so it is whatever the original was.
+func ServedName(size Size, format string) string {
+	if size == Full {
+		return "full." + Ext(format)
 	}
 
-	return p.ID.String() + "-original." + ext
+	return string(size) + ".jpg"
+}
+
+// ServedSize is the Size an address asks for, before the photo is read.
+// full.jpg and full.png are both Full; the handler then compares the address
+// with the photo's own ServedName, so that a PNG is never served as full.jpg
+// with a JPEG's content type, which nosniff would leave unshown.
+func ServedSize(name string) (Size, bool) {
+	switch name {
+	case "large.jpg":
+		return Large, true
+	case "small.jpg":
+		return Small, true
+	case "full.jpg", "full.png":
+		return Full, true
+	}
+
+	return "", false
+}
+
+// ContentType is a served picture's, by its ServedName.
+func ContentType(name string) string {
+	if strings.HasSuffix(name, ".png") {
+		return "image/png"
+	}
+
+	return "image/jpeg"
+}
+
+// FullName is the file the Full picture is kept in once it has been made.
+func FullName(id types.ID, format string) string { return id.String() + "-full." + Ext(format) }
+
+// Ext is the file extension for a format as imaging names it.
+func Ext(format string) string {
+	if format == "png" {
+		return "png"
+	}
+
+	return "jpg"
+}
+
+// OpenFull opens a Full picture from files, making it from the original the
+// first time. The inbox keeps its photos the same way in a directory of its
+// own, which is why this takes the files rather than being a method.
+//
+// Made when first asked for rather than when the photo arrives, so that every
+// photo kept before there was a full size has one too, and kept once made, so
+// that a phone pinching into a leaf asks the disk for a range of a file rather
+// than the process for a fresh copy of it in memory each time.
+//
+// An original that cannot be followed to its end is an error rather than
+// ErrNotFound: Prepare decoded it when it arrived, so it is something to
+// find out about, not a photo without a full size.
+func OpenFull(ctx context.Context, files Files, id types.ID, format string) (File, error) {
+	name := FullName(id, format)
+
+	f, err := files.Open(name)
+	if err == nil {
+		return f, nil
+	}
+
+	if !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("opening the full picture of photo %s: %w", id, err)
+	}
+
+	// The original read in and the stripped copy beside it are the photo's
+	// bytes twice over, so this waits its turn behind any decode.
+	release, err := imaging.Turn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
+	// Somebody else may have made it while this waited.
+	if f, err := files.Open(name); err == nil {
+		return f, nil
+	}
+
+	data, err := readAll(files, id.String()+"-original."+Ext(format))
+	if err != nil {
+		return nil, fmt.Errorf("reading the original of photo %s: %w", id, err)
+	}
+
+	full, err := imaging.Stripped(data, format)
+	if err != nil {
+		return nil, fmt.Errorf("making the full picture of photo %s: %w", id, err)
+	}
+
+	if err := files.Put(name, full); err != nil {
+		return nil, err
+	}
+
+	f, err = files.Open(name)
+	if err != nil {
+		return nil, fmt.Errorf("opening the full picture of photo %s: %w", id, err)
+	}
+
+	return f, nil
+}
+
+func readAll(files Files, name string) ([]byte, error) {
+	f, err := files.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	return io.ReadAll(io.LimitReader(f, MaxBytes+1))
 }
 
 func (b *Business) put(p Photo, files map[string][]byte) ([]string, error) {

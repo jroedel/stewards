@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
@@ -185,6 +186,101 @@ func TestAPhotoIsKeptInTwoSizesWithItsOriginal(t *testing.T) {
 	}
 }
 
+// xmp is an XMP segment saying where a photo was taken, as a phone writes
+// one, put straight after the start of a JPEG.
+func withXMP(jpg []byte) []byte {
+	payload := "http://ns.adobe.com/xap/1.0/\x00<exif:GPSLatitude>30,18.6N</exif:GPSLatitude>"
+	seg := append([]byte{0xFF, 0xE1, byte((len(payload) + 2) >> 8), byte(len(payload) + 2)}, payload...)
+
+	return append(append(append([]byte{}, jpg[:2]...), seg...), jpg[2:]...)
+}
+
+func TestTheFullPictureIsTheOriginalWithoutWhereItWasTaken(t *testing.T) {
+	g := setup(t)
+
+	plain := photo(t, 2400, 1800)
+	original := withXMP(plain)
+
+	p, err := g.photos.Add(t.Context(), g.penstemon.ID, ours(photobus.Mature), original)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	open := func() []byte {
+		t.Helper()
+
+		_, f, err := g.photos.Open(t.Context(), p.ID, photobus.Full)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+
+		b, err := io.ReadAll(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return b
+	}
+
+	full := open()
+
+	cfg, err := jpeg.DecodeConfig(bytes.NewReader(full))
+	if err != nil || cfg.Width != 2400 || cfg.Height != 1800 {
+		t.Errorf("the full picture is %dx%d (%v), want the original's 2400x1800", cfg.Width, cfg.Height, err)
+	}
+
+	if bytes.Contains(full, []byte("GPSLatitude")) {
+		t.Error("the full picture says where it was taken")
+	}
+
+	if !bytes.Equal(full, plain) {
+		t.Error("the full picture is not the original's picture, byte for byte")
+	}
+
+	// Made once and kept: with the original gone, it still opens.
+	if err := os.Remove(filepath.Join(g.dir, p.ID.String()+"-original.jpg")); err != nil {
+		t.Fatal(err)
+	}
+
+	if again := open(); !bytes.Equal(again, full) {
+		t.Error("the second time is not the first")
+	}
+}
+
+func TestAPNGsFullPictureIsAPNG(t *testing.T) {
+	g := setup(t)
+
+	img := image.NewRGBA(image.Rect(0, 0, 900, 600))
+	for i := range img.Pix {
+		img.Pix[i] = 200
+	}
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := g.photos.Add(t.Context(), g.penstemon.ID, ours(photobus.Leaf), buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, f, err := g.photos.Open(t.Context(), p.ID, photobus.Full)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	if _, err := png.DecodeConfig(f); err != nil {
+		t.Errorf("not a PNG: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(g.dir, p.ID.String()+"-full.png")); err != nil {
+		t.Error(err)
+	}
+}
+
 func TestABorrowedPhotoNeedsItsCredit(t *testing.T) {
 	g := setup(t)
 
@@ -282,6 +378,17 @@ func TestRemovingAPhotoTakesItsFiles(t *testing.T) {
 	p, err := g.photos.Add(t.Context(), g.penstemon.ID, ours(photobus.Young), photo(t, 600, 400))
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	// Its full picture made, so that there is one to take.
+	_, f, err := g.photos.Open(t.Context(), p.ID, photobus.Full)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	if got := g.files(t); len(got) != 4 {
+		t.Fatalf("files before: %v", got)
 	}
 
 	if err := g.photos.Delete(t.Context(), p.ID); err != nil {

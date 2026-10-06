@@ -572,7 +572,7 @@ func TestAnInboxPictureIsAStewardsAlone(t *testing.T) {
 		t.Fatal("no picture on the inbox")
 	}
 
-	for _, size := range []string{"small.jpg", "large.jpg"} {
+	for _, size := range []string{"small.jpg", "large.jpg", "full.jpg"} {
 		path := "/steward/inbox/" + m[1] + "/" + size
 
 		w := s.get(path, true)
@@ -585,7 +585,7 @@ func TestAnInboxPictureIsAStewardsAlone(t *testing.T) {
 		}
 	}
 
-	for _, path := range []string{"/steward/inbox/" + m[1] + "/original.jpg", "/photos/" + m[1] + "/small.jpg"} {
+	for _, path := range []string{"/steward/inbox/" + m[1] + "/original.jpg", "/steward/inbox/" + m[1] + "/full.png", "/photos/" + m[1] + "/small.jpg"} {
 		if w := s.get(path, true); w.Code != http.StatusNotFound {
 			t.Errorf("%s: %d, want 404", path, w.Code)
 		}

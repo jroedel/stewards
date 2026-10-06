@@ -169,6 +169,19 @@ batches, and sorts them later. "Sort my inbox" means this:
 
    Group them by day and place: ten photos taken a minute apart at the
    inflow band are one walk, and their notes and neighbours are evidence.
+
+   When the large one cannot settle it -- a grass's seed head, the hairs on
+   a stem, a leaf's edge -- download its `full_url` as well: the photo as it
+   was sent, up to 4096 pixels on its long side. A picture is read at about
+   the large one's size whatever its own, so crop the part in question
+   before reading it:
+
+   ```sh
+   scripts/stewards-api GET /api/v1/inbox/<id>/full.jpg -o photos/inbox/<id>-full.jpg
+   convert photos/inbox/<id>-full.jpg -crop 1200x1200+1800+900 +repage photos/inbox/<id>-crop.jpg
+   ```
+
+   A plant's photo has a `full_url` too, once it has been sorted.
 3. **Propose, in one table, and wait for a yes.** For each photo: what you
    think it shows and *why* (leaf shape, flower, habit — what you can see),
    how sure you are, the outcome, the plant's slug, the kind, the place. Your

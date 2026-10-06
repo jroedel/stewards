@@ -50,6 +50,7 @@ type InboxItemJSON struct {
 	TakenAt   string `json:"taken_at,omitempty"`
 	LargeURL  string `json:"large_url,omitempty"`
 	SmallURL  string `json:"small_url,omitempty"`
+	FullURL   string `json:"full_url,omitempty"`
 	SortURL   string `json:"sort_url"`
 	ScreenURL string `json:"screen_url"`
 
@@ -79,13 +80,13 @@ func (a app) inboxEndpoints() []Endpoint {
 		{
 			Method: http.MethodGet, Path: Prefix + "/inbox", NeedsKey: true,
 			Summary: "The photos waiting to be sorted, newest first: sent by a steward from the garden or a nursery, with where they were taken if the steward said. ?status=unsure for the ones set aside instead.",
-			Returns: `{"status": "new", "photos": [{id, status, at, place, note, taken_at, large_url, small_url, sort_url, screen_url}]}`,
+			Returns: `{"status": "new", "photos": [{id, status, at, place, note, taken_at, large_url, small_url, full_url, sort_url, screen_url}]}`,
 			handler: a.listInbox,
 		},
 		{
 			Method: http.MethodGet, Path: Prefix + "/inbox/{id}/{file}", NeedsKey: true,
-			Summary: "An inbox photo's picture, large.jpg (1600 pixels on its longer side) or small.jpg (800). Only while it is in the inbox: once sorted, it is the plant's.",
-			Returns: "image/jpeg", handler: a.inboxPicture,
+			Summary: "An inbox photo's picture: large.jpg (1600 pixels on its longer side), small.jpg (800), or full_url, the photo at the size it was sent (up to 4096) with the camera's details taken out, for telling apart what the large one blurs -- full.jpg, or full.png for a PNG. Only while it is in the inbox: once sorted, it is the plant's.",
+			Returns: "image/jpeg, or image/png for a PNG's full picture", handler: a.inboxPicture,
 		},
 		{
 			Method: http.MethodPost, Path: Prefix + "/inbox/{id}/sort", NeedsKey: true,
@@ -150,25 +151,20 @@ func (a app) listInbox(w http.ResponseWriter, r *http.Request) {
 
 func (a app) inboxPicture(w http.ResponseWriter, r *http.Request) {
 	id, err := types.ParseID(r.PathValue("id"))
+	name := r.PathValue("file")
+	size, ok := photobus.ServedSize(name)
 
-	var size photobus.Size
-
-	switch r.PathValue("file") {
-	case "large.jpg":
-		size = photobus.Large
-	case "small.jpg":
-		size = photobus.Small
-	default:
-		err = errors.New("not a picture")
+	noSuch := func() {
+		web.WriteJSON(w, http.StatusNotFound, web.Problem("", fmt.Sprintf("There is no such picture. An inbox photo's are at the addresses GET %s/inbox gives: large_url, small_url and full_url.", Prefix)))
 	}
 
-	if err != nil {
-		web.WriteJSON(w, http.StatusNotFound, web.Problem("", fmt.Sprintf("There is no such picture. An inbox photo's are large.jpg and small.jpg, at the addresses GET %s/inbox gives.", Prefix)))
+	if err != nil || !ok {
+		noSuch()
 
 		return
 	}
 
-	_, f, err := a.inbox.Open(r.Context(), id, size)
+	it, f, err := a.inbox.Open(r.Context(), id, size)
 
 	switch {
 	case errors.Is(err, inboxbus.ErrNotFound):
@@ -182,8 +178,14 @@ func (a app) inboxPicture(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
+	if name != photobus.ServedName(size, it.Format) {
+		noSuch()
+
+		return
+	}
+
 	w.Header().Set("Cache-Control", "private, no-store")
-	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Content-Type", photobus.ContentType(name))
 
 	var modified time.Time
 	if st, err := f.Stat(); err == nil {
@@ -378,6 +380,7 @@ func (a app) inboxItemOf(it inboxbus.Item, places, species map[types.ID]string) 
 	if it.HasPictures() {
 		out.LargeURL = a.base + Prefix + "/inbox/" + it.ID.String() + "/large.jpg"
 		out.SmallURL = a.base + Prefix + "/inbox/" + it.ID.String() + "/small.jpg"
+		out.FullURL = a.base + Prefix + "/inbox/" + it.ID.String() + "/" + photobus.ServedName(photobus.Full, it.Format)
 	}
 
 	return out
