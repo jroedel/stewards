@@ -222,8 +222,9 @@ type itemRow struct {
 	ID            string
 	Width, Height int
 	Time          string
-	Where         string
-	Nursery       bool
+	Where         string // the place here, if said
+	Here          bool   // on the property
+	Away          string // otherwise: "At a nursery: Natural Gardener"
 	Note          string
 }
 
@@ -300,7 +301,7 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 func rowOf(it inboxbus.Item, names map[types.ID]string) itemRow {
 	row := itemRow{
 		ID: it.ID.String(), Width: it.Small.Width, Height: it.Small.Height,
-		Nursery: it.At == inboxbus.Nursery, Note: it.Note,
+		Here: it.At.Here(), Away: awayWords(it), Note: it.Note,
 		Where: names[it.PlaceID],
 	}
 
@@ -309,6 +310,21 @@ func rowOf(it inboxbus.Item, names map[types.ID]string) itemRow {
 	}
 
 	return row
+}
+
+// awayWords is where off the property a photo was taken, as its tag says it:
+// "At a nursery: Natural Gardener", "Somewhere else: Pedernales Falls State
+// Park", or the choice alone when nothing more was said. Empty on the
+// property.
+func awayWords(it inboxbus.Item) string {
+	switch {
+	case it.At.Here():
+		return ""
+	case it.Site == "":
+		return it.At.Label()
+	}
+
+	return it.At.Label() + ": " + it.Site
 }
 
 // sortedWords is the sentence after a photo is sorted, chosen by the word
@@ -365,10 +381,14 @@ type option struct {
 }
 
 type newView struct {
-	Nursery  bool
+	At       string // property, nursery or elsewhere
 	Places   []option
 	Note     string
 	Problems map[string]string
+
+	// The nursery, offered from the register, or where else, as given.
+	Nursery, Where string
+	Nurseries      []string
 
 	// After a batch some of which could not be kept: what was, and each
 	// photo that was not, by the name the phone gave it.
@@ -507,6 +527,17 @@ func fieldsOf(r *http.Request, problems map[string]string) inboxbus.Fields {
 	f := inboxbus.Fields{
 		At:   inboxbus.At(r.PostFormValue("at")),
 		Note: r.PostFormValue("note"),
+	}
+
+	// The form has a field for each: the nursery, chosen from the register,
+	// and anywhere else, written. Whichever goes with the choice of where
+	// is the one that counts; the other may hold what was typed before the
+	// choice was changed.
+	switch f.At {
+	case inboxbus.Nursery:
+		f.Site = r.PostFormValue("nursery")
+	case inboxbus.Elsewhere:
+		f.Site = r.PostFormValue("where")
 	}
 
 	if u, ok := mid.StewardFrom(r.Context()); ok {
@@ -676,7 +707,22 @@ func (a app) showNew(w http.ResponseWriter, r *http.Request, status int, v newVi
 		return
 	}
 
-	v.Nursery, v.Note = f.At == inboxbus.Nursery, f.Note
+	v.At, v.Note = string(f.At), f.Note
+
+	switch f.At {
+	case inboxbus.Nursery:
+		v.Nursery = f.Site
+	case inboxbus.Elsewhere:
+		v.Where = f.Site
+	}
+
+	if a.nursery != nil {
+		if v.Nurseries, err = a.nursery.Nurseries(r.Context()); err != nil {
+			a.fail(w, r, "listing nurseries for the send screen", err)
+
+			return
+		}
+	}
 	v.MaxPhotos, v.MaxMB = MaxPhotos, MaxBytes>>20
 	v.Script, v.SendURL = scriptDir+"send.mjs", strings.TrimPrefix(SendPattern, "POST ")
 
@@ -701,7 +747,8 @@ type sortView struct {
 
 	// What is known of it.
 	Taken    string
-	Nursery  bool
+	Here     bool   // on the property: a planting is offered, and a place
+	Away     string // otherwise: "At a nursery: Natural Gardener"
 	Where    string
 	Note     string
 	Unsure   bool
@@ -748,9 +795,9 @@ func (a app) sortForm(w http.ResponseWriter, r *http.Request) {
 		as = ""
 	}
 
-	// A nursery photo is not of anything planted here; the choice is not
-	// offered rather than refused after it is made.
-	if it.At == inboxbus.Nursery && as == string(inboxbus.AsPlanted) {
+	// A photo from off the property is not of anything planted here; the
+	// choice is not offered rather than refused after it is made.
+	if !it.At.Here() && as == string(inboxbus.AsPlanted) {
 		as = ""
 	}
 
@@ -894,7 +941,7 @@ func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inb
 	}
 
 	v.ID, v.Width, v.Height = it.ID.String(), it.Large.Width, it.Large.Height
-	v.Nursery, v.Where, v.Note = it.At == inboxbus.Nursery, names[it.PlaceID], it.Note
+	v.Here, v.Away, v.Where, v.Note = it.At.Here(), awayWords(it), names[it.PlaceID], it.Note
 
 	if it.Status == inboxbus.Unsure {
 		v.Unsure, v.Question = true, it.Note
@@ -940,9 +987,13 @@ func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inb
 			return
 		}
 
-		// The nursery already recorded for the photo's day, if any: a
-		// morning's twenty tags are one nursery, and typing it once is
-		// enough.
+		// The nursery the batch was sent from, or else the one already
+		// recorded for the photo's day: a morning's twenty tags are one
+		// nursery, and saying it once is enough.
+		if v.NurseryAt == "" {
+			v.NurseryAt = it.Site
+		}
+
 		if v.NurseryAt == "" {
 			if v.NurseryAt, err = a.nursery.LastNursery(r.Context(), it.When()); err != nil {
 				a.fail(w, r, "finding the day's nursery", err)

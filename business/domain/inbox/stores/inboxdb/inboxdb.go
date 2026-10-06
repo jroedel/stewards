@@ -48,7 +48,7 @@ var Expected = sqldb.Expected{
 		"large_width", "large_height", "small_width", "small_height",
 		"created_at", "updated_at",
 		"outcome", "species_id", "photo_id", "sorted_by", "sorted_at",
-		"nursery_line_id", "pruned_at", "kind",
+		"nursery_line_id", "pruned_at", "kind", "site",
 	},
 }
 
@@ -114,6 +114,10 @@ CREATE INDEX IF NOT EXISTS inbox_place ON inbox (place_id);
 		// photobus.Kind it was sorted as, for a plant's photo or a
 		// planting; '' otherwise, and for one sorted before it was kept.
 		{"kind", "TEXT NOT NULL DEFAULT ''"},
+
+		// Where off the property a batch was taken, if the steward said:
+		// a nursery's name, or a park's. '' on the property.
+		{"site", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := sqldb.AddColumn(ctx, db, "inbox", c.name, c.decl); err != nil {
 			return err
@@ -125,7 +129,7 @@ CREATE INDEX IF NOT EXISTS inbox_place ON inbox (place_id);
 
 const columns = `id, from_user_id, at, place_id, note, taken_at, lat, lon, status, format, sha256,
 large_width, large_height, small_width, small_height, created_at, updated_at,
-outcome, species_id, photo_id, sorted_by, sorted_at, nursery_line_id, pruned_at, kind`
+outcome, species_id, photo_id, sorted_by, sorted_at, nursery_line_id, pruned_at, kind, site`
 
 // open is the statuses a photo can still be sorted from, as SQL.
 const open = `status IN ('` + string(inboxbus.New) + `', '` + string(inboxbus.Unsure) + `')`
@@ -151,13 +155,13 @@ func (s *Store) Create(ctx context.Context, it inboxbus.Item) error {
 	}
 
 	_, err := s.db.ExecContext(ctx, `INSERT INTO inbox (`+columns+`)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		it.ID.String(), orNull(it.FromID), string(it.At), orNull(it.PlaceID), it.Note,
 		taken, lat, lon, string(it.Status), it.Format, it.SHA256,
 		it.Large.Width, it.Large.Height, it.Small.Width, it.Small.Height,
 		it.CreatedAt.UnixMilli(), it.UpdatedAt.UnixMilli(),
 		string(it.Outcome), orNull(it.SpeciesID), orNull(it.PhotoID), orNull(it.SortedBy), sorted,
-		orNull(it.LineID), pruned, string(it.Kind))
+		orNull(it.LineID), pruned, string(it.Kind), it.Site)
 
 	switch {
 	case sqldb.IsForeignKeyViolation(err):
@@ -356,7 +360,7 @@ func scan(row scanner) (inboxbus.Item, error) {
 
 	err := row.Scan(&id, &from, &at, &place, &it.Note, &taken, &lat, &lon, &status, &it.Format, &it.SHA256,
 		&it.Large.Width, &it.Large.Height, &it.Small.Width, &it.Small.Height, &created, &updated,
-		&outcome, &species, &photo, &by, &sorted, &line, &pruned, &kind)
+		&outcome, &species, &photo, &by, &sorted, &line, &pruned, &kind, &it.Site)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return inboxbus.Item{}, err

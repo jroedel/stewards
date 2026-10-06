@@ -153,13 +153,16 @@ better.
 
 ## Sorting the photo inbox
 
-The steward sends photos from the garden or a nursery to the inbox in
-batches, and sorts them later. "Sort my inbox" means this:
+The steward sends photos from the garden, a nursery or anywhere else to the
+inbox in batches, and sorts them later. "Sort my inbox" means this:
 
 1. **List what is waiting:** `GET /api/v1/inbox` (and `?status=unsure` for
-   the photos set aside earlier). Each photo says whether it was taken on the
-   property or `at` a nursery, the `place` if the steward chose one, a `note`,
-   and when the camera says it was taken.
+   the photos set aside earlier). Each photo says `at`: `property` (with the
+   `place` if the steward chose one), `nursery` or `elsewhere` (a park, a
+   trail, a friend's garden), with `where` naming the nursery or the spot if
+   the steward said; a `note`; and when the camera says it was taken. A photo
+   from elsewhere can only be a `photo` of its plant (or set aside): never
+   `planted`, never `stock`, and never given a `place`.
 2. **Look at each photo.** Download its `large_url` into `photos/inbox/`
    (gitignored), named by its id, and read it:
 

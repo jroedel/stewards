@@ -77,6 +77,8 @@ before(async () => {
     large: await draw("PXL_large.jpg", 8160, 6144, 6),
     // An ordinary 12 MP photo, within the limit.
     ordinary: await draw("PXL_ordinary.jpg", 4080, 3072, 1),
+    // One taken in a park.
+    park: await draw("PXL_park.jpg", 2000, 1500, 1),
   };
 
   statics.close();
@@ -147,6 +149,30 @@ test("a batch goes a photo at a time: the large one shrunk, upright and dated, t
 test("the same batch sent again is recognised, the shrunk photo too", opts, async () => {
   assert.equal(await sendBatch([fixtures.large, fixtures.ordinary]), "?done=sent&n=0&d=2");
   assert.equal(originals().length, 2);
+});
+
+// Each choice of where shows only its own field, by CSS alone; and a batch
+// the script sends from a park says so, and where.
+test("somewhere else shows its own field, and the batch says where it was", opts, async () => {
+  await page.goto(`${base}/steward/inbox/new`);
+  await page.waitFor(`!!document.querySelector("form[data-send]")`);
+
+  const shown = () =>
+    page.evaluate(`[".for-property", ".for-nursery", ".for-elsewhere"].filter((c) => getComputedStyle(document.querySelector(c)).display !== "none")`);
+  const choose = (at) => page.evaluate(`document.querySelector('input[name="at"][value="${at}"]').click(), true`);
+
+  assert.deepEqual(await shown(), [".for-property"], "on the property: the place");
+  await choose("nursery");
+  assert.deepEqual(await shown(), [".for-nursery"], "at a nursery: which one");
+  await choose("elsewhere");
+  assert.deepEqual(await shown(), [".for-elsewhere"], "somewhere else: where");
+
+  await page.evaluate(`document.querySelector("#where").value = "Pedernales Falls State Park", true`);
+  await page.setFiles("#photo", [fixtures.park]);
+  await page.evaluate(`document.querySelector("form[data-send] button[type=submit]").click(), true`);
+  assert.equal(await page.waitFor(`location.pathname === "/steward/inbox" && location.search`, 60_000), "?done=sent&n=1&d=0");
+
+  assert.match(await page.evaluate(`document.body.innerText`), /Somewhere else: Pedernales Falls State Park/);
 });
 
 test("the page ran with nothing blocked and nothing thrown", opts, () => {

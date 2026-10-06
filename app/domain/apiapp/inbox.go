@@ -45,6 +45,7 @@ type InboxItemJSON struct {
 	ID        string `json:"id"`
 	Status    string `json:"status"`
 	At        string `json:"at"`
+	Where     string `json:"where,omitempty"`
 	Place     string `json:"place,omitempty"`
 	Note      string `json:"note,omitempty"`
 	TakenAt   string `json:"taken_at,omitempty"`
@@ -79,8 +80,8 @@ func (a app) inboxEndpoints() []Endpoint {
 	return []Endpoint{
 		{
 			Method: http.MethodGet, Path: Prefix + "/inbox", NeedsKey: true,
-			Summary: "The photos waiting to be sorted, newest first: sent by a steward from the garden or a nursery, with where they were taken if the steward said. ?status=unsure for the ones set aside instead.",
-			Returns: `{"status": "new", "photos": [{id, status, at, place, note, taken_at, large_url, small_url, full_url, sort_url, screen_url}]}`,
+			Summary: "The photos waiting to be sorted, newest first, sent by a steward. at is property (the garden: place is the place here, if the steward said), nursery (where is the nursery's name, if said) or elsewhere (a park, a trail, a friend's garden: where is its name, if said). ?status=unsure for the ones set aside instead.",
+			Returns: `{"status": "new", "photos": [{id, status, at, where, place, note, taken_at, large_url, small_url, full_url, sort_url, screen_url}]}`,
 			handler: a.listInbox,
 		},
 		{
@@ -95,9 +96,9 @@ func (a app) inboxEndpoints() []Endpoint {
 				{Name: "outcome", Type: "string", Required: true, Values: a.sortOutcomes(), Description: "photo: a photo of the plant, to add to its photos. planted: the plant was just planted at the place; it is listed there to protect, off the To plant list, and the photo is added as its young plant. stock: a plant for sale, from a photo taken at a nursery; a line of that nursery's stock on the day, keeping the photo for three months. unsure: set aside, with a question in the note."},
 				{Name: "species", Type: "string", Description: "The plant's slug, for photo and planted. It must already be added: PUT /api/v1/species/{slug} first."},
 				{Name: "kind", Type: "string", Values: kindNames(), Description: "What it shows, for photo; for planted, leave it out for young."},
-				{Name: "place", Type: "string", Description: "A place slug: where it was taken, for photo, or planted, for planted. Leave it out to keep the place the photo was sent with. Never for a photo taken at a nursery."},
+				{Name: "place", Type: "string", Description: "A place slug: where it was taken, for photo, or planted, for planted. Leave it out to keep the place the photo was sent with. Only for a photo taken on the property."},
 				{Name: "note", Type: "string", Description: fmt.Sprintf("For unsure: the question, or why it should go, at most %d characters. For stock: a note on the line.", inboxbus.MaxNote)},
-				{Name: "nursery", Type: "string", Description: "For stock: the nursery's name, as GET /api/v1/nursery writes it for one visited before."},
+				{Name: "nursery", Type: "string", Description: "For stock: the nursery's name, from GET /api/v1/nurseries. A name not there is added to the register as written."},
 				{Name: "name_on_tag", Type: "string", Description: "For stock: the name on the tag, as the tag writes it. Needed unless species is given; give both when the tag is legible."},
 				{Name: "pot_size", Type: "string", Description: `For stock: as the tag writes it, such as "1 gal" or "4 in".`},
 				{Name: "price", Type: "string", Description: `For stock: dollars and cents, such as "12.99".`},
@@ -269,8 +270,8 @@ func (a app) sortInbox(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if in.Place != "" {
-		if it.At == inboxbus.Nursery {
-			web.WriteJSON(w, http.StatusUnprocessableEntity, web.Problem("place", "That photo was taken at a nursery, so it is of no place here. Leave place out."))
+		if !it.At.Here() {
+			web.WriteJSON(w, http.StatusUnprocessableEntity, web.Problem("place", "That photo was taken off the property, so it is of no place here. Leave place out."))
 
 			return
 		}
@@ -367,7 +368,7 @@ func (a app) sortOutcomes() []string {
 func (a app) inboxItemOf(it inboxbus.Item, places, species map[types.ID]string) InboxItemJSON {
 	out := InboxItemJSON{
 		ID: it.ID.String(), Status: string(it.Status), At: string(it.At),
-		Place: places[it.PlaceID], Note: it.Note,
+		Where: it.Site, Place: places[it.PlaceID], Note: it.Note,
 		SortURL:   a.base + Prefix + "/inbox/" + it.ID.String() + "/sort",
 		ScreenURL: a.base + "/steward/inbox/" + it.ID.String(),
 		Outcome:   string(it.Outcome), Species: species[it.SpeciesID],

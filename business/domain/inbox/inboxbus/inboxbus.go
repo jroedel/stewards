@@ -61,6 +61,10 @@ const MaxBytes = photobus.MaxBytes
 // longer belongs on the place.
 const MaxNote = 300
 
+// MaxSite is the longest name of where a batch was taken off the property:
+// a nursery's, as long as the register takes, or a park's.
+const MaxSite = 100
+
 // At is where a batch of photos was taken.
 type At string
 
@@ -71,16 +75,28 @@ const (
 	// Nursery is a nursery's sales yard, where a photo is of a plant for
 	// sale or its tag, and never of a place here.
 	Nursery At = "nursery"
+
+	// Elsewhere is anywhere else: a park, a trail, a friend's garden. A
+	// native seen there is worth a photo for its plant's card, so long as
+	// nobody takes it for this garden; so a photo from elsewhere is never
+	// at a place here, never a planting, and never stock.
+	Elsewhere At = "elsewhere"
 )
 
 // Label is the stewards' name for it.
 func (a At) Label() string {
-	if a == Nursery {
+	switch a {
+	case Nursery:
 		return "At a nursery"
+	case Elsewhere:
+		return "Somewhere else"
 	}
 
 	return "On the property"
 }
+
+// Here is whether it is on the property, where the places are.
+func (a At) Here() bool { return a == Property }
 
 // Status is how far a photo has got.
 type Status string
@@ -149,9 +165,13 @@ type Item struct {
 	At At
 
 	// PlaceID is where on the property it was taken, if the steward said;
-	// zero for not said, and always zero at a nursery.
+	// zero for not said, and always zero off the property.
 	PlaceID types.ID
 	Note    string
+
+	// Site is where off the property, if the steward said: the nursery's
+	// name, or the park's. Empty on the property, where PlaceID says it.
+	Site string
 
 	// TakenAt is when the camera says it was taken; zero when it did not
 	// say the day. Where is where it says, if Located.
@@ -208,6 +228,7 @@ type Fields struct {
 	At      At
 	PlaceID types.ID
 	Note    string
+	Site    string
 }
 
 // Invalid is a batch that could not be kept as given, shaped like
@@ -354,18 +375,23 @@ func NewBusiness(store Storer, files photobus.Files, deps Deps, now func() time.
 // a batch of ten with a note too long is refused once, not ten times.
 func (b *Business) Check(f Fields) (Fields, error) {
 	f.Note = strings.TrimSpace(f.Note)
+	f.Site = strings.Join(strings.Fields(f.Site), " ")
 
-	// A place at a nursery is a contradiction a form can make -- a place
-	// chosen, then the toggle flipped -- and the toggle is the later and
-	// the likelier word. Dropped rather than refused, for a steward
-	// standing in a sales yard.
-	if f.At == Nursery {
+	// A place here for a batch from elsewhere, or a site for one from here,
+	// is a contradiction a form can make -- a place chosen, then the choice
+	// changed -- and the choice is the later and the likelier word. Dropped
+	// rather than refused, for a steward standing in a sales yard.
+	if f.At.Here() {
+		f.Site = ""
+	} else {
 		f.PlaceID = types.ID{}
 	}
 
 	switch {
-	case f.At != Property && f.At != Nursery:
-		return f, Invalid{Field: "at", Problem: "say whether these were taken on the property or at a nursery"}
+	case f.At != Property && f.At != Nursery && f.At != Elsewhere:
+		return f, Invalid{Field: "at", Problem: "say whether these were taken on the property, at a nursery, or somewhere else"}
+	case utf8.RuneCountInString(f.Site) > MaxSite:
+		return f, Invalid{Field: "site", Problem: fmt.Sprintf("the name of where they were taken is longer than %d characters", MaxSite)}
 	case f.FromID.Zero():
 		return f, Invalid{Field: "from", Problem: "sign in again, and then send the photos"}
 	case utf8.RuneCountInString(f.Note) > MaxNote:
@@ -407,7 +433,7 @@ func (b *Business) Add(ctx context.Context, f Fields, data []byte) (Item, error)
 	now := b.now().UTC().Truncate(time.Millisecond)
 
 	it := Item{
-		ID: types.NewID(), FromID: f.FromID, At: f.At, PlaceID: f.PlaceID, Note: f.Note,
+		ID: types.NewID(), FromID: f.FromID, At: f.At, PlaceID: f.PlaceID, Note: f.Note, Site: f.Site,
 		Where: prepared.Where, Located: prepared.Located,
 		Status: New, Format: prepared.Format, SHA256: sum,
 		Large:     photobus.Dimensions{Width: prepared.Large.Width, Height: prepared.Large.Height},
@@ -572,8 +598,8 @@ func (b *Business) Sort(ctx context.Context, id, by types.ID, s Sorting) (Result
 		s.PlaceID = it.PlaceID
 	}
 
-	// A nursery's plant is not growing at any place here.
-	if it.At == Nursery {
+	// A plant at a nursery or in a park is not growing at any place here.
+	if !it.At.Here() {
 		s.PlaceID = types.ID{}
 	}
 
@@ -806,8 +832,8 @@ func (b *Business) checkSorting(it Item, s Sorting) error {
 			return Invalid{Field: "species", Problem: "choose the plant it shows. If it is not in the list, add the plant first"}
 		case !slices.Contains(photobus.Kinds, s.Kind):
 			return Invalid{Field: "kind", Problem: "choose which kind of photo this is: young plant, leaf, flower, full size, or winter"}
-		case s.Outcome == AsPlanted && it.At == Nursery:
-			return Invalid{Field: "outcome", Problem: "a photo taken at a nursery is not of a plant planted here. Add it as a photo of the plant instead"}
+		case s.Outcome == AsPlanted && !it.At.Here():
+			return Invalid{Field: "outcome", Problem: "a photo taken off the property is not of a plant planted here. Add it as a photo of the plant instead"}
 		case s.Outcome == AsPlanted && s.PlaceID.Zero():
 			return Invalid{Field: "place", Problem: "choose the place it was planted"}
 		}

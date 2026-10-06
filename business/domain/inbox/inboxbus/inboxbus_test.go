@@ -818,3 +818,80 @@ func TestOldStockPhotosArePruned(t *testing.T) {
 		t.Errorf("%d lines, want both kept", lines)
 	}
 }
+
+// ------------------------------------------------------------------ from elsewhere
+
+// A batch from a park keeps the park's name and never a place here; one from
+// the garden keeps no site. Either way round is a form changed halfway, and
+// the choice of where is the word that counts.
+func TestWhereABatchWasTakenIsKeptForWhereItWas(t *testing.T) {
+	g := setup(t)
+
+	for name, tc := range map[string]struct {
+		in         inboxbus.Fields
+		site       string
+		placeKnown bool
+	}{
+		"a park":     {inboxbus.Fields{At: inboxbus.Elsewhere, Site: "  Pedernales   Falls State Park ", PlaceID: g.inflow.ID}, "Pedernales Falls State Park", false},
+		"a nursery":  {inboxbus.Fields{At: inboxbus.Nursery, Site: "Natural Gardener", PlaceID: g.inflow.ID}, "Natural Gardener", false},
+		"the garden": {inboxbus.Fields{At: inboxbus.Property, Site: "Pedernales Falls", PlaceID: g.inflow.ID}, "", true},
+	} {
+		tc.in.FromID = g.steward.ID
+
+		got, err := g.inbox.Check(tc.in)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+
+		if got.Site != tc.site || got.PlaceID.Zero() == tc.placeKnown {
+			t.Errorf("%s: kept as %+v", name, got)
+		}
+	}
+
+	it := g.sent(t, inboxbus.Fields{FromID: g.steward.ID, At: inboxbus.Elsewhere, Site: "Pedernales Falls State Park"}, 40)
+	back, err := g.inbox.ByID(t.Context(), it.ID)
+	if err != nil || back.At != inboxbus.Elsewhere || back.Site != "Pedernales Falls State Park" {
+		t.Errorf("read back %+v, %v", back, err)
+	}
+
+	if _, err := g.inbox.Check(inboxbus.Fields{FromID: g.steward.ID, At: inboxbus.Elsewhere, Site: strings.Repeat("x", 101)}); !isInvalidField(err, "site") {
+		t.Errorf("a long site: %v", err)
+	}
+
+	if _, err := g.inbox.Check(inboxbus.Fields{FromID: g.steward.ID, At: "the moon"}); !isInvalidField(err, "at") {
+		t.Errorf("an unknown where: %v", err)
+	}
+}
+
+// A photo from a park becomes its plant's photo, with no place here even if
+// one is asked for; it is not a planting, and not stock.
+func TestAPhotoFromElsewhereIsOnlyAPhoto(t *testing.T) {
+	g := setup(t)
+	park := inboxbus.Fields{FromID: g.steward.ID, At: inboxbus.Elsewhere, Site: "Pedernales Falls State Park"}
+
+	planted := g.sent(t, park, 41)
+	_, err := g.inbox.Sort(t.Context(), planted.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsPlanted, SpeciesID: g.penstemon.ID, PlaceID: g.inflow.ID})
+	if !isInvalidField(err, "outcome") {
+		t.Errorf("a park photo as planted here: %v", err)
+	}
+
+	_, err = g.inbox.Sort(t.Context(), planted.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsStock, Nursery: "Natural Gardener", Stock: nurserybus.Fields{NameOnTag: "x"}})
+	if !isInvalidField(err, "outcome") {
+		t.Errorf("a park photo as stock: %v", err)
+	}
+
+	res, err := g.inbox.Sort(t.Context(), planted.ID, g.steward.ID, inboxbus.Sorting{Outcome: inboxbus.AsPhoto, SpeciesID: g.penstemon.ID, Kind: photobus.Flower, PlaceID: g.inflow.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !res.Photo.PlaceID.Zero() || res.Photo.Source != photobus.Ours {
+		t.Errorf("the plant's photo: %+v", res.Photo)
+	}
+}
+
+func isInvalidField(err error, field string) bool {
+	invalid, ok := errors.AsType[inboxbus.Invalid](err)
+
+	return ok && invalid.Field == field
+}

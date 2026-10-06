@@ -334,7 +334,7 @@ func TestABatchThatCannotBeSentSaysWhy(t *testing.T) {
 	}{
 		"no photos":   {property(), nil, "Choose the photos to send."},
 		"too many":    {property(), many, "Send up to 20 at a time."},
-		"nowhere":     {url.Values{}, []file{{"IMG.JPG", noisy(t, 5)}}, "taken on the property or at a nursery"},
+		"nowhere":     {url.Values{}, []file{{"IMG.JPG", noisy(t, 5)}}, "taken on the property, at a nursery, or somewhere else"},
 		"a bad place": {url.Values{"at": {"property"}, "place": {"elsewhere"}}, []file{{"IMG.JPG", noisy(t, 5)}}, "Choose the place from the list"},
 	} {
 		w := s.batch(tc.fields, tc.files...)
@@ -984,4 +984,79 @@ func TestTheNurseriesAreARegister(t *testing.T) {
 	if w := s.get("/steward/nurseries", false); w.Code == http.StatusOK {
 		t.Error("the register was shown to somebody signed out")
 	}
+}
+
+// A batch from a park: the send screen offers it, the inbox says where it
+// was, and it can be a plant's photo but not a planting here or stock.
+func TestABatchFromSomewhereElse(t *testing.T) {
+	s := serve(t)
+
+	form := s.get("/steward/inbox/new", true).Body.String()
+	for _, want := range []string{`name="at" value="elsewhere"`, `id="where" name="where"`, `id="nursery" name="nursery"`, `for-elsewhere"`} {
+		if !strings.Contains(form, want) {
+			t.Errorf("the send screen has no %q", want)
+		}
+	}
+
+	// A place chosen before the choice was changed to somewhere else is
+	// dropped, not kept as if the photo were from here.
+	ids := s.sent(url.Values{"at": {"elsewhere"}, "where": {"Pedernales Falls State Park"}, "place": {s.inflow.ID.String()}, "nursery": {"left over"}}, file{"PXL_0101.jpg", noisy(t, 101)})
+
+	it, err := s.inbox.ByID(t.Context(), mustID(t, ids[0]))
+	if err != nil || it.At != inboxbus.Elsewhere || it.Site != "Pedernales Falls State Park" || !it.PlaceID.Zero() {
+		t.Fatalf("kept as %+v, %v", it, err)
+	}
+
+	if list := s.get("/steward/inbox", true).Body.String(); !strings.Contains(list, "Somewhere else: Pedernales Falls State Park") {
+		t.Error("the inbox does not say where it was taken")
+	}
+
+	sort := s.get("/steward/inbox/"+ids[0], true).Body.String()
+	if !strings.Contains(sort, "Somewhere else: Pedernales Falls State Park") || strings.Contains(sort, "?as=planted") || strings.Contains(sort, "?as=stock") {
+		t.Error("the sort screen offers a planting or stock for a park photo, or does not say where")
+	}
+
+	if w := s.post("/steward/inbox/"+ids[0], url.Values{"as": {"photo"}, "species": {s.penstemon.ID.String()}, "kind": {"flower"}}); w.Code != http.StatusSeeOther {
+		t.Fatalf("sorting it as a photo: %d\n%s", w.Code, w.Body.String())
+	}
+
+	photos, _ := s.photos.ForSpecies(t.Context(), s.penstemon.ID)
+	if len(photos) != 1 || !photos[0].PlaceID.Zero() {
+		t.Errorf("the plant's photos: %+v", photos)
+	}
+}
+
+// A batch from a nursery says which, from the register, and each tag's sort
+// starts with it.
+func TestABatchFromANurserySaysWhich(t *testing.T) {
+	s := serve(t)
+
+	if _, err := s.nursery.CreateNursery(t.Context(), nurserybus.NurseryFields{Name: "Natural Gardener"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if form := s.get("/steward/inbox/new", true).Body.String(); !strings.Contains(form, `<option value="Natural Gardener">`) {
+		t.Error("the send screen does not offer the register's nurseries")
+	}
+
+	ids := s.sent(url.Values{"at": {"nursery"}, "nursery": {"Natural Gardener"}, "where": {"left over"}}, file{"IMG_0201.JPG", noisy(t, 201)})
+
+	if list := s.get("/steward/inbox", true).Body.String(); !strings.Contains(list, "At a nursery: Natural Gardener") {
+		t.Error("the inbox does not name the nursery")
+	}
+
+	if form := s.get("/steward/inbox/"+ids[0]+"?as=stock", true).Body.String(); !strings.Contains(form, `value="Natural Gardener" maxlength="100" list="nurseries"`) {
+		t.Error("the tag's sort does not start with the batch's nursery")
+	}
+}
+
+func mustID(t *testing.T, s string) types.ID {
+	t.Helper()
+
+	id, err := types.ParseID(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return id
 }

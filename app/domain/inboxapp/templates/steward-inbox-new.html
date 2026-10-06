@@ -20,17 +20,38 @@
   {{with index .Problems "photo"}}<p class="field-problem">{{.}}</p>{{end}}
   <input id="photo" name="photo" type="file" accept="image/jpeg,image/png" multiple required aria-describedby="photo-help">
 
-  <fieldset>
+  {{/* Each choice of where shows the field that goes with it, by CSS alone
+  (app.css, "where a batch was taken"), so this needs no script. A browser
+  without :has() shows all three, and each says which choice it is for. */}}
+  <fieldset class="where-taken">
     <legend>Where were they taken?</legend>
     {{with index .Problems "at"}}<p class="field-problem">{{.}}</p>{{end}}
-    <label class="check"><input type="radio" name="at" value="property"{{if not .Nursery}} checked{{end}}> On the property</label>
-    <label class="check"><input type="radio" name="at" value="nursery"{{if .Nursery}} checked{{end}}> At a nursery</label>
+    <label class="check"><input type="radio" name="at" value="property"{{if or (eq .At "property") (eq .At "")}} checked{{end}}> On the property</label>
+    <label class="check"><input type="radio" name="at" value="nursery"{{if eq .At "nursery"}} checked{{end}}> At a nursery</label>
+    <label class="check"><input type="radio" name="at" value="elsewhere"{{if eq .At "elsewhere"}} checked{{end}}> Somewhere else: a park, a trail, a friend's garden</label>
   </fieldset>
 
+  <div class="field-group for-property">
   <label for="place">Which place <span class="optional">optional</span></label>
-  <p class="help" id="place-help">Only if they are all from one place. Leave it for photos from all over, or from a nursery.</p>
+  <p class="help" id="place-help">For photos on the property, and only if they are all from one place. Leave it for photos from all over.</p>
   {{with index .Problems "place"}}<p class="field-problem">{{.}}</p>{{end}}
   <select id="place" name="place" aria-describedby="place-help">{{range .Places}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+  </div>
+
+  <div class="field-group for-nursery">
+  <label for="nursery">Which nursery <span class="optional">optional</span></label>
+  <p class="help" id="nursery-help">For photos at a nursery. Choose one from the list, or write a new one's name: it is added to the <a href="/steward/nurseries">nurseries</a>. Each photo can still be put to another one when it is sorted.</p>
+  {{with index .Problems "site"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="nursery" name="nursery" type="text" value="{{.Nursery}}" maxlength="100" list="nurseries" autocomplete="off" aria-describedby="nursery-help">
+  <datalist id="nurseries">{{range .Nurseries}}<option value="{{.}}">{{end}}</datalist>
+  </div>
+
+  <div class="field-group for-elsewhere">
+  <label for="where">Where <span class="optional">optional</span></label>
+  <p class="help" id="where-help">For photos taken somewhere else, such as "Pedernales Falls State Park". It goes with the photos, so nobody takes them for this garden.</p>
+  {{with index .Problems "site"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="where" name="where" type="text" value="{{.Where}}" maxlength="100" autocomplete="off" aria-describedby="where-help">
+  </div>
 
   <label for="note">A note <span class="optional">optional</span></label>
   <p class="help" id="note-help">One line to jog your memory later, such as "new by the gate" or "shade table, by the till".</p>
