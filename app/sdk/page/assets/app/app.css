@@ -607,6 +607,7 @@ input[type="file"] { display: block; width: 100%; min-height: 48px; padding: 10p
 .key-new h2 { margin: 0 0 4px; }
 .key { margin: 10px 0; padding: 12px; border-radius: 8px; background: var(--sf-neutral); font: 15px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; user-select: all; }
 code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.photo-id { user-select: all; }
 
 /* A list's "+ Add" on a place card, for a steward (placeapp's cardAdd): a
    dashed button under the list, and its form in a popover the browser opens

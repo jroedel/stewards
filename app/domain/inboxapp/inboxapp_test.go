@@ -285,6 +285,18 @@ func TestABatchWaitsInTheInbox(t *testing.T) {
 		t.Errorf("%d pictures on the inbox, want 2", n)
 	}
 
+	// Each says its ID, as the API names it in a conversation about the
+	// photos, on the list and on its own sort screen.
+	for _, m := range smallPicture.FindAllStringSubmatch(list, -1) {
+		shown := `Photo <code class="photo-id">` + m[1][:8] + `</code>`
+		if !strings.Contains(list, shown) {
+			t.Errorf("the inbox does not show %s", shown)
+		}
+		if sort := s.get("/steward/inbox/"+m[1], true).Body.String(); !strings.Contains(sort, shown) {
+			t.Errorf("the photo's sort screen does not show %s", shown)
+		}
+	}
+
 	if front := s.get("/steward", true).Body.String(); !strings.Contains(front, "2 to sort") {
 		t.Error("the stewards' front page does not count the inbox")
 	}

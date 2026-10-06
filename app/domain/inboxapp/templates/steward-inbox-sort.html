@@ -17,7 +17,7 @@
   <a class="photo-large photo-zoom" href="/steward/inbox/{{.ID}}/zoom"><span class="sr-only">Zoom in on the photo</span><img src="/steward/inbox/{{.ID}}/large.jpg" width="{{.Width}}" height="{{.Height}}" alt=""></a>
   <div>
     <p class="row-tags">{{if not .Here}}<span class="tag">{{.Away}}</span>{{else if .Where}}<span class="tag">{{.Where}}</span>{{else}}<span class="tag tag-open">Place not said</span>{{end}}{{if .Unsure}} <span class="tag tag-open">Not sure yet</span>{{end}}</p>
-    {{with .Taken}}<p class="row-note">{{.}}</p>{{end}}
+    <p class="row-note">{{with .Taken}}{{.}} · {{end}}{{template "photo-id" .ID}}</p>
     {{if .Unsure}}<p class="row-note">Question: {{.Question}}</p>{{else}}{{with .Note}}<p class="row-note">{{.}}</p>{{end}}{{end}}
   </div>
 </div>
