@@ -235,6 +235,19 @@ func TestAStewardAddsAPhotoAndChecksIt(t *testing.T) {
 	}
 	id := m[1]
 
+	// Each photo says its ID, as the API names it in a conversation about
+	// the photos: on the steward's screens, and never on a volunteer's.
+	shown := `Photo <code class="photo-id">` + id[:8] + `</code>`
+	if !strings.Contains(list, shown) {
+		t.Errorf("the photos screen does not show %s", shown)
+	}
+	if edit := s.get("/steward/photos/"+id+"/edit", true).Body.String(); !strings.Contains(edit, shown) {
+		t.Errorf("the photo's edit screen does not show %s", shown)
+	}
+	if card := s.get("/plants/brazos-penstemon?view=weeding", true).Body.String(); strings.Contains(card, "photo-id") {
+		t.Error("the plant's card shows a photo's ID")
+	}
+
 	// Unchecked: a steward sees it, nobody else can find it at all.
 	if w := s.get("/photos/"+id+"/small.jpg", true); w.Code != http.StatusOK || w.Header().Get("Cache-Control") != "private, no-store" {
 		t.Errorf("a steward's view of an unchecked photo: %d %q", w.Code, w.Header().Get("Cache-Control"))

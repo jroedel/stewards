@@ -115,6 +115,18 @@ func TestTwoAppsCannotDefineTheSamePage(t *testing.T) {
 	}
 }
 
+func TestAnIDIsShownByItsFirstEightCharacters(t *testing.T) {
+	for in, want := range map[string]string{
+		"cbb9fac4a3766e1f52ce8a2c6fa24021": "cbb9fac4",
+		"cbb9fac4":                         "cbb9fac4",
+		"":                                 "",
+	} {
+		if got := page.Short(in); got != want {
+			t.Errorf("Short(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestAProblemBecomesASentence(t *testing.T) {
 	for in, want := range map[string]string{
 		"give the place a name in English": "Give the place a name in English.",

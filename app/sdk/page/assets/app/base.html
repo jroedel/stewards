@@ -28,3 +28,7 @@
 </body>
 </html>
 {{end}}
+{{/* A photo's ID as a steward is shown it, on the steward's screens alone:
+the first eight characters, which are how the photos are named in a
+conversation about them through the API. One tap selects it whole, to copy. */}}
+{{define "photo-id"}}Photo <code class="photo-id">{{short .}}</code>{{end}}

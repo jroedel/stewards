@@ -19,6 +19,7 @@
     <div class="photo-about">
       <p class="row-tags">{{if .Shown}}<span class="tag tag-ok">Shown on the card</span>{{else if .Checked}}<span class="tag">Checked</span>{{else}}<span class="tag tag-open">Not checked: volunteers don't see it</span>{{end}}</p>
       <p class="row-note">{{.Caption}}</p>
+      <p class="row-note">{{template "photo-id" .ID}}</p>
       <a href="/steward/photos/{{.ID}}/edit">Edit or check</a>
     </div>
   </li>

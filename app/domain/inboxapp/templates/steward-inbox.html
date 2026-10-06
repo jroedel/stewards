@@ -21,7 +21,7 @@
     <div class="photo-about">
       <p class="row-tags">{{if not .Here}}<span class="tag">{{.Away}}</span>{{else if .Where}}<span class="tag">{{.Where}}</span>{{else}}<span class="tag tag-open">Place not said</span>{{end}}</p>
       {{with .Note}}<p class="row-note">{{.}}</p>{{end}}
-      {{with .Time}}<p class="row-note">{{.}}</p>{{end}}
+      <p class="row-note">{{with .Time}}{{.}} · {{end}}{{template "photo-id" .ID}}</p>
       <a href="/steward/inbox/{{.ID}}">Sort</a>
     </div>
   </li>
@@ -41,6 +41,7 @@
     <div class="photo-about">
       <p class="row-tags">{{if not .Here}}<span class="tag">{{.Away}}</span>{{else if .Where}}<span class="tag">{{.Where}}</span>{{end}}</p>
       {{with .Note}}<p class="row-note">{{.}}</p>{{end}}
+      <p class="row-note">{{template "photo-id" .ID}}</p>
       <a href="/steward/inbox/{{.ID}}">Sort</a>
     </div>
   </li>

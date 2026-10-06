@@ -13,6 +13,23 @@ import (
 var Funcs = template.FuncMap{
 	"say":      Say,
 	"sentence": Sentence,
+	"short":    Short,
+}
+
+// ShortLen is how much of an ID a person is shown: as much as anybody needs
+// to say which one, in a conversation about the photos or in a message.
+// Eight hex characters, as git shortens a commit -- and as Claude, sorting the
+// inbox through the API, names a photo -- so the photo it names is the one the
+// screen shows. Two of 2^32 never meet among a garden's photos.
+const ShortLen = 8
+
+// Short is an ID as a person is shown it: its first ShortLen characters.
+func Short(id string) string {
+	if len(id) <= ShortLen {
+		return id
+	}
+
+	return id[:ShortLen]
 }
 
 // Say writes a piece of copy in the page's language.
