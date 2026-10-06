@@ -4,11 +4,12 @@
 <p class="eyebrow"><a href="/steward">Places</a></p>
 <h1>Nursery stock</h1>
 <p class="lead">What each nursery had when a steward last walked round it, for planning a bed. It comes from nursery photos sorted in the <a href="/steward/inbox">photo inbox</a>. Volunteers never see it.</p>
+<a class="onward" href="/steward/nurseries"><span>Nurseries <span class="quiet">where they are, and what to know</span></span><span aria-hidden="true">›</span></a>
 
 {{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
 
 {{if .Current}}
-{{range .Current}}{{template "nursery-visit" .}}{{end}}
+{{range .Current}}<div id="nursery-{{.NurseryID}}">{{template "nursery-visit" .}}</div>{{end}}
 {{else}}
 <div class="card empty"><p>No nursery stock yet. Send photos taken at a nursery to the inbox, then sort each one as nursery stock.</p></div>
 {{end}}
@@ -24,7 +25,7 @@
 
 {{define "nursery-visit"}}
 <section class="card photo-kind" aria-label="{{.Nursery}}, {{.Day}}">
-  <h2>{{.Nursery}}</h2>
+  <h2><a href="/steward/nurseries#nursery-{{.NurseryID}}">{{.Nursery}}</a></h2>
   <p class="help">{{.Day}} · {{len .Lines}} {{if eq (len .Lines) 1}}plant{{else}}plants{{end}}</p>
   <ul class="photo-list">
   {{range .Lines}}<li id="line-{{.ID}}">

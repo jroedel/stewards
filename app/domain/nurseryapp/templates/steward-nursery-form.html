@@ -1,0 +1,46 @@
+{{define "title"}}{{if .Data.ID}}Change a nursery{{else}}Add a nursery{{end}} · Garden stewards{{end}}
+{{define "content"}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow"><a href="/steward/nurseries">Nurseries</a></p>
+<h1>{{if .ID}}{{.Name}}{{else}}Add a nursery{{end}}</h1>
+
+{{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below and press Save.</p>{{end}}
+
+<form class="card form" method="post" action="/steward/nurseries{{with .ID}}/{{.}}{{end}}">
+  <label for="name">Name</label>
+  {{with index .Problems "name"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="name" name="name" type="text" value="{{.Name}}" maxlength="100" required autocomplete="off">
+
+  <label for="address">Address <span class="optional">optional</span></label>
+  <p class="help" id="address-help">As you would type it into a map, so "Open in maps" finds it.</p>
+  {{with index .Problems "address"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="address" name="address" type="text" value="{{.Address}}" maxlength="200" autocomplete="off" aria-describedby="address-help">
+
+  <label for="website">Website <span class="optional">optional</span></label>
+  {{with index .Problems "website"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="website" name="website" type="url" inputmode="url" value="{{.Website}}" maxlength="300" placeholder="naturalgardener.com">
+
+  <label for="phone">Phone <span class="optional">optional</span></label>
+  {{with index .Problems "phone"}}<p class="field-problem">{{.}}</p>{{end}}
+  <input id="phone" name="phone" type="tel" value="{{.Phone}}" maxlength="40" autocomplete="off">
+
+  <label for="note">What to know <span class="optional">optional</span></label>
+  <p class="help" id="note-help">Such as "natives are in the back greenhouse" or "restocks on Thursdays".</p>
+  {{with index .Problems "note"}}<p class="field-problem">{{.}}</p>{{end}}
+  <textarea id="note" name="note" rows="3" maxlength="300" aria-describedby="note-help">{{.Note}}</textarea>
+
+  <button class="button" type="submit">Save</button>
+</form>
+
+{{if .ID}}{{if .Visited}}
+{{with .DeleteProblem}}<p class="problem" role="alert">{{.}}</p>{{else}}<p class="help">This nursery has visits in the nursery stock, so it cannot be removed: its history stays with it.</p>{{end}}
+{{else}}
+<form class="card form danger" method="post" action="/steward/nurseries/{{.ID}}/delete">
+  <h2>Remove this nursery</h2>
+  {{with .DeleteProblem}}<p class="problem" role="alert">{{.}}</p>{{end}}
+  <label class="check"><input type="checkbox" name="confirm" value="yes"> Yes, remove {{.Name}}</label>
+  <button class="button button-quiet" type="submit">Remove</button>
+</form>
+{{end}}{{end}}
+</div>
+{{end}}{{end}}

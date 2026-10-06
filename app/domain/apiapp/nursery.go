@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/jroedel/stewards/app/sdk/page"
@@ -24,14 +23,30 @@ import (
 type Nursery interface {
 	All(ctx context.Context) ([]nurserybus.Stock, error)
 	Update(ctx context.Context, id types.ID, f nurserybus.Fields) (nurserybus.Line, error)
+	Register(ctx context.Context) ([]nurserybus.Nursery, error)
+	LastVisits(ctx context.Context) (map[types.ID]time.Time, error)
+}
+
+// NurseryJSON is a nursery in the register as the API shows it. Read only:
+// the register is a steward's to change, on the screens, and a stock sort
+// that names a new nursery adds it there by its name and nothing more.
+type NurseryJSON struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Address   string `json:"address,omitempty"`
+	Website   string `json:"website,omitempty"`
+	Phone     string `json:"phone,omitempty"`
+	Note      string `json:"note,omitempty"`
+	LastVisit string `json:"last_visit,omitempty"`
 }
 
 // VisitJSON is a visit as the API shows it.
 type VisitJSON struct {
-	Nursery string     `json:"nursery"`
-	Day     string     `json:"day"`
-	Latest  bool       `json:"latest"`
-	Lines   []LineJSON `json:"lines"`
+	NurseryID string     `json:"nursery_id"`
+	Nursery   string     `json:"nursery"`
+	Day       string     `json:"day"`
+	Latest    bool       `json:"latest"`
+	Lines     []LineJSON `json:"lines"`
 }
 
 // LineJSON is a line of stock as the API shows it.
@@ -59,9 +74,15 @@ type LineIn struct {
 func (a app) nurseryEndpoints() []Endpoint {
 	return []Endpoint{
 		{
+			Method: http.MethodGet, Path: Prefix + "/nurseries", NeedsKey: true,
+			Summary: "The register of nurseries the stewards buy from, by name: where each is, how to reach it, a note on what to know there, and the day it was last visited. A stock sort's nursery is one of these names; a name not here is added to the register as it is written. Changed only by a steward, on the screens.",
+			Returns: `{"nurseries": [{id, name, address, website, phone, note, last_visit}]}`,
+			handler: a.listNurseries,
+		},
+		{
 			Method: http.MethodGet, Path: Prefix + "/nursery", NeedsKey: true,
 			Summary: "Nursery stock: every visit to a nursery, the most recent first, with what it had. latest is true for each nursery's most recent visit, which is what is on its tables now; species is the plant here a line was matched to, for its light, water and status from GET /api/v1/species/{slug}.",
-			Returns: `{"visits": [{nursery, day, latest, lines: [{id, species, name_on_tag, pot_size, price, count, note, photo_url}]}]}`,
+			Returns: `{"visits": [{nursery_id, nursery, day, latest, lines: [{id, species, name_on_tag, pot_size, price, count, note, photo_url}]}]}`,
 			handler: a.listNursery,
 		},
 		{
@@ -97,14 +118,17 @@ func (a app) listNursery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cutoff := time.Now().Add(-inboxbus.StockKept)
-	seen := map[string]bool{}
+	seen := map[types.ID]bool{}
 	out := []VisitJSON{}
 
 	for _, st := range all {
-		v := VisitJSON{Nursery: st.Visit.Nursery, Day: st.Visit.Day.In(types.Garden).Format(time.DateOnly), Lines: []LineJSON{}}
+		v := VisitJSON{
+			NurseryID: st.Visit.NurseryID.String(), Nursery: st.Visit.Nursery,
+			Day: st.Visit.Day.In(types.Garden).Format(time.DateOnly), Lines: []LineJSON{},
+		}
 
-		if k := strings.ToLower(st.Visit.Nursery); !seen[k] {
-			seen[k], v.Latest = true, true
+		if !seen[st.Visit.NurseryID] {
+			seen[st.Visit.NurseryID], v.Latest = true, true
 		}
 
 		for _, l := range st.Lines {
@@ -115,6 +139,34 @@ func (a app) listNursery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	web.WriteJSON(w, http.StatusOK, map[string]any{"visits": out})
+}
+
+func (a app) listNurseries(w http.ResponseWriter, r *http.Request) {
+	all, err := a.nursery.Register(r.Context())
+	if err != nil {
+		a.fail(w, r, "listing nurseries", err)
+
+		return
+	}
+
+	last, err := a.nursery.LastVisits(r.Context())
+	if err != nil {
+		a.fail(w, r, "reading when the nurseries were visited", err)
+
+		return
+	}
+
+	out := []NurseryJSON{}
+	for _, n := range all {
+		j := NurseryJSON{ID: n.ID.String(), Name: n.Name, Address: n.Address, Website: n.Website, Phone: n.Phone, Note: n.Note}
+		if day, ok := last[n.ID]; ok {
+			j.LastVisit = day.In(types.Garden).Format(time.DateOnly)
+		}
+
+		out = append(out, j)
+	}
+
+	web.WriteJSON(w, http.StatusOK, map[string]any{"nurseries": out})
 }
 
 func (a app) putLine(w http.ResponseWriter, r *http.Request) {

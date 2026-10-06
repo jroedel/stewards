@@ -57,8 +57,9 @@
 
   {{if eq .As "stock"}}
   <label for="nursery">Which nursery</label>
+  <p class="help" id="nursery-help">Choose one from the list, or write a new one's name: it is added to the <a href="/steward/nurseries">nurseries</a>.</p>
   {{with index .Problems "nursery"}}<p class="field-problem">{{.}}</p>{{end}}
-  <input id="nursery" name="nursery" type="text" value="{{.NurseryAt}}" maxlength="100" list="nurseries" required autocomplete="off">
+  <input id="nursery" name="nursery" type="text" value="{{.NurseryAt}}" maxlength="100" list="nurseries" required autocomplete="off" aria-describedby="nursery-help">
   <datalist id="nurseries">{{range .Nurseries}}<option value="{{.}}">{{end}}</datalist>
 
   <label for="name_on_tag">Name on the tag</label>

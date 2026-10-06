@@ -279,6 +279,29 @@ func TestNurseryStockIsSortedReadAndCorrectedThroughTheAPI(t *testing.T) {
 		t.Errorf("correcting: %d\n%s", w.Code, w.Body.String())
 	}
 
+	// The nursery named in the sort is in the register, and the visit
+	// points at it; a second sort under another spelling is the same one.
+	other := s.inboxed(inboxbus.Nursery, types.ID{}, 9)
+	if w := s.sortPhoto(other, map[string]any{"outcome": "stock", "nursery": "natural gardener", "name_on_tag": "Malvaviscus arboreus"}); w.Code != http.StatusOK {
+		t.Fatalf("a second tag: %d\n%s", w.Code, w.Body.String())
+	}
+
+	reg := decode[struct {
+		Nurseries []apiapp.NurseryJSON `json:"nurseries"`
+	}](t, s.api(http.MethodGet, "/api/v1/nurseries", s.key, nil, ""))
+
+	if len(reg.Nurseries) != 1 || reg.Nurseries[0].Name != "Natural Gardener" || reg.Nurseries[0].LastVisit == "" {
+		t.Fatalf("the register: %+v", reg)
+	}
+
+	if list := decode[nurseryList](t, s.api(http.MethodGet, "/api/v1/nursery", s.key, nil, "")); len(list.Visits) != 1 || list.Visits[0].NurseryID != reg.Nurseries[0].ID || len(list.Visits[0].Lines) != 2 {
+		t.Errorf("the stock after a second tag: %+v", list)
+	}
+
+	if w := s.api(http.MethodGet, "/api/v1/nurseries", "", nil, ""); w.Code != http.StatusUnauthorized {
+		t.Errorf("the register without a key: %d", w.Code)
+	}
+
 	// Stock only from a nursery photo.
 	garden := s.inboxed(inboxbus.Property, types.ID{}, 8)
 	if w := s.sortPhoto(garden, map[string]any{"outcome": "stock", "nursery": "Natural Gardener", "name_on_tag": "x"}); w.Code != http.StatusUnprocessableEntity {

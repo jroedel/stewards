@@ -1,6 +1,7 @@
 // Package nurseryapp is nursery stock over HTTP: the stewards' list of what
 // each nursery had when one of them last walked round it, for planning a bed
-// about to be planted, and the screen a line is corrected on.
+// about to be planted, and the screen a line is corrected on; and the
+// register of the nurseries themselves (register.go).
 //
 // Stock arrives by sorting nursery photos in the inbox (inboxapp). What is
 // decided here is only how it reads: the latest visit to each nursery first,
@@ -44,6 +45,13 @@ type Stock interface {
 	All(ctx context.Context) ([]nurserybus.Stock, error)
 	Line(ctx context.Context, id types.ID) (nurserybus.Line, error)
 	Update(ctx context.Context, id types.ID, f nurserybus.Fields) (nurserybus.Line, error)
+
+	Register(ctx context.Context) ([]nurserybus.Nursery, error)
+	Nursery(ctx context.Context, id types.ID) (nurserybus.Nursery, error)
+	CreateNursery(ctx context.Context, f nurserybus.NurseryFields) (nurserybus.Nursery, error)
+	UpdateNursery(ctx context.Context, id types.ID, f nurserybus.NurseryFields) (nurserybus.Nursery, error)
+	DeleteNursery(ctx context.Context, id types.ID) error
+	LastVisits(ctx context.Context) (map[types.ID]time.Time, error)
 }
 
 // SpeciesReader is what it needs from the species rules: the plants a line
@@ -82,6 +90,13 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 		"GET " + IndexPath:                      a.list,
 		"GET " + IndexPath + "/lines/{id}/edit": a.editForm,
 		"POST " + IndexPath + "/lines/{id}":     a.update,
+
+		"GET " + RegisterPath:                   a.register,
+		"GET " + RegisterPath + "/new":          a.newNursery,
+		"POST " + RegisterPath:                  a.createNursery,
+		"GET " + RegisterPath + "/{id}/edit":    a.editNursery,
+		"POST " + RegisterPath + "/{id}":        a.updateNursery,
+		"POST " + RegisterPath + "/{id}/delete": a.removeNursery,
 	} {
 		mux.Handle(pattern, guard(h))
 	}
@@ -102,9 +117,10 @@ type lineRow struct {
 }
 
 type visitRow struct {
-	Nursery string
-	Day     string
-	Lines   []lineRow
+	NurseryID string // its entry in the register
+	Nursery   string
+	Day       string
+	Lines     []lineRow
 }
 
 type listView struct {
@@ -134,20 +150,20 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cutoff := a.now().Add(-keptFor)
-	seen := map[string]bool{}
+	seen := map[types.ID]bool{}
 
 	// All is the most recent visit first, so the first of each nursery is
 	// its latest.
 	for _, st := range all {
-		row := visitRow{Nursery: st.Visit.Nursery, Day: st.Visit.Day.In(types.Garden).Format("Monday 2 January 2006")}
+		row := visitRow{NurseryID: st.Visit.NurseryID.String(), Nursery: st.Visit.Nursery, Day: lastVisitWords(st.Visit.Day)}
 		withPhotos := st.Visit.Day.After(cutoff)
 
 		for _, l := range st.Lines {
 			row.Lines = append(row.Lines, rowOf(l, plants, withPhotos))
 		}
 
-		if k := strings.ToLower(st.Visit.Nursery); !seen[k] {
-			seen[k] = true
+		if !seen[st.Visit.NurseryID] {
+			seen[st.Visit.NurseryID] = true
 			v.Current = append(v.Current, row)
 		} else {
 			v.Earlier = append(v.Earlier, row)
