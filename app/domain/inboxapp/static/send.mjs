@@ -41,9 +41,25 @@ import "./share.mjs";
   const label = button.textContent;
 
   // How long to wait before trying a photo again, each time it fails for
-  // want of a signal or a server: about twenty seconds in all, which is a
-  // phone walking out from under the canopy, and then it stops and says so.
-  const waits = [2000, 5000, 12000];
+  // want of a signal or a server: about five minutes in all, and then it
+  // stops and says so.
+  //
+  // It was twenty seconds, sized for a phone walking out from under the
+  // canopy. The first share from the photos app met something else: a weak
+  // signal whose uploads broke off ten and twenty seconds in, for three
+  // minutes, after which the screen gave up -- and the steward pressed Send
+  // a minute later and all seven went through. Five minutes outlasts a
+  // signal like that, and the supervisor's restart of the app as well.
+  const waits = [2000, 5000, 10000, 20000, 30000, 30000, 30000, 30000, 30000, 30000, 30000, 30000];
+
+  // The photos this page has already had an answer for, kept or there
+  // already, so that pressing Send again after a failure sends only the ones
+  // that did not arrive. Sending one again would be safe -- the inbox knows
+  // it -- but not free: on that same signal the first photo went up again in
+  // full, two minutes, to be told it was there. By the File itself, which is
+  // the same object for as long as it sits in the input; choosing the photos
+  // again makes new ones, and those are sent and recognised as before.
+  const delivered = new WeakSet();
 
   // A little longer than the server gives one photo to arrive, so a request
   // that has stalled for good is given up on rather than waited for forever.
@@ -64,18 +80,20 @@ import "./share.mjs";
       return;
     }
 
-    const files = Array.from(input.files || []);
-    if (files.length === 0) {
+    const chosen = Array.from(input.files || []);
+    if (chosen.length === 0) {
       return; // the browser's own "required" says what to do
     }
 
     ev.preventDefault();
     clear(result);
 
-    if (files.length > max) {
-      say(result, "problem", `That is ${files.length} photos. Send up to ${max} at a time.`);
+    if (chosen.length > max) {
+      say(result, "problem", `That is ${chosen.length} photos. Send up to ${max} at a time.`);
       return;
     }
+
+    const files = chosen.filter((f) => !delivered.has(f));
 
     // The batch's where, place and note, read before the form is locked:
     // a disabled field is left out of a FormData.
@@ -85,7 +103,7 @@ import "./share.mjs";
     lock(true);
 
     let kept = 0;
-    let already = 0;
+    let already = chosen.length - files.length;
     const refused = [];
     let stop = null;
 
@@ -96,8 +114,10 @@ import "./share.mjs";
 
       if (answer.outcome === "kept") {
         kept++;
+        delivered.add(files[i]);
       } else if (answer.outcome === "already") {
         already++;
+        delivered.add(files[i]);
       } else if (answer.photo) {
         refused.push({ name: files[i].name, problem: answer.photo });
       } else {
@@ -183,13 +203,32 @@ import "./share.mjs";
       if (attempt >= waits.length) {
         return {
           stop: `The connection is gone. Press Send again when you have a signal: ` +
-            `the photos already sent are in the inbox and will not be added twice.`,
+            `the photos already sent are in the inbox, and only the rest will be sent.`,
         };
       }
 
-      progress(i, n, `The signal dropped on ${i + 1} of ${n}. Trying again…`);
-      await new Promise((done) => setTimeout(done, waits[attempt]));
+      progress(i, n, attempt < 3
+        ? `The signal dropped on ${i + 1} of ${n}. Trying again…`
+        : `The signal keeps dropping on ${i + 1} of ${n}. Still trying; keep this page open…`);
+      await pause(waits[attempt]);
     }
+  }
+
+  // pause waits ms, or less when the phone says it is back online after
+  // saying it was not: there is no point waiting out thirty seconds of a
+  // signal that has already come back.
+  function pause(ms) {
+    return new Promise((done) => {
+      const back = () => {
+        clearTimeout(timer);
+        done();
+      };
+      const timer = setTimeout(() => {
+        window.removeEventListener("online", back);
+        done();
+      }, ms);
+      window.addEventListener("online", back, { once: true });
+    });
   }
 
   // read turns an answer into one of send's, or null for "try again".

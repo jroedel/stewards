@@ -300,6 +300,15 @@ async function openPage(cdp) {
       await send("DOM.setFileInputFiles", { nodeId, files });
     },
 
+    // on calls fn with the params of every event of this method the page
+    // sends: Fetch.requestPaused, for a test that stands between the page
+    // and the server.
+    on(method, fn) {
+      cdp.listen((msg) => {
+        if (msg.sessionId === sessionId && msg.method === method) fn(msg.params);
+      });
+    },
+
     async setCookie(cookie) {
       await send("Network.setCookie", cookie);
     },
