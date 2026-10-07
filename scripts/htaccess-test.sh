@@ -27,8 +27,10 @@ RENDERED="$(sed 's/__APP_PORT__/8451/' "$TEMPLATE")"
 
 has() { printf '%s\n' "$RENDERED" | grep -Eq "$1"; }
 
-# The line number a rule lands on, for the ordering assertions.
-where() { printf '%s\n' "$RENDERED" | grep -nE "$1" | head -1 | cut -d: -f1; }
+# The line number a rule lands on, for the ordering assertions; empty when
+# there is no such rule, which the check using it then reports, rather than
+# set -e ending the script before it says which.
+where() { printf '%s\n' "$RENDERED" | grep -nE "$1" | head -1 | cut -d: -f1 || true; }
 
 echo "the front end"
 
@@ -49,7 +51,8 @@ check "the port is the binary's default" \
 echo
 echo "order, which is the whole of what a rewrite file is"
 
-acme="$(where 'well-known')"
+acme="$(where '^RewriteRule \^\\\.well-known/')"
+oauth="$(where '^RewriteCond %\{REQUEST_URI\} !\^/\\\.well-known/oauth-')"
 https="$(where 'https://%\{HTTP_HOST\}')"
 index="$(where '\^index')"
 catchall="$(where '\^\(\.\*\)\$ http://127')"
@@ -59,6 +62,14 @@ before() { [ -n "$1" ] && [ -n "$2" ] && [ "$1" -lt "$2" ]; }
 # ACME first. A certificate that cannot renew takes the site down months later,
 # for a reason nobody connects to this file.
 check "the ACME path is exempted before anything else rewrites" before "$acme" "$catchall"
+
+# The one exception to it: the OAuth discovery documents go to the app, or
+# Claude cannot find where to sign in. A RewriteCond binds to the rule right
+# after it, so it must be the line before the ACME rule and nowhere else.
+check "the OAuth discovery documents are the one exception, on the ACME rule itself" \
+	bash -c '[ -n "$0" ] && [ "$0" -eq $(( $1 - 1 )) ]' "$oauth" "$acme"
+check "and the exception names them exactly" \
+	has '^RewriteCond %\{REQUEST_URI\} !\^/\\\.well-known/oauth-\(authorization-server\|protected-resource\)\(/\|\$\)$'
 
 check "the index rule comes before the catch-all that would swallow it" before "$index" "$catchall"
 
