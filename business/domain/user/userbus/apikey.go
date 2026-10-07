@@ -59,6 +59,10 @@ type APIKey struct {
 	CreatedAt  time.Time
 	ExpiresAt  time.Time
 	LastUsedAt time.Time // zero means never
+
+	// Client is the program the key was given to through OAuth, as its
+	// client_id (oauth.go); "" for a key a steward made on the keys screen.
+	Client string
 }
 
 // CreateAPIKey makes a key for a steward and returns it with the secret, the

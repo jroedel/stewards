@@ -290,3 +290,117 @@ func TestAnUpdateKeepsTheAddressAndEndingSessionsIsPerAccount(t *testing.T) {
 		t.Errorf("updating nobody: %v, want ErrNotFound", err)
 	}
 }
+
+// The account tables as they stood before api_keys had a client: what the
+// server has now. Written out rather than derived from Init, so that changing
+// Init cannot change what this test starts from.
+const beforeClient = `
+CREATE TABLE users (
+    id          TEXT    PRIMARY KEY,
+    email       TEXT    NOT NULL UNIQUE,
+    name        TEXT    NOT NULL DEFAULT '',
+    enabled     INTEGER NOT NULL,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE api_keys (
+    id            TEXT    PRIMARY KEY,
+    user_id       TEXT    NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    name          TEXT    NOT NULL,
+    hash          BLOB    NOT NULL,
+    created_at    INTEGER NOT NULL,
+    expires_at    INTEGER NOT NULL,
+    last_used_at  INTEGER
+) STRICT;
+
+CREATE INDEX api_keys_user ON api_keys (user_id, expires_at);
+
+INSERT INTO users (id, email, enabled, created_at, updated_at)
+VALUES ('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'steward@example.org', 1, 1, 1);
+
+INSERT INTO api_keys (id, user_id, name, hash, created_at, expires_at)
+VALUES ('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'laptop', x'00', 1, 99999999999999);
+`
+
+func TestInitBringsTheKeysTableForward(t *testing.T) {
+	db, err := sqldb.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if _, err := db.ExecContext(t.Context(), beforeClient); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 2 { // and at the next startup
+		if err := userdb.Init(t.Context(), db); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := sqldb.CheckSchema(t.Context(), db, userdb.Expected); err != nil {
+		t.Fatal(err)
+	}
+
+	id, _ := types.ParseID("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+
+	k, err := userdb.NewStore(db).APIKeyByID(t.Context(), id)
+	if err != nil || k.Name != "laptop" || k.Client != "" {
+		t.Errorf("the key from before is %+v, %v", k, err)
+	}
+}
+
+// Two programs trading their codes at once: one claim each, and a code
+// spent by one is spent for the other.
+func TestAGrantIsSpentOnce(t *testing.T) {
+	_, s := open(t)
+	u := steward(t, s, "steward@example.org")
+
+	g := userbus.Grant{
+		ID: types.NewID(), UserID: u.ID, Hash: []byte("hash"),
+		ClientID: "https://claude.ai/c", ClientName: "Claude", RedirectURI: "https://claude.ai/cb", Challenge: "x",
+		CreatedAt: now, ExpiresAt: now.Add(userbus.GrantLife),
+	}
+
+	if made, err := s.CreateGrant(t.Context(), g, 5); err != nil || !made {
+		t.Fatalf("CreateGrant: %v %v", made, err)
+	}
+
+	got, err := s.GrantByID(t.Context(), g.ID)
+	if err != nil || got.ClientID != g.ClientID || got.RedirectURI != g.RedirectURI || !got.ExpiresAt.Equal(g.ExpiresAt) || !got.UsedAt.IsZero() {
+		t.Fatalf("GrantByID: %+v %v", got, err)
+	}
+
+	var (
+		wg   sync.WaitGroup
+		mu   sync.Mutex
+		wins int
+	)
+
+	for range 4 {
+		wg.Go(func() {
+			ok, err := s.UseGrant(t.Context(), g.ID, now)
+			if err != nil {
+				t.Error(err)
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			if ok {
+				wins++
+			}
+		})
+	}
+	wg.Wait()
+
+	if wins != 1 {
+		t.Errorf("%d claims of one code", wins)
+	}
+
+	if _, err := s.GrantByID(t.Context(), types.NewID()); !errors.Is(err, userbus.ErrNotFound) {
+		t.Errorf("a missing grant: %v", err)
+	}
+}
