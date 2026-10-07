@@ -668,7 +668,12 @@ input[type="file"] { display: block; width: 100%; min-height: 48px; padding: 10p
 .chips, .tiles, .pills { display: flex; flex-wrap: wrap; gap: 8px; }
 .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .pills { margin-top: 8px; }
-.form .chip, .form .tile, .form .pill { position: relative; margin: 0; }
+/* Relative everywhere, not only in a .form: the input below is stretched
+   over its nearest positioned ancestor, and in a form without the class
+   that was the page's first screen, so every hidden box covered all of it
+   and a tap anywhere there toggled the last one on the page. */
+.chip, .tile, .pill { position: relative; }
+.form .chip, .form .tile, .form .pill { margin: 0; }
 .chip input, .tile input, .pill input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .chip span, .tile span, .pill span {
   display: flex; align-items: center; justify-content: center; text-align: center;
@@ -720,6 +725,14 @@ input[type="file"] { display: block; width: 100%; min-height: 48px; padding: 10p
 .together-bar { position: sticky; bottom: 12px; z-index: 1; }
 .together-bar .button { width: 100%; }
 .together-bar .button::after { content: " (" counter(chosen) ")"; white-space: pre; }
+
+/* Checking many at once (photoapp's many.go) draws each tick the same way,
+   beside what is said about the photo rather than in a grid. A list
+   arrives ticked, so what needs to stand out is the one left out: it fades,
+   and an empty ring sits where the tick was, saying a tap brings it back. */
+.many-pick { flex: none; width: 112px; }
+.many-pick input:not(:checked) ~ img { opacity: 0.4; }
+.many-pick input:not(:checked) ~ .pick-badge { display: block; border: 2px solid var(--sf-blue); background: var(--sf-white); }
 
 /* A list of plants searched by typing (find.mjs): a box with a magnifying
    glass, and under it, in the page rather than floating over it, the plants
