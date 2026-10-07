@@ -34,19 +34,19 @@ func Short(id string) string {
 
 // Say writes a piece of copy in the page's language.
 //
-// When the page is in Spanish and the Spanish has not been written yet, the
-// English is shown in its place wrapped in lang="en", so a screen reader
-// switches voice rather than reading English with Spanish pronunciation
-// (design.md, "Accessibility"). Translating on the fly instead would put a
-// translation nobody can check on the screen; the translation memory
-// (translationbus) holds the ones a steward can.
+// When that language's half has not been written or translated yet, the
+// other is shown in its place wrapped in its lang=, so a screen reader
+// switches voice rather than reading English with Spanish pronunciation, or
+// the other way round (design.md, "Accessibility"). Translating on the fly
+// instead would put a translation nobody can check on the screen; the
+// translation memory (translationbus) holds the ones a steward can.
 //
 // The text is escaped here, since the result is trusted HTML.
 func Say(l types.Lang, t types.Text) template.HTML {
 	s := template.HTMLEscapeString(t.In(l))
 
-	if l == types.Spanish && !t.HasSpanish() && t.EN != "" {
-		return template.HTML(`<span lang="en">` + s + `</span>`)
+	if shown := t.Shown(l); shown != l {
+		return template.HTML(`<span lang="` + string(shown) + `">` + s + `</span>`)
 	}
 
 	return template.HTML(s)

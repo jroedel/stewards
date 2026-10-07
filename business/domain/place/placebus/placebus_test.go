@@ -107,11 +107,17 @@ func TestTwoPlacesCannotShareAnAddress(t *testing.T) {
 	invalid(t, err, "slug")
 }
 
-func TestAPlaceNeedsAnEnglishName(t *testing.T) {
+// A name, in either language: whoever adds a place writes in the language
+// they think in, and Claude translates it.
+func TestAPlaceNeedsAName(t *testing.T) {
 	b := business(t)
 
-	_, err := b.Create(t.Context(), placebus.Fields{Slug: "x", Name: types.Text{ES: "Jardín"}})
+	_, err := b.Create(t.Context(), placebus.Fields{Slug: "x"})
 	invalid(t, err, "name")
+
+	if p, err := b.Create(t.Context(), placebus.Fields{Slug: "jardin", Name: types.Text{ES: "Jardín de los colibríes"}}); err != nil || p.Name.In(types.English) != "Jardín de los colibríes" {
+		t.Errorf("a place named in Spanish: %+v, %v", p, err)
+	}
 
 	_, err = b.Create(t.Context(), named("x", strings.Repeat("n", 61)))
 	invalid(t, err, "name")

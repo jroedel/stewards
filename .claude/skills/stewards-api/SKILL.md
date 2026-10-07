@@ -128,8 +128,9 @@ photo already kept answers `"duplicate": true`.
   URL. Do not cite a source you did not read.
 - `status`: `native`, `cultivar` (a native-derived cultivar or hybrid),
   `adapted`, `edible`, `invasive`.
-- English in `en`. Leave every `es` out: the Spanish is made afterwards, as
-  a translation (see Translating).
+- Words in the language the steward gave them: `en` for English or `es` for
+  Spanish, one of the two. The other is made afterwards, as a translation
+  (see Translating); never send both.
 - Notes are for someone standing in the sun with dirty hands: short, plain,
   practical.
 
@@ -154,7 +155,7 @@ its `spot` on the map -- so read it before saying anything about a place.
   units, which the list's `map` gives) only when the person has said where it
   is relative to places already on it, and tell them to check it on the map
   screen. A place inside another is never on the map.
-- English in `en`, as for plants; the Spanish is made as a translation.
+- One language per field, as for plants; the other is made as a translation.
 - Removing a place is the person's, on its screen.
 
 ## Photos

@@ -26,7 +26,7 @@ func TestADayIsWrittenInTheGardensTime(t *testing.T) {
 		{utc(14, 0), utc(17, 0), "9:00 am – noon"},
 		{utc(17, 0), utc(20, 0), "noon – 3:00 pm"},
 	} {
-		if got := page.Hours(tc.starts, tc.ends); got.EN != tc.want || got.HasSpanish() {
+		if got := page.Hours(tc.starts, tc.ends); got.EN != tc.want || got.ES != "" {
 			t.Errorf("Hours %+v, want %q in English only", got, tc.want)
 		}
 	}

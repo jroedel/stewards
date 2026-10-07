@@ -7,16 +7,12 @@
 {{if .ID}}<a class="onward" href="/steward/places/{{.ID}}/plants"><span>Plants here <span class="quiet">protect, pull, planned</span></span><span aria-hidden="true">›</span></a>{{end}}
 
 {{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below and press Save again.</p>{{end}}
+<p class="help">Write in English or in Spanish, whichever you think in. Claude translates it into the other.</p>
 
 <form class="card form" method="post" action="{{if .ID}}/steward/places/{{.ID}}{{else}}/steward/places{{end}}">
-  <fieldset>
-    <legend>Name</legend>
-    {{template "field-problem" (index .Problems "name")}}
-    <label for="name_en">In English</label>
-    <input id="name_en" name="name_en" type="text" value="{{.NameEN}}" required maxlength="60">
-    <label for="name_es">En español <span class="optional">optional</span></label>
-    <input id="name_es" name="name_es" type="text" value="{{.NameES}}" lang="es" maxlength="60">
-  </fieldset>
+  <label for="name">Name</label>
+  {{template "field-problem" (index .Problems "name")}}
+  <input id="name" name="name" type="text" value="{{.Name.Value}}" lang="{{.Name.Lang}}" required maxlength="60">
 
   {{if .ID}}
   <p class="help">Its address is <strong>/places/{{.Slug}}</strong>. It cannot change, because it may already be printed on a stake or a guide.</p>
@@ -41,31 +37,16 @@
   <p class="help">This place has smaller places inside it, so it stands on its own.</p>
   {{end}}
 
-  <fieldset>
-    <legend>What it is for</legend>
-    <label for="purpose_en">In English</label>
-    <textarea id="purpose_en" name="purpose_en" rows="2">{{.PurposeEN}}</textarea>
-    <label for="purpose_es">En español <span class="optional">optional</span></label>
-    <textarea id="purpose_es" name="purpose_es" rows="2" lang="es">{{.PurposeES}}</textarea>
-  </fieldset>
+  <label for="purpose">What it is for</label>
+  <textarea id="purpose" name="purpose" rows="2" lang="{{.Purpose.Lang}}">{{.Purpose.Value}}</textarea>
 
-  <fieldset>
-    <legend>Conditions</legend>
-    <p class="help">Sun, shade, slope, soil, wet or dry: what a planter needs to know.</p>
-    <label for="conditions_en">In English</label>
-    <textarea id="conditions_en" name="conditions_en" rows="3">{{.ConditionsEN}}</textarea>
-    <label for="conditions_es">En español <span class="optional">optional</span></label>
-    <textarea id="conditions_es" name="conditions_es" rows="3" lang="es">{{.ConditionsES}}</textarea>
-  </fieldset>
+  <label for="conditions">Conditions</label>
+  <p class="help" id="conditions-help">Sun, shade, slope, soil, wet or dry: what a planter needs to know.</p>
+  <textarea id="conditions" name="conditions" rows="3" lang="{{.Conditions.Lang}}" aria-describedby="conditions-help">{{.Conditions.Value}}</textarea>
 
-  <fieldset>
-    <legend>Photo point</legend>
-    <p class="help">Where to stand and which way to face for this place's photo each season.</p>
-    <label for="photo_point_en">In English</label>
-    <textarea id="photo_point_en" name="photo_point_en" rows="2">{{.PhotoPointEN}}</textarea>
-    <label for="photo_point_es">En español <span class="optional">optional</span></label>
-    <textarea id="photo_point_es" name="photo_point_es" rows="2" lang="es">{{.PhotoPointES}}</textarea>
-  </fieldset>
+  <label for="photo_point">Photo point</label>
+  <p class="help" id="photo-point-help">Where to stand and which way to face for this place's photo each season.</p>
+  <textarea id="photo_point" name="photo_point" rows="2" lang="{{.PhotoPoint.Lang}}" aria-describedby="photo-point-help">{{.PhotoPoint.Value}}</textarea>
 
   <label for="trail_anchor">Trail station</label>
   {{template "field-problem" (index .Problems "trail_anchor")}}

@@ -22,7 +22,7 @@
   {{if .Now}}<p class="day-tag">{{say $l $.Data.Copy.Now}}</p>{{else if .Today}}<p class="day-tag">{{say $l $.Data.Copy.Today}}</p>{{end}}
   <p class="day-when">{{say $l .Date}}<span class="day-hours">{{say $l .Hours}}</span></p>
   <p class="day-title">{{say $l .Title}}</p>
-  {{if .Details.EN}}<p class="day-details prose">{{say $l .Details}}</p>{{end}}
+  {{if .Details.Written}}<p class="day-details prose">{{say $l .Details}}</p>{{end}}
 </li>
 {{end}}</ul>
 {{else}}

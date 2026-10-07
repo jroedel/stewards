@@ -6,7 +6,7 @@
 <h1>Sign in</h1>
 <p class="lead">For the stewards who edit places and plants. Volunteers don't need to sign in: everything you need is on the <a href="/places">places list</a>.</p>
 
-{{if .Problem.EN}}<p class="problem" role="alert">{{say $l .Problem}}</p>{{end}}
+{{if .Problem.Written}}<p class="problem" role="alert">{{say $l .Problem}}</p>{{end}}
 
 <form class="card form" method="post" action="/sign-in">
   <input type="hidden" name="next" value="{{.Next}}">

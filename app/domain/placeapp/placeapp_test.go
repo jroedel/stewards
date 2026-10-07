@@ -21,6 +21,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/domain/species/stores/speciesdb"
+	"github.com/jroedel/stewards/business/domain/translation/stores/translationdb"
+	"github.com/jroedel/stewards/business/domain/translation/translationbus"
 	"github.com/jroedel/stewards/business/domain/user/stores/userdb"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
 	"github.com/jroedel/stewards/business/domain/workday/stores/workdaydb"
@@ -35,6 +37,7 @@ type site struct {
 	h       http.Handler
 	places  *placebus.Business
 	species *speciesbus.Business
+	memory  *translationbus.Business
 	cookie  *http.Cookie
 }
 
@@ -65,26 +68,40 @@ func serveAt(t *testing.T, baseURL string) *site {
 		func() error { return photodb.Init(t.Context(), db) },
 		func() error { return userdb.Init(t.Context(), db) },
 		func() error { return workdaydb.Init(t.Context(), db) },
+		func() error { return translationdb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
 			t.Fatal(err)
 		}
 	}
 
+	// The translation memory as main makes it: a place's Spanish is its
+	// words' translation, as Claude would send it (translate, below).
+	memory, err := translationbus.NewBusiness(t.Context(), translationdb.NewStore(db), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	log := slog.New(slog.DiscardHandler)
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
 	s := &site{
 		t:       t,
-		places:  placebus.NewBusiness(placedb.NewStore(db), nil, nil),
-		species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil, nil),
+		places:  placebus.NewBusiness(placedb.NewStore(db), memory, nil),
+		species: speciesbus.NewBusiness(speciesdb.NewStore(db), memory, nil),
+		memory:  memory,
 	}
+
+	listings := listingbus.NewBusiness(listingdb.NewStore(db), memory, nil)
+	workdays := workdaybus.NewBusiness(workdaydb.NewStore(db), memory, nil)
+	memory.ReadFrom(s.places, s.species, listings, workdays)
 
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
 		Places: s.places, Users: users,
-		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil, nil),
-		Species:  s.species, Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil, nil), Photos: photos(t, db),
-		BaseURL: baseURL, Mail: &mail.Recorder{},
+		Workdays: workdays,
+		Species:  s.species, Listings: listings, Photos: photos(t, db),
+		Translations: memory,
+		BaseURL:      baseURL, Mail: &mail.Recorder{},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -127,6 +144,33 @@ func (s *site) do(method, path string, form url.Values, signedIn bool) *httptest
 	return w
 }
 
+// getIn and postIn are a steward's, signed in, on a phone set to lang.
+func (s *site) getIn(path, lang string) *httptest.ResponseRecorder {
+	return s.doIn(http.MethodGet, path, lang, nil)
+}
+
+func (s *site) postIn(path, lang string, form url.Values) *httptest.ResponseRecorder {
+	return s.doIn(http.MethodPost, path, lang, form)
+}
+
+func (s *site) doIn(method, path, lang string, form url.Values) *httptest.ResponseRecorder {
+	s.t.Helper()
+
+	r := httptest.NewRequest(method, path, strings.NewReader(form.Encode()))
+	if form != nil {
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+
+	r.Header.Set("Sec-Fetch-Site", "same-origin")
+	r.Header.Set("Accept-Language", lang)
+	r.AddCookie(s.cookie)
+
+	w := httptest.NewRecorder()
+	s.h.ServeHTTP(w, r)
+
+	return w
+}
+
 // getAs reads a page signed out, in a language.
 func (s *site) getAs(path, lang string) *httptest.ResponseRecorder {
 	s.t.Helper()
@@ -152,12 +196,32 @@ func (s *site) post(path string, form url.Values) *httptest.ResponseRecorder {
 
 func rainGarden() url.Values {
 	return url.Values{
-		"slug":          {"rain-garden"},
-		"name_en":       {"Rain garden"},
-		"name_es":       {"Jardín de lluvia"},
-		"purpose_en":    {"The backdrop of the gathering space."},
-		"conditions_en": {"Full sun, wet after storms."},
-		"sort":          {"10"},
+		"slug":       {"rain-garden"},
+		"name":       {"Rain garden"},
+		"purpose":    {"The backdrop of the gathering space."},
+		"conditions": {"Full sun, wet after storms."},
+		"sort":       {"10"},
+	}
+}
+
+// translate gives each English its Spanish, as Claude would through the API.
+func (s *site) translate(pairs ...string) {
+	s.t.Helper()
+
+	var uploads []translationbus.Upload
+	for i := 0; i+1 < len(pairs); i += 2 {
+		uploads = append(uploads, translationbus.Upload{Key: translationbus.Key(pairs[i]), From: types.English, Translated: pairs[i+1]})
+	}
+
+	results, err := s.memory.Translate(s.t.Context(), translationbus.ByClaude, uploads)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+
+	for _, r := range results {
+		if r.Outcome == translationbus.Refused {
+			s.t.Fatalf("translating: %+v", r)
+		}
 	}
 }
 
@@ -198,7 +262,7 @@ func TestAStewardAddsTheRainGardenAndItsBands(t *testing.T) {
 	}
 
 	garden := s.place("rain-garden")
-	if garden.Name.ES != "Jardín de lluvia" || garden.Sort != 10 || garden.Conditions.EN != "Full sun, wet after storms." {
+	if garden.Name != (types.Text{EN: "Rain garden"}) || garden.Sort != 10 || garden.Conditions.EN != "Full sun, wet after storms." {
 		t.Errorf("saved as %+v", garden)
 	}
 
@@ -210,7 +274,7 @@ func TestAStewardAddsTheRainGardenAndItsBands(t *testing.T) {
 
 	for i, band := range []string{"inflow", "middle", "wall-edge"} {
 		w := s.post("/steward/places", url.Values{
-			"slug": {"rain-garden-" + band}, "name_en": {strings.ToUpper(band[:1]) + band[1:] + " band"},
+			"slug": {"rain-garden-" + band}, "name": {strings.ToUpper(band[:1]) + band[1:] + " band"},
 			"parent": {garden.ID.String()}, "sort": {string(rune('1' + i))},
 		})
 		if w.Code != http.StatusSeeOther {
@@ -254,7 +318,7 @@ func TestARefusedSaveKeepsWhatWasTyped(t *testing.T) {
 
 	for _, want := range []string{
 		`<p class="field-problem">Use only lower-case letters, digits and hyphens, such as rain-garden.</p>`,
-		`value="Rain Garden!"`, `value="Jardín de lluvia"`, "Full sun, wet after storms.", `value="10"`,
+		`value="Rain Garden!"`, `value="Rain garden"`, "Full sun, wet after storms.", `value="10"`,
 		"Nothing was saved yet.",
 	} {
 		if !strings.Contains(body, want) {
@@ -285,7 +349,7 @@ func TestEditingKeepsTheAddress(t *testing.T) {
 	}
 
 	changed := rainGarden()
-	changed.Set("name_en", "The rain garden")
+	changed.Set("name", "The rain garden")
 	changed.Set("slug", "somewhere-else")
 
 	if w := s.post("/steward/places/"+garden.ID.String(), changed); w.Code != http.StatusSeeOther {
@@ -303,8 +367,8 @@ func TestAPlaceWithBandsStandsOnItsOwn(t *testing.T) {
 	s := serve(t)
 	s.post("/steward/places", rainGarden())
 	garden := s.place("rain-garden")
-	s.post("/steward/places", url.Values{"slug": {"inflow"}, "name_en": {"Inflow band"}, "parent": {garden.ID.String()}})
-	s.post("/steward/places", url.Values{"slug": {"switchbacks"}, "name_en": {"Switchbacks"}})
+	s.post("/steward/places", url.Values{"slug": {"inflow"}, "name": {"Inflow band"}, "parent": {garden.ID.String()}})
+	s.post("/steward/places", url.Values{"slug": {"switchbacks"}, "name": {"Switchbacks"}})
 
 	form := s.get("/steward/places/" + garden.ID.String() + "/edit").Body.String()
 	if strings.Contains(form, `<select id="parent"`) || !strings.Contains(form, "so it stands on its own") {
@@ -323,7 +387,7 @@ func TestRemovingAPlaceNeedsTheBoxTicked(t *testing.T) {
 	s := serve(t)
 	s.post("/steward/places", rainGarden())
 	garden := s.place("rain-garden")
-	s.post("/steward/places", url.Values{"slug": {"inflow"}, "name_en": {"Inflow band"}, "parent": {garden.ID.String()}})
+	s.post("/steward/places", url.Values{"slug": {"inflow"}, "name": {"Inflow band"}, "parent": {garden.ID.String()}})
 	band := s.place("inflow")
 
 	if w := s.post("/steward/places/"+band.ID.String()+"/delete", url.Values{}); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "Tick the box") {
@@ -412,7 +476,7 @@ func TestAStewardPutsAPlaceOnTheMap(t *testing.T) {
 	}
 
 	// A band has no map on its screen, and a tap sent anyway is refused.
-	band := url.Values{"slug": {"rain-garden-inflow"}, "name_en": {"Inflow"}, "parent": {garden.ID.String()}}
+	band := url.Values{"slug": {"rain-garden-inflow"}, "name": {"Inflow"}, "parent": {garden.ID.String()}}
 	s.post("/steward/places", band)
 	inflow := s.place("rain-garden-inflow")
 
@@ -437,4 +501,61 @@ func photos(t *testing.T, db *sql.DB) *photobus.Business {
 	}
 
 	return photobus.NewBusiness(photodb.NewStore(db), files, nil)
+}
+
+// The form has one box per field, in the page's language. On the Spanish page
+// it shows Claude's Spanish, or the English while that waits; left as it was,
+// the place keeps its English; written anew, the Spanish is the original, and
+// the English page shows it marked as Spanish until Claude translates it.
+func TestAStewardWritesInSpanish(t *testing.T) {
+	s := serve(t)
+	s.post("/steward/places", rainGarden())
+	s.translate("Rain garden", "Jardín de lluvia")
+
+	garden := s.place("rain-garden")
+	edit := "/steward/places/" + garden.ID.String()
+
+	form := s.getIn(edit+"/edit", "es").Body.String()
+	for _, want := range []string{
+		`value="Jardín de lluvia" lang="es"`,
+		`lang="en">The backdrop of the gathering space.</textarea>`,
+		"Write in English or in Spanish",
+	} {
+		if !strings.Contains(form, want) {
+			t.Errorf("the Spanish form does not contain %q", want)
+		}
+	}
+
+	// Saved as shown, with only the conditions written anew in Spanish.
+	w := s.postIn(edit, "es", url.Values{
+		"name": {"Jardín de lluvia"}, "purpose": {"The backdrop of the gathering space."},
+		"conditions": {"Pleno sol, se moja después de las tormentas."}, "sort": {"10"},
+	})
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("saving in Spanish: %d\n%s", w.Code, w.Body)
+	}
+
+	got, err := s.places.ByID(t.Context(), garden.ID)
+	switch {
+	case err != nil:
+		t.Fatal(err)
+	case got.Name != (types.Text{EN: "Rain garden", ES: "Jardín de lluvia"}):
+		t.Errorf("the name became %+v", got.Name)
+	case got.Purpose != (types.Text{EN: "The backdrop of the gathering space."}):
+		t.Errorf("the purpose became %+v", got.Purpose)
+	case got.Conditions != (types.Text{ES: "Pleno sol, se moja después de las tormentas."}):
+		t.Errorf("the conditions became %+v", got.Conditions)
+	}
+
+	// On the English card, the new Spanish is shown marked as Spanish, and
+	// it waits for Claude, after the purpose, which was never translated.
+	card := s.getAs("/places/rain-garden", "en").Body.String()
+	if !strings.Contains(card, `<span lang="es">Pleno sol, se moja después de las tormentas.</span>`) {
+		t.Error("the English card does not show the Spanish conditions, marked")
+	}
+
+	waiting, err := s.memory.Waiting(t.Context(), 10)
+	if err != nil || waiting.Remaining != 2 || waiting.Pending[1].Guess != types.Spanish || waiting.Pending[1].Source != got.Conditions.ES {
+		t.Errorf("waiting: %+v, %v", waiting, err)
+	}
 }

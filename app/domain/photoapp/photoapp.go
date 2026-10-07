@@ -360,7 +360,7 @@ func (a app) showList(w http.ResponseWriter, r *http.Request, status int, sp spe
 		return
 	}
 
-	v.SpeciesID, v.Name, v.Slug = sp.ID.String(), sp.Common.EN, sp.Slug
+	v.SpeciesID, v.Name, v.Slug = sp.ID.String(), sp.Common.In(types.English), sp.Slug
 	v.Fields = fieldsOf(f, places)
 	v.Seasons = seasonsOf(photobus.Flowering(photos, false), names)
 	v.Kinds = len(photobus.Kinds)
@@ -560,7 +560,7 @@ func (a app) showEdit(w http.ResponseWriter, r *http.Request, status int, p phot
 		return
 	}
 
-	v.ID, v.SpeciesID, v.Name = p.ID.String(), sp.ID.String(), sp.Common.EN
+	v.ID, v.SpeciesID, v.Name = p.ID.String(), sp.ID.String(), sp.Common.In(types.English)
 	v.Kind = p.Kind.Label()
 	v.Width, v.Height = p.Small.Width, p.Small.Height
 	v.Original = fmt.Sprintf("%d × %d kept for the cards. Zoomed in, it is the photo as it was sent, with where it was taken and the camera's details taken out.", p.Large.Width, p.Large.Height)
@@ -681,9 +681,9 @@ func (a app) placeOptions(ctx context.Context, chosen types.ID) ([]option, map[t
 	opts := []option{{Value: "", Label: "Not said", Selected: chosen.Zero()}}
 
 	for _, p := range all {
-		name := p.Name.EN
+		name := p.Name.In(types.English)
 		if parent, ok := byID[p.ParentID]; ok && !p.TopLevel() {
-			name = parent.Name.EN + ": " + name
+			name = parent.Name.In(types.English) + ": " + name
 		}
 
 		names[p.ID] = name

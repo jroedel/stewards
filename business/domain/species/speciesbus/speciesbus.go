@@ -280,7 +280,7 @@ func (b *Business) Update(ctx context.Context, id types.ID, f Fields) (Species, 
 		return Species{}, err
 	}
 
-	if err := translationbus.KeepAll(ctx, b.tr, f.texts(), b.fill(s).words()); err != nil {
+	if err := translationbus.KeepAll(ctx, b.tr, f.texts(), s.words()); err != nil {
 		return Species{}, err
 	}
 
@@ -308,7 +308,7 @@ func (b *Business) Delete(ctx context.Context, id types.ID) error {
 
 	if err := b.store.Delete(ctx, id); err != nil {
 		if errors.Is(err, ErrInUse) {
-			return Invalid{Field: "species", Problem: fmt.Sprintf("%s is still listed at a place or has photos. Take it off those lists and remove its photos first", sp.Common.EN)}
+			return Invalid{Field: "species", Problem: fmt.Sprintf("%s is still listed at a place or has photos. Take it off those lists and remove its photos first", sp.Common.In(types.English))}
 		}
 
 		return err
@@ -350,7 +350,7 @@ func (b *Business) All(ctx context.Context) ([]Species, error) {
 
 	slices.SortStableFunc(all, func(x, y Species) int {
 		return cmp.Or(
-			strings.Compare(strings.ToLower(x.Common.EN), strings.ToLower(y.Common.EN)),
+			strings.Compare(strings.ToLower(x.Common.In(types.English)), strings.ToLower(y.Common.In(types.English))),
 			strings.Compare(x.Slug, y.Slug),
 		)
 	})
@@ -405,7 +405,7 @@ func (b *Business) Originals(ctx context.Context) ([]translationbus.Source, erro
 	var out []translationbus.Source
 
 	for _, s := range all {
-		label := cmp.Or(s.Common.EN, s.Common.ES)
+		label := s.Common.In(types.English)
 
 		nameWhere := "the common name of a plant"
 		if s.Scientific != "" {
@@ -461,8 +461,8 @@ func check(f Fields) error {
 	bad := func(field, problem string) error { return Invalid{Field: field, Problem: problem} }
 
 	switch {
-	case f.Common.EN == "":
-		return bad("common", "give the plant's common name in English. Spanish is optional")
+	case !f.Common.Written():
+		return bad("common", "give the plant's common name")
 	case utf8.RuneCountInString(f.Common.EN) > maxName || utf8.RuneCountInString(f.Common.ES) > maxName:
 		return bad("common", fmt.Sprintf("keep the common name under %d characters", maxName))
 	case utf8.RuneCountInString(f.Scientific) > maxName*2:

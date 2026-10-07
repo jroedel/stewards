@@ -181,7 +181,7 @@ func rowOf(l nurserybus.Line, plants map[types.ID]speciesbus.Species, withPhotos
 	}
 
 	if sp, ok := plants[l.SpeciesID]; ok {
-		row.Name, row.Slug = sp.Common.EN, sp.Slug
+		row.Name, row.Slug = sp.Common.In(types.English), sp.Slug
 		row.Status, row.Native = sp.Status.Label(), sp.Status == speciesbus.StatusNative
 	}
 
@@ -219,7 +219,7 @@ type option struct {
 // its Spanish name to be found by as well, which is not shown (the page
 // package's find.mjs, data-also).
 func plantOption(sp speciesbus.Species, selected bool) option {
-	o := option{Value: sp.ID.String(), Label: sp.Common.EN, Selected: selected}
+	o := option{Value: sp.ID.String(), Label: sp.Common.In(types.English), Selected: selected}
 	if sp.Scientific != "" {
 		o.Label += " (" + sp.Scientific + ")"
 	}

@@ -84,11 +84,11 @@ func (a app) showQueue(w http.ResponseWriter, r *http.Request, status int, at st
 			if sp, err := a.species.ByID(ctx, p.SpeciesID); err == nil {
 				switch {
 				case q.Get("done") == "checked" && p.Checked:
-					v.Done, v.Undo, v.UndoLabel = "Checked: "+sp.Common.EN+", "+lower(p.Kind.Label())+".", p.ID.String(), "Undo"
+					v.Done, v.Undo, v.UndoLabel = "Checked: "+sp.Common.In(types.English)+", "+lower(p.Kind.Label())+".", p.ID.String(), "Undo"
 				case q.Get("done") == "changed-checked" && p.Checked:
-					v.Done, v.Undo, v.UndoLabel = "Changed and checked: "+sp.Common.EN+", "+lower(p.Kind.Label())+".", p.ID.String(), "Uncheck"
+					v.Done, v.Undo, v.UndoLabel = "Changed and checked: "+sp.Common.In(types.English)+", "+lower(p.Kind.Label())+".", p.ID.String(), "Uncheck"
 				case q.Get("done") == "changed" && !p.Checked:
-					v.Done = "Changed: " + sp.Common.EN + ", " + lower(p.Kind.Label()) + ". It waits here to be checked."
+					v.Done = "Changed: " + sp.Common.In(types.English) + ", " + lower(p.Kind.Label()) + ". It waits here to be checked."
 				case q.Get("done") == "unchecked" && !p.Checked:
 					v.Done = "Not checked any more. It is back in the queue."
 				case q.Get("done") == "saved":
@@ -131,7 +131,7 @@ func (a app) showQueue(w http.ResponseWriter, r *http.Request, status int, at st
 	}
 
 	v.ID, v.SpeciesID = p.ID.String(), sp.ID.String()
-	v.Name, v.Scientific, v.Slug, v.Sources = sp.Common.EN, sp.Scientific, sp.Slug, sp.Sources
+	v.Name, v.Scientific, v.Slug, v.Sources = sp.Common.In(types.English), sp.Scientific, sp.Slug, sp.Sources
 	v.Kind, v.KindWord, v.InFlower, v.InFruit = p.Kind.Label(), lower(p.Kind.Label()), p.InFlower, p.InFruit
 	v.Width, v.Height = p.Small.Width, p.Small.Height
 	v.Caption = caption(p, names)

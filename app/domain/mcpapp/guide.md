@@ -58,8 +58,9 @@ Sending the same thing again is safe: an unchanged plant answers
   common name, such as `winecup`. Ask before making one up.
 - `sources` are what the ID was checked against, usually the Lady Bird
   Johnson Wildflower Center's page. Never cite a source you did not read.
-- English in `en`. Leave every `es` out: the Spanish is made afterwards, as
-  a translation (see Translating).
+- Words in the language the steward gave them: `en` for English or `es` for
+  Spanish, one of the two. The other is made afterwards, as a translation
+  (see Translating); never send both.
 - Notes are for someone standing in the sun with dirty hands: short, plain,
   practical.
 - A cultivar that looks different from the species (a white autumn sage)

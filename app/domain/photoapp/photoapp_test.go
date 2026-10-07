@@ -487,7 +487,7 @@ func TestRemovingAPhotoNeedsTheBoxTicked(t *testing.T) {
 func TestThePlaceCardShowsAPlannedPlantsFlower(t *testing.T) {
 	s := serve(t)
 
-	if w := s.post("/steward/places", url.Values{"slug": {"rain-garden"}, "name_en": {"Rain garden"}}); w.Code != http.StatusSeeOther {
+	if w := s.post("/steward/places", url.Values{"slug": {"rain-garden"}, "name": {"Rain garden"}}); w.Code != http.StatusSeeOther {
 		t.Fatalf("adding the place: %d", w.Code)
 	}
 

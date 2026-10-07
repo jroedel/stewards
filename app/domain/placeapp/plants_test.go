@@ -14,7 +14,7 @@ func (s *site) plant(slug, name, swatch string, bloom ...string) string {
 	s.t.Helper()
 
 	w := s.post("/steward/species", url.Values{
-		"slug": {slug}, "common_en": {name}, "status": {"native"},
+		"slug": {slug}, "common": {name}, "status": {"native"},
 		"swatches": {swatch}, "bloom": bloom, "height_min": {"24"},
 	})
 	if w.Code != http.StatusSeeOther {
@@ -33,7 +33,7 @@ func (s *site) plant(slug, name, swatch string, bloom ...string) string {
 func (s *site) list(placeID, speciesID, action string, planned bool, note string) *httptest.ResponseRecorder {
 	s.t.Helper()
 
-	form := url.Values{"species": {speciesID}, "action": {action}, "note_en": {note}}
+	form := url.Values{"species": {speciesID}, "action": {action}, "note": {note}}
 	if planned {
 		form.Set("planned", "yes")
 	}

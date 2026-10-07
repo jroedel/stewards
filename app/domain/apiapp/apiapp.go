@@ -206,7 +206,7 @@ type Index struct {
 
 func (a app) endpoints() []Endpoint {
 	text := func(name, what string, required bool) Field {
-		return Field{Name: name, Type: "object {en, es}", Required: required, Description: what + ` In English as "en". Leave "es" out: the Spanish is made afterwards, through the translations endpoints, which list every text still waiting for one.`}
+		return Field{Name: name, Type: "object {en, es}", Required: required, Description: what + ` In the language the steward gave it: "en" for English or "es" for Spanish, one of the two. The other is made afterwards, through the translations endpoints, which list every text still waiting for one. Sending back the one half as it is changes nothing.`}
 	}
 
 	size := func(name, what string) Field {

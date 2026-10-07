@@ -83,7 +83,7 @@ before(async () => {
   stage("adding a plant and its photo");
   let w = await post(
     "/steward/species",
-    new URLSearchParams({ slug: "brazos-penstemon", common_en: "Brazos penstemon", scientific: "Penstemon tenuis", status: "native" }),
+    new URLSearchParams({ slug: "brazos-penstemon", common: "Brazos penstemon", scientific: "Penstemon tenuis", status: "native" }),
   );
   assert.equal(w.status, 303, `adding the plant: ${w.status}\n${await w.text()}`);
 

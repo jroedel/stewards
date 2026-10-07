@@ -14,7 +14,7 @@
 <h1>First sign-in</h1>
 <p class="lead">This uses the one-time secret from the server's configuration and sends no email, so the first steward can get in before mail is working. It works once.</p>
 
-{{if .Problem.EN}}<p class="problem" role="alert">{{say $l .Problem}}</p>{{end}}
+{{if .Problem.Written}}<p class="problem" role="alert">{{say $l .Problem}}</p>{{end}}
 
 <form class="card form" method="post" action="/sign-in/first">
   <label for="email">Your email address</label>

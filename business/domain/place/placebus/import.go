@@ -42,8 +42,6 @@ type Imported struct {
 func (b *Business) Import(ctx context.Context, f Fields) (Imported, error) {
 	f = tidy(f)
 
-	translationbus.Complete(b.tr, f.texts()...)
-
 	existing, err := b.BySlug(ctx, f.Slug)
 
 	switch {
@@ -57,6 +55,8 @@ func (b *Business) Import(ctx context.Context, f Fields) (Imported, error) {
 	case err != nil:
 		return Imported{}, err
 	}
+
+	translationbus.Complete(f.texts(), existing.words())
 
 	if FieldsOf(existing) == f {
 		return Imported{Place: existing, Outcome: Unchanged}, nil

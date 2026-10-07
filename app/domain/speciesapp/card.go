@@ -336,7 +336,7 @@ func placeNames(places []placebus.Place) map[types.ID]types.Text {
 		name := p.Name
 
 		if parent, ok := byID[p.ParentID]; ok && !p.TopLevel() {
-			name = types.Text{EN: parent.Name.EN + ": " + p.Name.EN}
+			name = types.Text{EN: parent.Name.In(types.English) + ": " + p.Name.In(types.English)}
 			if parent.Name.ES != "" && p.Name.ES != "" {
 				name.ES = parent.Name.ES + ": " + p.Name.ES
 			}
@@ -359,7 +359,7 @@ func figureOf(p photobus.Photo, sp speciesbus.Species, names map[types.ID]types.
 		ID: p.ID.String(), Width: p.Small.Width, Height: p.Small.Height,
 		SmallW: p.Small.Width, LargeW: p.Large.Width,
 		Kind: kind,
-		Alt:  types.Text{EN: sp.Common.EN + ": " + strings.ToLower(kind.EN)},
+		Alt:  types.Text{EN: sp.Common.In(types.English) + ": " + strings.ToLower(kind.EN)},
 		When: takenWords(p.TakenYear, p.TakenMonth),
 	}
 

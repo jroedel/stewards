@@ -14,7 +14,7 @@ import (
 func (s *site) at(slug, name, parent, action string, planned bool) {
 	s.t.Helper()
 
-	form := url.Values{"slug": {slug}, "name_en": {name}}
+	form := url.Values{"slug": {slug}, "name": {name}}
 	if parent != "" {
 		p, err := s.places.BySlug(s.t.Context(), parent)
 		if err != nil {

@@ -3,7 +3,7 @@
 {{define "content"}}{{$l := .Lang}}{{with .Data}}
 <h1>{{say $l .Name}}</h1>
 {{if .Scientific}}<p class="scientific"><i>{{.Scientific}}</i></p>{{end}}
-<p class="row-tags">{{if .Status.EN}}<span class="tag{{if .Invasive}} tag-off{{end}}">{{say $l .Status}}</span>{{end}}{{if not .Confirmed}}<span class="tag tag-open">{{say $l .Copy.NotConfirmed}}</span>{{end}}</p>
+<p class="row-tags">{{if .Status.Written}}<span class="tag{{if .Invasive}} tag-off{{end}}">{{say $l .Status}}</span>{{end}}{{if not .Confirmed}}<span class="tag tag-open">{{say $l .Copy.NotConfirmed}}</span>{{end}}</p>
 
 <nav class="views" aria-label="View">
   <a href="/plants/{{.Slug}}"{{if not .Weeding}} aria-current="page"{{end}}>{{say $l .Copy.Planting}}</a>
@@ -15,7 +15,7 @@
   <a class="photo-zoom" href="/plants/{{$.Data.Slug}}/photos/{{.ID}}{{if $.Data.Weeding}}?view=weeding{{end}}"><span class="sr-only">{{say $l $.Data.Copy.ZoomIn}}</span>
   <img src="/photos/{{.ID}}/small.jpg" srcset="/photos/{{.ID}}/small.jpg {{.SmallW}}w, /photos/{{.ID}}/large.jpg {{.LargeW}}w" sizes="(max-width: 640px) 100vw, 600px" width="{{.Width}}" height="{{.Height}}" alt="{{.Alt.In $l}}"{{if gt (len $.Data.Figures) 1}} loading="lazy"{{end}}></a>
   <figcaption><strong>{{say $l .Kind}}</strong>
-    <span class="photo-credit">{{if .SourceURL}}{{say $l $.Data.Copy.PhotoBy}} {{say $l .Credit}}, {{.License}} · <a href="{{.SourceURL}}" rel="noopener">{{say $l $.Data.Copy.Source}}</a>{{else}}{{say $l .Credit}}{{if .Where.EN}} · {{say $l .Where}}{{end}}{{end}}{{with .When}} · {{.}}{{end}}</span>
+    <span class="photo-credit">{{if .SourceURL}}{{say $l $.Data.Copy.PhotoBy}} {{say $l .Credit}}, {{.License}} · <a href="{{.SourceURL}}" rel="noopener">{{say $l $.Data.Copy.Source}}</a>{{else}}{{say $l .Credit}}{{if .Where.Written}} · {{say $l .Where}}{{end}}{{end}}{{with .When}} · {{.}}{{end}}</span>
   </figcaption>
 </figure>
 {{end}}
@@ -27,7 +27,7 @@
 <p class="not-sure">{{say $l .Copy.NotSure}}</p>
 {{else}}
 <div class="card facts">
-  {{if or .FlowerColor.EN .Swatches}}<div class="fact"><h2>{{say $l .Copy.Flower}}</h2><p>{{range .Swatches}}<svg class="swatch" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="{{.}}" stroke="#231F20" stroke-opacity="0.35"/></svg> {{end}}{{say $l .FlowerColor}}</p></div>{{end}}
+  {{if or .FlowerColor.Written .Swatches}}<div class="fact"><h2>{{say $l .Copy.Flower}}</h2><p>{{range .Swatches}}<svg class="swatch" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="{{.}}" stroke="#231F20" stroke-opacity="0.35"/></svg> {{end}}{{say $l .FlowerColor}}</p></div>{{end}}
   <div class="fact"><h2>{{say $l .Copy.Blooms}}</h2>
     {{if .BloomWords}}<div class="strip" aria-hidden="true">{{range .Months}}<span class="strip-month{{if .On}} is-on{{end}}"><span class="strip-cell">{{if .On}}<svg viewBox="0 0 10 10" preserveAspectRatio="none"><rect width="10" height="10" rx="2" fill="{{.Swatch}}" stroke="#231F20" stroke-opacity="0.3" stroke-width="0.6"/></svg>{{end}}</span>{{.Letter}}</span>{{end}}</div>
     <p class="sr-only">{{.BloomWords}}</p>
@@ -39,7 +39,7 @@
   {{if .Light}}<div class="fact"><h2>{{say $l .Copy.Light}}</h2><p>{{range $i, $x := .Light}}{{if $i}} · {{end}}{{say $l $x}}{{end}}</p></div>{{end}}
   {{if .Water}}<div class="fact"><h2>{{say $l .Copy.Water}}</h2><p>{{range $i, $x := .Water}}{{if $i}} · {{end}}{{say $l $x}}{{end}}</p></div>{{end}}
 </div>
-{{if .Note.EN}}<h2>{{say $l .Copy.Note}}</h2><div class="card"><p class="prose">{{say $l .Note}}</p></div>{{end}}
+{{if .Note.Written}}<h2>{{say $l .Copy.Note}}</h2><div class="card"><p class="prose">{{say $l .Note}}</p></div>{{end}}
 <h2>{{say $l .Copy.WhereItGrows}}</h2>
 {{template "plant-where" $}}
 {{end}}
@@ -58,7 +58,7 @@
 {{range .Grows}}<li><a class="row" href="/places/{{.Slug}}"><div>
   <div class="row-name">{{say $l .Name}}</div>
   <div class="row-tags"><span class="tag {{if .Pull}}tag-off{{else}}tag-ok{{end}}">{{say $l .Action}}</span>{{if .Planned}}<span class="tag">{{say $l $.Data.Copy.Planned}}</span>{{end}}</div>
-  {{if .Note.EN}}<div class="row-note">{{say $l .Note}}</div>{{end}}
+  {{if .Note.Written}}<div class="row-note">{{say $l .Note}}</div>{{end}}
 </div><span class="row-go" aria-hidden="true">›</span></a></li>
 {{end}}</ul>
 {{else}}<div class="card"><p class="muted">{{say $l .Copy.NotListedAnywhere}}</p></div>{{end}}{{end}}{{end}}

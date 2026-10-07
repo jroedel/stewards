@@ -86,3 +86,28 @@ export async function startServer(name) {
 
 // signedIn is the cookie for page.setCookie, so Chrome is that steward too.
 export const sessionCookie = (base, cookie) => ({ name: "__Host-session", value: cookie, url: `${base}/`, secure: true, httpOnly: true, path: "/" });
+
+// translate gives words already in the app their translation, as Claude
+// does: through the API, with a key the steward makes for it. pairs maps an
+// original, as it was written in English, to its Spanish.
+export async function translate({ base, cookie }, pairs) {
+  const signal = AbortSignal.timeout(30_000);
+  const keys = await fetch(`${base}/steward/keys`, {
+    method: "POST",
+    signal,
+    headers: { Cookie: `__Host-session=${cookie}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ name: "a browser test" }),
+  });
+  const key = /<p class="key">(stw_[^<]+)<\/p>/.exec(await keys.text())?.[1];
+  if (!key) throw new Error(`no key was made: ${keys.status}`);
+
+  const api = { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
+  const { pending } = await (await fetch(`${base}/api/v1/translations/pending?limit=200`, { headers: api, signal })).json();
+  const translations = pending.filter((p) => pairs[p.text]).map((p) => ({ key: p.key, from: "en", text: pairs[p.text] }));
+
+  const put = await fetch(`${base}/api/v1/translations`, { method: "PUT", headers: api, signal, body: JSON.stringify({ translations }) });
+  const { results } = await put.json();
+  if (put.status !== 200 || results.length !== Object.keys(pairs).length || results.some((r) => r.outcome === "refused")) {
+    throw new Error(`translating: ${put.status} ${JSON.stringify(results)}`);
+  }
+}

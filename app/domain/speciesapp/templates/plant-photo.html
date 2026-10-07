@@ -14,7 +14,7 @@
     <img class="zoom-full" src="/photos/{{.ID}}/{{$.Data.Full}}" width="{{$.Data.LargeW}}" height="{{$.Data.LargeH}}" alt="{{.Alt.In $l}}">
   </div>
   <figcaption><strong>{{say $l .Kind}}</strong>
-    <span class="photo-credit">{{if .SourceURL}}{{say $l $.Data.Copy.PhotoBy}} {{say $l .Credit}}, {{.License}} · <a href="{{.SourceURL}}" rel="noopener">{{say $l $.Data.Copy.Source}}</a>{{else}}{{say $l .Credit}}{{if .Where.EN}} · {{say $l .Where}}{{end}}{{end}}{{with .When}} · {{.}}{{end}}</span>
+    <span class="photo-credit">{{if .SourceURL}}{{say $l $.Data.Copy.PhotoBy}} {{say $l .Credit}}, {{.License}} · <a href="{{.SourceURL}}" rel="noopener">{{say $l $.Data.Copy.Source}}</a>{{else}}{{say $l .Credit}}{{if .Where.Written}} · {{say $l .Where}}{{end}}{{end}}{{with .When}} · {{.}}{{end}}</span>
   </figcaption>
 </figure>
 <p class="help">{{say $l $.Data.Copy.Pinch}}</p>
