@@ -81,7 +81,8 @@ type SortIn struct {
 func (a app) inboxEndpoints() []Endpoint {
 	return []Endpoint{
 		{
-			Method: http.MethodGet, Path: Prefix + "/inbox", NeedsKey: true,
+			Method: http.MethodGet, Path: Prefix + "/inbox", Tool: "list_inbox", NeedsKey: true,
+			Query:   []Field{{Name: "status", Type: "string", Values: []string{string(inboxbus.New), string(inboxbus.Unsure)}, Description: "new, the default, for the photos waiting; unsure for the ones set aside."}},
 			Summary: "The photos waiting to be sorted, newest first, sent by a steward. at is property (the garden: place is the place here, if the steward said), nursery (where is the nursery's name, if said) or elsewhere (a park, a trail, a friend's garden: where is its name, if said). ?status=unsure for the ones set aside instead.",
 			Returns: `{"status": "new", "photos": [{id, status, at, where, place, note, taken_at, large_url, small_url, full_url, sort_url, screen_url}]}`,
 			handler: a.listInbox,
@@ -92,7 +93,7 @@ func (a app) inboxEndpoints() []Endpoint {
 			Returns: "image/jpeg, or image/png for a PNG's full picture", handler: a.inboxPicture,
 		},
 		{
-			Method: http.MethodPost, Path: Prefix + "/inbox/{id}/sort", NeedsKey: true,
+			Method: http.MethodPost, Path: Prefix + "/inbox/{id}/sort", Tool: "sort_inbox_photo", NeedsKey: true,
 			Summary: "Sort a photo: into a plant's photos, into a plant just planted at a place, or set aside as not sure yet. A plant's photo arrives not checked, as every photo from the API does. Sending the same sort twice changes nothing. A photo is discarded by a steward on its screen, never here: set it aside with a note saying why.",
 			Body: &Body{Encoding: "json", Fields: []Field{
 				{Name: "outcome", Type: "string", Required: true, Values: a.sortOutcomes(), Description: "photo: a photo of the plant, to add to its photos. planted: the plant was just planted at the place; it is listed there to protect, off the To plant list, and the photo is added as its young plant. stock: a plant for sale, from a photo taken at a nursery; a line of that nursery's stock on the day, keeping the photo for three months. unsure: set aside, with a question in the note."},

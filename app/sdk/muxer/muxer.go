@@ -15,6 +15,7 @@ import (
 	"github.com/jroedel/stewards/app/domain/authapp"
 	"github.com/jroedel/stewards/app/domain/homeapp"
 	"github.com/jroedel/stewards/app/domain/inboxapp"
+	"github.com/jroedel/stewards/app/domain/mcpapp"
 	"github.com/jroedel/stewards/app/domain/nurseryapp"
 	"github.com/jroedel/stewards/app/domain/oauthapp"
 	"github.com/jroedel/stewards/app/domain/photoapp"
@@ -254,6 +255,18 @@ func New(cfg Config) (http.Handler, error) {
 	)
 	apiInner := web.Wrap(api, mid.APIKey(cfg.Log, cfg.Users))
 
+	// The API again, as an MCP server for Claude on claude.ai: each tool
+	// call is a request to the site, so it is handled exactly as the same
+	// request from a program would be. site is set below, before anything
+	// can call it.
+	var site http.Handler
+	var mcp http.Handler
+	if cfg.BaseURL != "" {
+		m := mcpapp.New(mcpapp.Config{Log: cfg.Log, Keys: cfg.Users, BaseURL: cfg.BaseURL, Site: func() http.Handler { return site }})
+		m.Routes(mux)
+		mcp = m.Handler()
+	}
+
 	shape := http.NewServeMux()
 	shape.Handle(photoapp.UploadPattern, web.Wrap(inner, web.MaxBody(maxUpload), web.MultipartOnly()))
 	shape.Handle(inboxapp.UploadPattern, web.Wrap(inner, web.MaxBody(inboxapp.MaxBytes), web.MultipartOnly()))
@@ -261,13 +274,18 @@ func New(cfg Config) (http.Handler, error) {
 	shape.Handle(inboxapp.SharePattern, web.Wrap(inner, web.MaxBody(inboxapp.MaxBytes), web.MultipartOnly()))
 	shape.Handle(apiapp.UploadPattern, web.Wrap(apiInner, web.MaxBody(maxUpload), web.MultipartOnly()))
 	shape.Handle("/api/", web.Wrap(apiInner, web.MaxBody(maxBody), web.JSONOnly()))
+	if mcp != nil {
+		shape.Handle(mcpapp.Path, web.Wrap(mcp, web.MaxBody(maxBody), web.JSONOnly()))
+	}
 	shape.Handle("/", web.Wrap(inner, web.MaxBody(maxBody), web.FormEncodedOnly()))
 
-	return web.Wrap(shape,
+	site = web.Wrap(shape,
 		web.RequestID(),
 		web.Logging(cfg.Log),
 		web.Panics(cfg.Log),
 		web.SecureHeaders(page.Policy()),
 		web.SameOriginOnly(cfg.BaseURL),
-	), nil
+	)
+
+	return site, nil
 }
