@@ -71,15 +71,15 @@ func serve(t *testing.T) *site {
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
 	s := &site{
 		t:       t,
-		species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
-		places:  placebus.NewBusiness(placedb.NewStore(db), nil),
+		species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil, nil),
+		places:  placebus.NewBusiness(placedb.NewStore(db), nil, nil),
 		photos:  photos(t, db),
 	}
 
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
-		Places: s.places, Species: s.species, Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: s.photos, Users: users,
-		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
+		Places: s.places, Species: s.species, Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil, nil), Photos: s.photos, Users: users,
+		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil, nil),
 		BaseURL:  "https://stewards.example.invalid", Mail: &mail.Recorder{},
 	}); err != nil {
 		t.Fatal(err)

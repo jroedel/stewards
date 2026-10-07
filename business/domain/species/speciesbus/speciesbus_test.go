@@ -30,7 +30,7 @@ func setup(t *testing.T) *speciesbus.Business {
 		t.Fatal(err)
 	}
 
-	return speciesbus.NewBusiness(speciesdb.NewStore(db), nil)
+	return speciesbus.NewBusiness(speciesdb.NewStore(db), nil, nil)
 }
 
 func winecup() speciesbus.Fields {

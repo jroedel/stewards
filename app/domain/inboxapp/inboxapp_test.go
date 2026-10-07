@@ -98,15 +98,15 @@ func serve(t *testing.T) *site {
 
 	log := slog.New(slog.DiscardHandler)
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
-	places := placebus.NewBusiness(placedb.NewStore(db), nil)
+	places := placebus.NewBusiness(placedb.NewStore(db), nil, nil)
 
-	species := speciesbus.NewBusiness(speciesdb.NewStore(db), nil)
+	species := speciesbus.NewBusiness(speciesdb.NewStore(db), nil, nil)
 
 	s := &site{
 		t:        t,
 		species:  species,
 		photos:   photobus.NewBusiness(photodb.NewStore(db), photoFiles, nil),
-		listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
+		listings: listingbus.NewBusiness(listingdb.NewStore(db), nil, nil),
 	}
 	s.nursery = nurserybus.NewBusiness(nurserydb.NewStore(db), nil)
 	// The inbox's clock is noon today in the garden, a millisecond on each
@@ -130,7 +130,7 @@ func serve(t *testing.T) *site {
 		Species:  species,
 		Photos:   s.photos,
 		Users:    users,
-		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
+		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil, nil),
 		Listings: s.listings,
 		Inbox:    s.inbox,
 		Nursery:  s.nursery,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jroedel/stewards/business/domain/translation/translationbus"
 	"github.com/jroedel/stewards/business/types"
 )
 
@@ -47,6 +48,7 @@ type Imported struct {
 // the comment above.
 func (b *Business) Import(ctx context.Context, placeID, speciesID types.ID, f Fields) (Imported, error) {
 	f.Note = f.Note.Trimmed()
+	translationbus.Complete(b.tr, &f.Note)
 
 	existing, found, err := b.listed(ctx, placeID, speciesID)
 	if err != nil {
@@ -73,7 +75,7 @@ func (b *Business) Import(ctx context.Context, placeID, speciesID types.ID, f Fi
 // place's list rather than by the pair: a place lists tens of plants, and the
 // store has no other reason to look one up alone.
 func (b *Business) listed(ctx context.Context, placeID, speciesID types.ID) (Listing, bool, error) {
-	all, err := b.store.ForPlace(ctx, placeID)
+	all, err := b.ForPlace(ctx, placeID)
 	if err != nil {
 		return Listing{}, false, fmt.Errorf("reading what is listed at the place: %w", err)
 	}

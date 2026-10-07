@@ -94,9 +94,9 @@ func serve(t *testing.T) site {
 
 	h, err := muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
-		Places:  placebus.NewBusiness(placedb.NewStore(db), nil),
-		Species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: photos(t, db),
-		Users: users, Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
+		Places:  placebus.NewBusiness(placedb.NewStore(db), nil, nil),
+		Species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil, nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil, nil), Photos: photos(t, db),
+		Users: users, Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil, nil),
 		BaseURL:      base,
 		OAuthClients: clients{t},
 	})

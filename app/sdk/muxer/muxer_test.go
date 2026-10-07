@@ -53,10 +53,10 @@ func TestHealthzChecksTheSchema(t *testing.T) {
 				Log:      slog.New(slog.DiscardHandler),
 				DB:       db,
 				Expected: tc.want,
-				Places:   placebus.NewBusiness(placedb.NewStore(db), nil),
-				Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: photos(t, db),
+				Places:   placebus.NewBusiness(placedb.NewStore(db), nil, nil),
+				Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil, nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil, nil), Photos: photos(t, db),
 				Users:    userbus.NewBusiness(slog.New(slog.DiscardHandler), userdb.NewStore(db), nil),
-				Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
+				Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil, nil),
 			})
 			if err != nil {
 				t.Fatalf("New: %v", err)

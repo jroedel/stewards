@@ -68,13 +68,13 @@ func serve(t *testing.T) *site {
 
 	log := slog.New(slog.DiscardHandler)
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
-	s := &site{t: t, days: workdaybus.NewBusiness(workdaydb.NewStore(db), func() time.Time { return now })}
+	s := &site{t: t, days: workdaybus.NewBusiness(workdaydb.NewStore(db), nil, func() time.Time { return now })}
 
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
-		Places:   placebus.NewBusiness(placedb.NewStore(db), nil),
-		Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
-		Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
+		Places:   placebus.NewBusiness(placedb.NewStore(db), nil, nil),
+		Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil, nil),
+		Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil, nil),
 		Photos:   photos(t, db),
 		Users:    users,
 		Workdays: s.days,

@@ -75,15 +75,15 @@ func serveAt(t *testing.T, baseURL string) *site {
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
 	s := &site{
 		t:       t,
-		places:  placebus.NewBusiness(placedb.NewStore(db), nil),
-		species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
+		places:  placebus.NewBusiness(placedb.NewStore(db), nil, nil),
+		species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil, nil),
 	}
 
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
 		Places: s.places, Users: users,
-		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
-		Species:  s.species, Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: photos(t, db),
+		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil, nil),
+		Species:  s.species, Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil, nil), Photos: photos(t, db),
 		BaseURL: baseURL, Mail: &mail.Recorder{},
 	}); err != nil {
 		t.Fatal(err)

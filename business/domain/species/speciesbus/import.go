@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"slices"
+
+	"github.com/jroedel/stewards/business/domain/translation/translationbus"
 )
 
 // Import is how a program adds a plant, by its address: creating it if there
@@ -47,7 +49,9 @@ func (b *Business) Import(ctx context.Context, f Fields) (Imported, error) {
 
 	f = tidy(f)
 
-	existing, err := b.store.BySlug(ctx, f.Slug)
+	translationbus.Complete(b.tr, f.texts()...)
+
+	existing, err := b.BySlug(ctx, f.Slug)
 
 	switch {
 	case errors.Is(err, ErrNotFound):

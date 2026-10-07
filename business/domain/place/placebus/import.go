@@ -3,6 +3,8 @@ package placebus
 import (
 	"context"
 	"errors"
+
+	"github.com/jroedel/stewards/business/domain/translation/translationbus"
 )
 
 // Import is how a program adds a place or changes one: a steward's Claude,
@@ -40,7 +42,9 @@ type Imported struct {
 func (b *Business) Import(ctx context.Context, f Fields) (Imported, error) {
 	f = tidy(f)
 
-	existing, err := b.store.BySlug(ctx, f.Slug)
+	translationbus.Complete(b.tr, f.texts()...)
+
+	existing, err := b.BySlug(ctx, f.Slug)
 
 	switch {
 	case errors.Is(err, ErrNotFound):

@@ -22,6 +22,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jroedel/stewards/business/domain/translation/translationbus"
 	"github.com/jroedel/stewards/business/types"
 )
 
@@ -75,21 +76,31 @@ type Storer interface {
 	// EndedBy is the latest days that ended at or before t, most recent
 	// first, at most limit of them.
 	EndedBy(ctx context.Context, t time.Time, limit int) ([]Day, error)
+
+	// All is every day, in no particular order.
+	All(ctx context.Context) ([]Day, error)
 }
 
 // Business applies the rules and then asks the store.
 type Business struct {
 	store Storer
+	tr    translationbus.Memory
 	now   func() time.Time
 }
 
-// NewBusiness constructs one; nil now means the wall clock.
-func NewBusiness(store Storer, now func() time.Time) *Business {
+// NewBusiness constructs one. tr is where a day's words find their other
+// language; nil is translationbus.None, for a test not about translation. nil
+// now means the wall clock.
+func NewBusiness(store Storer, tr translationbus.Memory, now func() time.Time) *Business {
+	if tr == nil {
+		tr = translationbus.None{}
+	}
+
 	if now == nil {
 		now = time.Now
 	}
 
-	return &Business{store: store, now: now}
+	return &Business{store: store, tr: tr, now: now}
 }
 
 const (
@@ -120,6 +131,10 @@ func (b *Business) Create(ctx context.Context, f Fields) (Day, error) {
 		return Day{}, Invalid{Field: "date", Problem: "that day is already over. Check the date"}
 	}
 
+	if err := translationbus.KeepAll(ctx, b.tr, f.texts(), nil); err != nil {
+		return Day{}, err
+	}
+
 	d := Day{
 		ID: types.NewID(), Starts: f.Starts, Ends: f.Ends, Title: f.Title, Details: f.Details,
 		CreatedAt: now, UpdatedAt: now,
@@ -129,7 +144,7 @@ func (b *Business) Create(ctx context.Context, f Fields) (Day, error) {
 		return Day{}, fmt.Errorf("adding the day: %w", err)
 	}
 
-	return d, nil
+	return b.fill(d), nil
 }
 
 // Update changes a day.
@@ -144,6 +159,10 @@ func (b *Business) Update(ctx context.Context, id types.ID, f Fields) (Day, erro
 		return Day{}, err
 	}
 
+	if err := translationbus.KeepAll(ctx, b.tr, f.texts(), b.fill(d).words()); err != nil {
+		return Day{}, err
+	}
+
 	d.Starts, d.Ends, d.Title, d.Details = f.Starts, f.Ends, f.Title, f.Details
 	d.UpdatedAt = b.now()
 
@@ -151,7 +170,7 @@ func (b *Business) Update(ctx context.Context, id types.ID, f Fields) (Day, erro
 		return Day{}, fmt.Errorf("saving the day: %w", err)
 	}
 
-	return d, nil
+	return b.fill(d), nil
 }
 
 // Delete takes a day off the calendar.
@@ -161,22 +180,85 @@ func (b *Business) Delete(ctx context.Context, id types.ID) error {
 
 // ByID is one day.
 func (b *Business) ByID(ctx context.Context, id types.ID) (Day, error) {
-	return b.store.ByID(ctx, id)
+	d, err := b.store.ByID(ctx, id)
+	if err != nil {
+		return Day{}, err
+	}
+
+	return b.fill(d), nil
 }
 
 // Upcoming is every day not yet over, soonest first. A day under way is
 // still upcoming, so that someone who scans the sign at ten on a work
 // morning learns the stewards are out there now.
 func (b *Business) Upcoming(ctx context.Context) ([]Day, error) {
-	return b.store.EndingAfter(ctx, b.now())
+	return b.filled(b.store.EndingAfter(ctx, b.now()))
 }
 
 // Recent is the latest days that are over, most recent first, for the
 // stewards' screen: enough to correct one just past, without the list
 // growing for ever.
 func (b *Business) Recent(ctx context.Context, limit int) ([]Day, error) {
-	return b.store.EndedBy(ctx, b.now(), limit)
+	return b.filled(b.store.EndedBy(ctx, b.now(), limit))
 }
+
+// MoveTranslations puts the Spanish that days stored beside their English,
+// before the translation memory, into the memory, and leaves each day
+// storing its English alone. It reports how many days it changed; see
+// placebus's for when it runs.
+func (b *Business) MoveTranslations(ctx context.Context) (int, error) {
+	all, err := b.store.All(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	n := 0
+
+	for _, d := range all {
+		changed, err := translationbus.MoveAll(ctx, b.tr, d.texts()...)
+		if err != nil {
+			return n, err
+		}
+
+		if !changed {
+			continue
+		}
+
+		if err := b.store.Update(ctx, d); err != nil {
+			return n, fmt.Errorf("saving a day: %w", err)
+		}
+
+		n++
+	}
+
+	return n, nil
+}
+
+func (b *Business) fill(d Day) Day {
+	translationbus.FillAll(b.tr, d.texts()...)
+
+	return d
+}
+
+func (b *Business) filled(all []Day, err error) ([]Day, error) {
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range all {
+		all[i] = b.fill(all[i])
+	}
+
+	return all, nil
+}
+
+// texts are a day's words, and words a copy of them, in the same order as
+// Fields.texts -- the order translationbus.KeepAll pairs them in.
+func (d *Day) texts() []*types.Text { return []*types.Text{&d.Title, &d.Details} }
+
+func (d Day) words() []types.Text { return []types.Text{d.Title, d.Details} }
+
+func (f *Fields) texts() []*types.Text { return []*types.Text{&f.Title, &f.Details} }
 
 // Now is the business's clock, for a screen that must say "today" or "now"
 // by the same clock that decided what is upcoming.

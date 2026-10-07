@@ -86,14 +86,14 @@ func serve(t *testing.T) *site {
 	log := slog.New(slog.DiscardHandler)
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
 	photos := photobus.NewBusiness(photodb.NewStore(db), store("photo-files"), nil)
-	listings := listingbus.NewBusiness(listingdb.NewStore(db), nil)
+	listings := listingbus.NewBusiness(listingdb.NewStore(db), nil, nil)
 	stock := nurserybus.NewBusiness(nurserydb.NewStore(db), nil)
 	inbox := inboxbus.NewBusiness(inboxdb.NewStore(db), store("inbox"), inboxbus.Deps{Photos: photos, Listings: listings, Stock: stock}, nil)
 
 	h, err := muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
-		Places: placebus.NewBusiness(placedb.NewStore(db), nil), Species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
-		Users: users, Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
+		Places: placebus.NewBusiness(placedb.NewStore(db), nil, nil), Species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil, nil),
+		Users: users, Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil, nil),
 		Photos: photos, Listings: listings, Inbox: inbox, Nursery: stock,
 		BaseURL: base,
 	})

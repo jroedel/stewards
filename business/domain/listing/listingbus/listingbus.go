@@ -21,6 +21,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jroedel/stewards/business/domain/translation/translationbus"
 	"github.com/jroedel/stewards/business/types"
 )
 
@@ -104,21 +105,29 @@ type Storer interface {
 	Remove(ctx context.Context, placeID, speciesID types.ID) error
 	ForPlace(ctx context.Context, placeID types.ID) ([]Listing, error)
 	ForSpecies(ctx context.Context, speciesID types.ID) ([]Listing, error)
+	All(ctx context.Context) ([]Listing, error)
 }
 
 // Business applies the rules and then asks the store.
 type Business struct {
 	store Storer
+	tr    translationbus.Memory
 	now   func() time.Time
 }
 
-// NewBusiness constructs one; nil now means the wall clock.
-func NewBusiness(store Storer, now func() time.Time) *Business {
+// NewBusiness constructs one. tr is where a note finds its other language;
+// nil is translationbus.None, for a test not about translation. nil now means
+// the wall clock.
+func NewBusiness(store Storer, tr translationbus.Memory, now func() time.Time) *Business {
+	if tr == nil {
+		tr = translationbus.None{}
+	}
+
 	if now == nil {
 		now = time.Now
 	}
 
-	return &Business{store: store, now: now}
+	return &Business{store: store, tr: tr, now: now}
 }
 
 const maxNote = 500
@@ -143,10 +152,27 @@ func (b *Business) Set(ctx context.Context, placeID, speciesID types.ID, f Field
 		return Listing{}, Invalid{Field: "note", Problem: fmt.Sprintf("keep the note under %d characters", maxNote)}
 	}
 
+	// The note as it was shown, for Keep to tell a translation the steward
+	// wrote from one left as it was. A place's list is a few dozen rows.
+	listed, err := b.ForPlace(ctx, placeID)
+	if err != nil {
+		return Listing{}, err
+	}
+
+	var before types.Text
+	if i := slices.IndexFunc(listed, func(l Listing) bool { return l.SpeciesID == speciesID }); i >= 0 {
+		before = listed[i].Note
+	}
+
+	note, err := b.tr.Keep(ctx, f.Note, before)
+	if err != nil {
+		return Listing{}, err
+	}
+
 	now := b.now()
 	l := Listing{
 		PlaceID: placeID, SpeciesID: speciesID,
-		Action: f.Action, Planned: f.Planned, Note: f.Note,
+		Action: f.Action, Planned: f.Planned, Note: note,
 		CreatedAt: now, UpdatedAt: now,
 	}
 
@@ -158,7 +184,7 @@ func (b *Business) Set(ctx context.Context, placeID, speciesID types.ID, f Field
 		return Listing{}, fmt.Errorf("listing the plant: %w", err)
 	}
 
-	return l, nil
+	return b.fill(l), nil
 }
 
 // Remove takes a species off a place's list.
@@ -168,12 +194,66 @@ func (b *Business) Remove(ctx context.Context, placeID, speciesID types.ID) erro
 
 // ForPlace is everything listed at a place.
 func (b *Business) ForPlace(ctx context.Context, placeID types.ID) ([]Listing, error) {
-	return b.store.ForPlace(ctx, placeID)
+	return b.filled(b.store.ForPlace(ctx, placeID))
 }
 
 // ForSpecies is every place a species is listed at.
 func (b *Business) ForSpecies(ctx context.Context, speciesID types.ID) ([]Listing, error) {
-	return b.store.ForSpecies(ctx, speciesID)
+	return b.filled(b.store.ForSpecies(ctx, speciesID))
+}
+
+// MoveTranslations puts the Spanish that listings stored beside their
+// English notes, before the translation memory, into the memory, and leaves
+// each note stored in English alone. It reports how many listings it
+// changed; see placebus's for when it runs.
+//
+// The listing is written back through the store's Set, which keeps when it
+// was first made; its UpdatedAt is left as it was, since nothing a person
+// sees has changed.
+func (b *Business) MoveTranslations(ctx context.Context) (int, error) {
+	all, err := b.store.All(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	n := 0
+
+	for _, l := range all {
+		changed, err := translationbus.MoveAll(ctx, b.tr, &l.Note)
+		if err != nil {
+			return n, err
+		}
+
+		if !changed {
+			continue
+		}
+
+		if err := b.store.Set(ctx, l); err != nil {
+			return n, fmt.Errorf("saving a listing's note: %w", err)
+		}
+
+		n++
+	}
+
+	return n, nil
+}
+
+func (b *Business) fill(l Listing) Listing {
+	l.Note = b.tr.Fill(l.Note)
+
+	return l
+}
+
+func (b *Business) filled(all []Listing, err error) ([]Listing, error) {
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range all {
+		all[i] = b.fill(all[i])
+	}
+
+	return all, nil
 }
 
 func validAction(a Action) bool { return slices.Contains(Actions, a) }

@@ -24,6 +24,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jroedel/stewards/business/domain/translation/translationbus"
 	"github.com/jroedel/stewards/business/types"
 )
 
@@ -151,17 +152,23 @@ type Storer interface {
 // Business applies the rules and then asks the store.
 type Business struct {
 	store Storer
+	tr    translationbus.Memory
 	now   func() time.Time
 }
 
-// NewBusiness constructs one. now is injectable so a test can say what time
-// it is; nil means the wall clock.
-func NewBusiness(store Storer, now func() time.Time) *Business {
+// NewBusiness constructs one. tr is where a place's words find their other
+// language; nil is translationbus.None, for a test not about translation. now
+// is injectable so a test can say what time it is; nil means the wall clock.
+func NewBusiness(store Storer, tr translationbus.Memory, now func() time.Time) *Business {
+	if tr == nil {
+		tr = translationbus.None{}
+	}
+
 	if now == nil {
 		now = time.Now
 	}
 
-	return &Business{store: store, now: now}
+	return &Business{store: store, tr: tr, now: now}
 }
 
 // Create adds a place.
@@ -173,6 +180,10 @@ func (b *Business) Create(ctx context.Context, f Fields) (Place, error) {
 	}
 
 	if err := b.check(ctx, types.ID{}, f); err != nil {
+		return Place{}, err
+	}
+
+	if err := translationbus.KeepAll(ctx, b.tr, f.texts(), nil); err != nil {
 		return Place{}, err
 	}
 
@@ -193,7 +204,7 @@ func (b *Business) Create(ctx context.Context, f Fields) (Place, error) {
 		return Place{}, fmt.Errorf("adding the place %q: %w", f.Slug, err)
 	}
 
-	return p, nil
+	return b.fill(p), nil
 }
 
 // Update changes a place. Everything a steward sets can change except the
@@ -216,6 +227,10 @@ func (b *Business) Update(ctx context.Context, id types.ID, f Fields) (Place, er
 		return Place{}, err
 	}
 
+	if err := translationbus.KeepAll(ctx, b.tr, f.texts(), b.fill(p).words()); err != nil {
+		return Place{}, err
+	}
+
 	p.apply(f)
 	p.UpdatedAt = b.now()
 
@@ -230,7 +245,7 @@ func (b *Business) Update(ctx context.Context, id types.ID, f Fields) (Place, er
 		return Place{}, fmt.Errorf("saving the place %q: %w", p.Slug, err)
 	}
 
-	return p, nil
+	return b.fill(p), nil
 }
 
 // SetSpot puts a place on the map, moves it, or takes it off with a nil
@@ -267,7 +282,7 @@ func (b *Business) SetSpot(ctx context.Context, id types.ID, spot *Spot) (Place,
 		return Place{}, fmt.Errorf("saving where %q is on the map: %w", p.Slug, err)
 	}
 
-	return p, nil
+	return b.fill(p), nil
 }
 
 // Delete removes a place that nothing is part of and nothing is listed at.
@@ -310,12 +325,22 @@ func (b *Business) Delete(ctx context.Context, id types.ID) error {
 // use it rather than the slug so that their addresses do not share a
 // namespace with the places' own.
 func (b *Business) ByID(ctx context.Context, id types.ID) (Place, error) {
-	return b.store.ByID(ctx, id)
+	p, err := b.store.ByID(ctx, id)
+	if err != nil {
+		return Place{}, err
+	}
+
+	return b.fill(p), nil
 }
 
 // BySlug is the place at an address.
 func (b *Business) BySlug(ctx context.Context, slug string) (Place, error) {
-	return b.store.BySlug(ctx, slug)
+	p, err := b.store.BySlug(ctx, slug)
+	if err != nil {
+		return Place{}, err
+	}
+
+	return b.fill(p), nil
 }
 
 // All is every place, in list order: by Sort, then by English name.
@@ -325,9 +350,47 @@ func (b *Business) All(ctx context.Context) ([]Place, error) {
 		return nil, err
 	}
 
+	for i := range all {
+		all[i] = b.fill(all[i])
+	}
+
 	slices.SortStableFunc(all, byListOrder)
 
 	return all, nil
+}
+
+// MoveTranslations puts the Spanish that places stored beside their English,
+// before the translation memory, into the memory, and leaves each place
+// storing its English alone. It reports how many places it changed.
+//
+// main runs it at every startup. After the first it finds nothing, unless a
+// binary from before the memory was rolled back to and saved a place.
+func (b *Business) MoveTranslations(ctx context.Context) (int, error) {
+	all, err := b.store.All(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	n := 0
+
+	for _, p := range all {
+		changed, err := translationbus.MoveAll(ctx, b.tr, p.texts()...)
+		if err != nil {
+			return n, fmt.Errorf("the place %q: %w", p.Slug, err)
+		}
+
+		if !changed {
+			continue
+		}
+
+		if err := b.store.Update(ctx, p); err != nil {
+			return n, fmt.Errorf("saving the place %q: %w", p.Slug, err)
+		}
+
+		n++
+	}
+
+	return n, nil
 }
 
 // Children is the places inside one, in list order.
@@ -426,6 +489,27 @@ func tidy(f Fields) Fields {
 	f.PhotoPoint = f.PhotoPoint.Trimmed()
 
 	return f
+}
+
+// fill is p with its words in both languages, from the translation memory.
+func (b *Business) fill(p Place) Place {
+	translationbus.FillAll(b.tr, p.texts()...)
+
+	return p
+}
+
+// texts are a place's words, and words a copy of them, in the same order as
+// Fields.texts -- the order translationbus.KeepAll pairs them in.
+func (p *Place) texts() []*types.Text {
+	return []*types.Text{&p.Name, &p.Purpose, &p.Conditions, &p.PhotoPoint}
+}
+
+func (p Place) words() []types.Text {
+	return []types.Text{p.Name, p.Purpose, p.Conditions, p.PhotoPoint}
+}
+
+func (f *Fields) texts() []*types.Text {
+	return []*types.Text{&f.Name, &f.Purpose, &f.Conditions, &f.PhotoPoint}
 }
 
 func (p *Place) apply(f Fields) {
