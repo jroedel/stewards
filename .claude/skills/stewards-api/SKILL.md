@@ -1,6 +1,6 @@
 ---
 name: stewards-api
-description: Add plants, their photos and where they grow to the live garden steward app through its API, add or describe the garden's places, sort the steward's photo inbox, and read nursery stock for planning a bed, as the steward whose key is in STEWARDS_API_KEY. Use when the person asks to upload, import or add species data, species photos or a place's plants to the site, to sort, go through or identify the photos in their inbox, or to plan a bed from what the nurseries have — not for developing the app.
+description: Add plants, their photos and where they grow to the live garden steward app through its API, add or describe the garden's places, sort the steward's photo inbox, read nursery stock for planning a bed, and translate what people have written between English and Spanish, as the steward whose key is in STEWARDS_API_KEY. Use when the person asks to upload, import or add species data, species photos or a place's plants to the site, to sort, go through or identify the photos in their inbox, to plan a bed from what the nurseries have, or to translate what is waiting — not for developing the app.
 ---
 
 # Adding plants, photos and listings, and sorting the inbox, through the API
@@ -128,8 +128,8 @@ photo already kept answers `"duplicate": true`.
   URL. Do not cite a source you did not read.
 - `status`: `native`, `cultivar` (a native-derived cultivar or hybrid),
   `adapted`, `edible`, `invasive`.
-- English only in `en`. Leave every `es` out: Spanish comes from a native
-  speaker, never from machine translation (design.md).
+- English in `en`. Leave every `es` out: the Spanish is made afterwards, as
+  a translation (see Translating).
 - Notes are for someone standing in the sun with dirty hands: short, plain,
   practical.
 
@@ -154,7 +154,7 @@ its `spot` on the map -- so read it before saying anything about a place.
   units, which the list's `map` gives) only when the person has said where it
   is relative to places already on it, and tell them to check it on the map
   screen. A place inside another is never on the map.
-- English only, as for plants.
+- English in `en`, as for plants; the Spanish is made as a translation.
 - Removing a place is the person's, on its screen.
 
 ## Photos
@@ -321,6 +321,54 @@ a nursery can be a `photo` of the plant instead, if the person wants it.
 
 A photo with a person who can be recognised in it is never sorted to a
 plant's photos: set it aside and say so.
+
+## Translating
+
+All the app's translating is Claude's, both ways between English and
+Spanish: place names and notes, plant names and notes, the notes on plants
+listed at places, and work days. A translation is on every screen at once;
+a steward checks them when they choose, on the translations screen
+(design.md, principle 6).
+
+"Translate what's waiting" means:
+
+1. **List it:** `scripts/stewards-api GET /api/v1/translations/pending`.
+   Each is something a person wrote, in the language they wrote it, with
+   `where` it is read. `written_in` is only a guess, from the page it was
+   typed on: decide the language yourself.
+2. **Translate the batch** into the other language and send it, as
+   `{"translations": [{"key", "from", "text"}]}` with `from` the language
+   the original is in:
+
+   ```sh
+   scripts/stewards-api PUT /api/v1/translations --json @batch/translations.json
+   ```
+
+   The person asking is the yes; there is no table to show first, since
+   they check afterwards. Ask again until `remaining` is 0.
+3. **Report** how many you translated, and name any you were unsure of (a
+   word with two meanings, a plant name you found no source for), so the
+   person looks at those first.
+
+- **Spanish for the gardeners and volunteers here**: plain Latin American
+  Spanish, with the informal **tú** ("Riega cada semana", "Arráncala antes de
+  que suelte semilla"). Short and practical, for someone standing in the sun
+  with dirty hands. Say what the original says and nothing more.
+- **English from Spanish** the same way: plain and short.
+- **A plant's common name** (`name` is true, and `where` says "the common
+  name of" its scientific name): give an established Spanish common name
+  only when a source you have read gives one (Enciclovida, a Mexican or
+  Texan native-plant list, Spanish Wikipedia); otherwise send the English
+  name unchanged as its translation. Never translate a scientific name.
+- **A place's name** is translated by its meaning ("Rain garden": "Jardín de
+  lluvia"); a saint's name takes its Spanish form ("St. Joseph": "San José").
+- **Use the glossary**, the names already translated, and the same words for
+  them in every sentence.
+- **Keep every `{placeholder}` exactly as it is.** The app fills it in.
+- **A translation a steward has checked is refused** unless sent unchanged.
+  Tell the steward what you would change; they change it on the screen.
+- Translate only when the steward asks. To revise some at their request,
+  `GET /api/v1/translations` lists what is there, with `checked` set to no or yes.
 
 ## Planning a bed from nursery stock
 

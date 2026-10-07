@@ -37,8 +37,9 @@ func Short(id string) string {
 // When the page is in Spanish and the Spanish has not been written yet, the
 // English is shown in its place wrapped in lang="en", so a screen reader
 // switches voice rather than reading English with Spanish pronunciation
-// (design.md, "Accessibility"). The alternative, a machine translation, is
-// the one thing design.md rules out.
+// (design.md, "Accessibility"). Translating on the fly instead would put a
+// translation nobody can check on the screen; the translation memory
+// (translationbus) holds the ones a steward can.
 //
 // The text is escaped here, since the result is trusted HTML.
 func Say(l types.Lang, t types.Text) template.HTML {

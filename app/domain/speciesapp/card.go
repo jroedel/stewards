@@ -392,8 +392,8 @@ func figureOf(p photobus.Photo, sp speciesbus.Species, names map[types.ID]types.
 }
 
 // takenWords is "April 2027", "April", "2027" or nothing. English month
-// names, like the rest of the card's words until a native speaker writes the
-// Spanish.
+// names, like the rest of the card's words until the screens' own words are
+// translated.
 func takenWords(year, month int) string {
 	var parts []string
 	if month >= 1 && month <= 12 {

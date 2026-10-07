@@ -130,8 +130,9 @@ type Storer interface {
 
 // Business applies the rules and then asks the store.
 type Business struct {
-	store Storer
-	now   func() time.Time
+	store   Storer
+	now     func() time.Time
+	origins []Origins
 
 	mu    sync.RWMutex
 	byKey map[string]Translation

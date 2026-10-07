@@ -34,6 +34,7 @@ import (
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/domain/subscriber/subscriberbus"
+	"github.com/jroedel/stewards/business/domain/translation/translationbus"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
 	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
 	"github.com/jroedel/stewards/foundation/mail"
@@ -62,6 +63,9 @@ type Config struct {
 	// Nursery may be nil likewise, for no nursery stock screens. It is
 	// only mounted with an Inbox, which is how stock arrives.
 	Nursery *nurserybus.Business
+
+	// Translations may be nil likewise, for no translations in the API.
+	Translations *translationbus.Business
 
 	// Subscribers may be nil, and with no Mail or no BaseURL it is unused:
 	// the email sign-up is mounted only when it can send its welcome.
@@ -219,6 +223,10 @@ func New(cfg Config) (http.Handler, error) {
 
 		if cfg.Nursery != nil {
 			apiCfg.Nursery = cfg.Nursery
+		}
+
+		if cfg.Translations != nil {
+			apiCfg.Translations = cfg.Translations
 		}
 
 		apiapp.Routes(api, apiCfg)

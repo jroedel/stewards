@@ -114,9 +114,9 @@ func Routes(mux *http.ServeMux, cfg Config) {
 
 // ------------------------------------------------------------------ copy
 
-// The words on these pages. English only for now: a steward reads these, not
-// a volunteer, and Spanish waits for a native speaker (design.md, principle
-// 6) -- until then say shows the English marked lang="en".
+// The words on these pages. English only for now: Spanish comes when the
+// screens' own words are translated (design.md, principle 6), and until then
+// say shows the English marked lang="en".
 var (
 	sayCannotRead = types.Text{EN: "We could not read that. Open the page again and try once more."}
 	sayNotAnEmail = types.Text{EN: "That does not look like an email address. Check it for a typo."}

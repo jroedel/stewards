@@ -16,9 +16,14 @@
 // A key acts as the steward who made it (mid.APIKey), and only through the
 // import rules: speciesbus.Import, photobus.Import and listingbus.Import, and
 // inboxbus.Sort, which files a photo the way photobus.Import would.
-// None will confirm a plant, check a photo, or tell volunteers to pull one. A batch from a program lands as "not yet confirmed"
+// None will confirm a plant or check a photo. A batch from a program lands as "not yet confirmed"
 // and "not checked", and a person ticks those on the screens after looking --
 // the wingstem lesson, which applies to Claude as much as to a nursery tag.
+//
+// Two things a key makes are on the screens at once, by the stewards'
+// decision: a listing, pull included (listingbus.Import), and a translation
+// (translations.go), which is Claude's to make and a steward's to check
+// when they choose.
 //
 // Nothing here removes anything, either. Taking a plant or a photo away is
 // done by a person on the screens, where the confirmation box is.
@@ -104,6 +109,10 @@ type Config struct {
 	Inbox   Inbox
 	Nursery Nursery
 
+	// Translations may be nil, and its endpoints are then neither mounted
+	// nor in the index.
+	Translations Translations
+
 	// BaseURL is the public origin, for the absolute links in answers: a
 	// program reading them may be anywhere.
 	BaseURL string
@@ -118,13 +127,15 @@ type app struct {
 	inbox    Inbox
 	nursery  Nursery
 	base     string
+
+	translations Translations
 }
 
 // Routes mounts the API on its own mux. Each route that needs a key is
 // behind mid.RequireKey; mid.APIKey, which reads the key, is the muxer's to
 // put around the whole of it.
 func Routes(mux *http.ServeMux, cfg Config) {
-	a := app{log: cfg.Log, species: cfg.Species, places: cfg.Places, photos: cfg.Photos, listings: cfg.Listings, inbox: cfg.Inbox, nursery: cfg.Nursery, base: cfg.BaseURL}
+	a := app{log: cfg.Log, species: cfg.Species, places: cfg.Places, photos: cfg.Photos, listings: cfg.Listings, inbox: cfg.Inbox, nursery: cfg.Nursery, base: cfg.BaseURL, translations: cfg.Translations}
 	if a.inbox == nil {
 		a.nursery = nil
 	}
@@ -195,7 +206,7 @@ type Index struct {
 
 func (a app) endpoints() []Endpoint {
 	text := func(name, what string, required bool) Field {
-		return Field{Name: name, Type: "object {en, es}", Required: required, Description: what + ` In English as "en"; "es" is Spanish, and only from a native speaker -- leave it out rather than translate by machine.`}
+		return Field{Name: name, Type: "object {en, es}", Required: required, Description: what + ` In English as "en". Leave "es" out: the Spanish is made afterwards, through the translations endpoints, which list every text still waiting for one.`}
 	}
 
 	size := func(name, what string) Field {
@@ -357,6 +368,10 @@ func (a app) endpoints() []Endpoint {
 		all = append(all, a.nurseryEndpoints()...)
 	}
 
+	if a.translations != nil {
+		all = append(all, a.translationEndpoints()...)
+	}
+
 	return all
 }
 
@@ -371,6 +386,7 @@ func (a app) index(w http.ResponseWriter, r *http.Request) {
 			"Nothing sent here is confirmed or checked. A steward confirms a plant, and checks a photo, on its screen after looking. Sending confirmed or checked is refused.",
 			"Nothing is removed through the API, an inbox photo included. A person does that on the screens.",
 			"A plant listed at a place is on its card at once, pull included: mark one to pull only where a steward has agreed it comes out there, with a note saying why.",
+			"A translation is on every screen at once too, for a steward to check when they choose. Translate only when a steward asks; one a steward has checked is changed on the translations screen, not here.",
 			"Sending a plant exactly as it is already changes nothing, and the same photo twice is kept once, so a batch can safely be sent again.",
 			"A plant's slug is its address, /plants/<slug>, and cannot change once made: lower-case letters, numbers and hyphens, such as winecup.",
 			"Sizes are whole inches. Months are 1 to 12.",

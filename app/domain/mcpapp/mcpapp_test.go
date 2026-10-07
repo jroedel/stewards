@@ -28,6 +28,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/domain/species/stores/speciesdb"
+	"github.com/jroedel/stewards/business/domain/translation/stores/translationdb"
+	"github.com/jroedel/stewards/business/domain/translation/translationbus"
 	"github.com/jroedel/stewards/business/domain/user/stores/userdb"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
 	"github.com/jroedel/stewards/business/domain/workday/stores/workdaydb"
@@ -68,6 +70,7 @@ func serve(t *testing.T) *site {
 		func() error { return inboxdb.Init(t.Context(), db) },
 		func() error { return nurserydb.Init(t.Context(), db) },
 		func() error { return workdaydb.Init(t.Context(), db) },
+		func() error { return translationdb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
 			t.Fatal(err)
@@ -86,15 +89,24 @@ func serve(t *testing.T) *site {
 	log := slog.New(slog.DiscardHandler)
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
 	photos := photobus.NewBusiness(photodb.NewStore(db), store("photo-files"), nil)
-	listings := listingbus.NewBusiness(listingdb.NewStore(db), nil, nil)
+	memory, err := translationbus.NewBusiness(t.Context(), translationdb.NewStore(db), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	places := placebus.NewBusiness(placedb.NewStore(db), memory, nil)
+	species := speciesbus.NewBusiness(speciesdb.NewStore(db), memory, nil)
+	listings := listingbus.NewBusiness(listingdb.NewStore(db), memory, nil)
+	workdays := workdaybus.NewBusiness(workdaydb.NewStore(db), memory, nil)
+	memory.ReadFrom(places, species, listings, workdays)
 	stock := nurserybus.NewBusiness(nurserydb.NewStore(db), nil)
 	inbox := inboxbus.NewBusiness(inboxdb.NewStore(db), store("inbox"), inboxbus.Deps{Photos: photos, Listings: listings, Stock: stock}, nil)
 
 	h, err := muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
-		Places: placebus.NewBusiness(placedb.NewStore(db), nil, nil), Species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil, nil),
-		Users: users, Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil, nil),
-		Photos: photos, Listings: listings, Inbox: inbox, Nursery: stock,
+		Places: places, Species: species,
+		Users: users, Workdays: workdays,
+		Photos: photos, Listings: listings, Inbox: inbox, Nursery: stock, Translations: memory,
 		BaseURL: base,
 	})
 	if err != nil {
@@ -237,19 +249,26 @@ func TestTheToolsAreTheAPIsEndpoints(t *testing.T) {
 		byName[tool.Name] = tool
 	}
 
-	for _, want := range []string{"list_plants", "get_plant", "put_plant", "list_places", "put_place_plant", "remove_place_plant", "list_inbox", "sort_inbox_photo", "change_photo", "list_nursery_stock", "look_at_photo"} {
+	for _, want := range []string{"list_plants", "get_plant", "put_plant", "list_places", "put_place_plant", "remove_place_plant", "list_inbox", "sort_inbox_photo", "change_photo", "list_nursery_stock", "look_at_photo", "list_pending_translations", "put_translations", "list_translations"} {
 		if byName[want] == nil {
 			t.Errorf("no %s", want)
 		}
 	}
 
-	if len(byName) != 19 {
-		t.Errorf("%d tools: the index's 18 and look_at_photo", len(byName))
+	if len(byName) != 22 {
+		t.Errorf("%d tools: the index's 21 and look_at_photo", len(byName))
+	}
+
+	// A list of objects is a list of objects, so Claude sends a batch of
+	// translations as one call.
+	raw, _ := json.Marshal(byName["put_translations"].InputSchema)
+	if !strings.Contains(string(raw), `"translations":{"description"`) || !strings.Contains(string(raw), `"items":{"properties":{"from":{"type":"string"},"key":{"type":"string"},"text":{"type":"string"}},"type":"object"}`) {
+		t.Errorf("put_translations's schema: %s", raw)
 	}
 
 	// A path's parameter is a required argument, and a field's values are
 	// its enum.
-	raw, _ := json.Marshal(byName["sort_inbox_photo"].InputSchema)
+	raw, _ = json.Marshal(byName["sort_inbox_photo"].InputSchema)
 	if !strings.Contains(string(raw), `"required":["id","outcome"]`) || !strings.Contains(string(raw), `"enum":["photo","planted","stock","unsure"]`) {
 		t.Errorf("sort_inbox_photo's schema: %s", raw)
 	}

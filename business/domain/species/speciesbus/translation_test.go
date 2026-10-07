@@ -62,6 +62,19 @@ func TestAPlantKeepsItsWordsAndTheMemoryTheirTranslation(t *testing.T) {
 		t.Fatalf("All = %+v, %v", all, err)
 	}
 
+	originals, err := b.Originals(t.Context())
+	if err != nil || len(originals) != 2 {
+		t.Fatalf("Originals = %+v, %v", originals, err)
+	}
+
+	if o := originals[0]; !o.Name || o.Where != "the common name of Callirhoe involucrata" || o.Text != (types.Text{EN: "Winecup"}) {
+		t.Errorf("the name: %+v", o)
+	}
+
+	if o := originals[1]; o.Name || o.Where != "Winecup: the colour of its flowers" {
+		t.Errorf("the colour: %+v", o)
+	}
+
 	f.Common.ES, f.FlowerColor.ES = "", ""
 
 	if got, err := b.Import(t.Context(), f); err != nil || got.Outcome != speciesbus.Unchanged || got.Species.Common.ES != "Copa de vino" {

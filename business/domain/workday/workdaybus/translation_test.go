@@ -65,6 +65,11 @@ func TestADayKeepsItsWordsAndTheMemoryTheirTranslation(t *testing.T) {
 		t.Errorf("Upcoming = %+v, %v", upcoming, err)
 	}
 
+	originals, err := b.Originals(t.Context())
+	if err != nil || len(originals) != 1 || originals[0].Where != "the work day on Saturday 10 October 2026: its title, on the home page" {
+		t.Errorf("Originals = %+v, %v", originals, err)
+	}
+
 	f.Title.EN = "Planting the rain garden's middle band"
 
 	changed, err := b.Update(t.Context(), made.ID, f)

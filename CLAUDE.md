@@ -169,13 +169,19 @@ A question about *behaviour* starts in `business/domain/…bus`. A question abou
   using their app, not an agent operating the server, so it is not a way
   around the rule above: never as a test, never while developing, and never
   to read or change anything but places, plants, photos, listings, the
-  steward's photo inbox and nursery stock (places since 2026-10-06). The API
+  steward's photo inbox, nursery stock (places since 2026-10-06) and
+  translations (since 2026-10-07). The API
   confirms no plant and checks no photo, so neither reaches a volunteer
   until a person has looked at it, and a change to a checked photo takes
   the check away again. A listing is the exception -- it is on the place
   card as soon as it is made, pull included, which the stewards decided on
   2026-10-06 the API may mark -- so a pull goes only where the person has
-  agreed, with a note saying why. The API takes plants off places, and
+  agreed, with a note saying why. A translation is the other exception:
+  the stewards decided on 2026-10-07 that Claude does all the translating,
+  both ways between English and Spanish, and that a translation is on the
+  screens at once, for a person to check when they choose; one a person
+  has checked is not changed through the API, and Claude translates only
+  when a person asks. The API takes plants off places, and
   deletes no plant, photo or place.
   Sorting the inbox files a photo the same way, unchecked, and never
   discards one: a person does that on the photo's screen.

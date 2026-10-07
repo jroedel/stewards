@@ -81,9 +81,9 @@ func (a *App) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+PlacesPath, a.list)
 }
 
-// The copy on these screens. Spanish waits for a native speaker to write it
-// (design.md, principle 6), and until then the page shows the English marked
-// lang="en".
+// The copy on these screens. Spanish comes when the screens' own words are
+// translated (design.md, principle 6), and until then the page shows the
+// English marked lang="en".
 type wording struct {
 	Eyebrow, Title, Lead types.Text
 
