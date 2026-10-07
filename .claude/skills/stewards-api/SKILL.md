@@ -195,6 +195,37 @@ better.
   uploading, and keep the originals as the camera or the source saved them:
   the server makes the sizes it needs and strips location and camera details
   itself.
+- **Keep each iNaturalist photo's observation** in the batch's record in
+  `photos/` (`"observation": "https://www.inaturalist.org/observations/<id>"`).
+  The app keeps only the photo's page, and iNaturalist's API cannot get from
+  a photo back to its observation, which is what says whether the ID is
+  settled.
+
+### Handing the steward many photos to check at once
+
+`<base>/steward/check/many?ids=<id>,<id>,…` shows the steward those photos,
+by plant, each ticked, with one button that checks every one still ticked.
+Use the first 8 characters of each id, as the screens show them. It is for a
+batch whose ID is settled somewhere the steward trusts more than a glance at
+a thumbnail, and so far that means borrowed iNaturalist photos whose
+observation, read today, is research grade. Before making the link:
+
+1. Read each observation, as of today:
+   `GET https://api.inaturalist.org/v1/observations/<id>`. Its
+   `quality_grade` is `research`, the photo's iNaturalist id is among its
+   `photos`, and its `taxon.name` is the plant's scientific name.
+2. Leave out anything casual or needs-ID, any name that is not ours (a
+   cultivar iNaturalist cannot grade, a sister species), and any photo you
+   would not sort to that plant yourself. A name that differs only by a
+   rename (*Conoclinium dissectum* for Gregg's mistflower) can go in, but
+   list it by name in your table so the steward sees it.
+3. Show the steward one table: how many go in, and each one left out with
+   the reason. Then give the link. Never describe the photos as checked:
+   they are checked when the steward presses the button.
+
+The page takes 500 at most. A short id two unchecked photos share is left
+out and counted rather than guessed, so the page's count of photos "not
+here" should match the photos you know were checked already.
 
 ## Sorting the photo inbox
 

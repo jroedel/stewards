@@ -62,22 +62,28 @@ type manyView struct {
 	Plants []manyPlant
 	Count  int
 
-	// Listed is true when the page shows a list from the address; Left is
-	// how many of the list are not here -- checked already, gone, or a
-	// short id two photos share -- and Over how many past maxMany.
-	Listed     bool
-	Left, Over int
-	IDs        string
+	// Listed is true when the page shows a list from the address, and
+	// Ticked when its photos start ticked; Left is how many of the list are
+	// not here -- checked already, gone, or a short id two photos share --
+	// and Over how many past maxMany.
+	Listed, Ticked bool
+	Left, Over     int
+	IDs            string
 
 	Done, Problem string
 }
 
 // many shows the page.
 func (a app) many(w http.ResponseWriter, r *http.Request) {
-	a.showMany(w, r, http.StatusOK, r.URL.Query().Get("ids"), manyView{})
+	a.showMany(w, r, http.StatusOK, r.URL.Query().Get("ids"), nil, manyView{})
 }
 
-func (a app) showMany(w http.ResponseWriter, r *http.Request, status int, ids string, v manyView) {
+// showMany draws the page. done is the ids a press has just checked, which
+// the page does not count among the list's photos that are not here: after
+// "Checked 192 photos", a sentence saying 192 of the list are missing --
+// "checked already, removed, or named by a short id two photos share" --
+// reads as something gone wrong, and would bury the few that really are.
+func (a app) showMany(w http.ResponseWriter, r *http.Request, status int, ids string, done []string, v manyView) {
 	ctx := r.Context()
 
 	queue, err := a.photos.Unchecked(ctx)
@@ -96,12 +102,20 @@ func (a app) showMany(w http.ResponseWriter, r *http.Request, status int, ids st
 			v.Over, wanted = len(wanted)-maxMany, wanted[:maxMany]
 		}
 
-		var left int
-		shown, left = pick(queue, wanted)
-		v.Left = left
+		wanted = slices.DeleteFunc(wanted, func(w string) bool {
+			return slices.ContainsFunc(done, func(d string) bool { return strings.HasPrefix(d, w) })
+		})
+
+		shown, v.Left = pick(queue, wanted)
 	}
 
-	plants, err := a.group(ctx, shown, v.Listed)
+	// A list starts ticked when it is first shown, and never after a press.
+	// What is still on the page then is what the steward left unticked, or
+	// what the rules refused; ticking it again would leave one more press
+	// to check exactly the photos they had just decided against.
+	v.Ticked = v.Listed && r.Method == http.MethodGet
+
+	plants, err := a.group(ctx, shown, v.Ticked)
 	if err != nil {
 		a.fail(w, r, "laying out the photos to check", err)
 
@@ -132,7 +146,8 @@ func (a app) checkMany(w http.ResponseWriter, r *http.Request) {
 
 	ids := r.PostFormValue("ids")
 
-	var checked, refused int
+	var done []string
+	var refused int
 	for _, s := range r.PostForm["id"] {
 		id, err := types.ParseID(s)
 		if err != nil {
@@ -141,7 +156,7 @@ func (a app) checkMany(w http.ResponseWriter, r *http.Request) {
 
 		switch _, err := a.photos.SetChecked(r.Context(), id, true); {
 		case err == nil:
-			checked++
+			done = append(done, id.String())
 		case isRefusal(err):
 			refused++
 		default:
@@ -152,7 +167,7 @@ func (a app) checkMany(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var v manyView
-	switch checked {
+	switch checked := len(done); checked {
 	case 0:
 		v.Problem = "Nothing was checked: no photo was ticked."
 	case 1:
@@ -162,10 +177,10 @@ func (a app) checkMany(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if refused > 0 {
-		v.Problem = strconv.Itoa(refused) + " could not be checked as they are. They are below: open each one in the queue to see why."
+		v.Problem = strconv.Itoa(refused) + " could not be checked as they are. They are below, not ticked: open each one in the queue to see why."
 	}
 
-	a.showMany(w, r, http.StatusOK, ids, v)
+	a.showMany(w, r, http.StatusOK, ids, done, v)
 }
 
 // isRefusal is an error that is about the photo, not about the server: one
@@ -198,16 +213,17 @@ func splitIDs(s string) []string {
 }
 
 // pick is the photos of queue that wanted names, in the queue's order, and
-// how many of wanted named none of them or more than one.
+// how many of wanted named none of them or more than one. A photo named
+// twice, by its short id and its whole one, is shown once.
 func pick(queue []photobus.Photo, wanted []string) ([]photobus.Photo, int) {
-	var out []photobus.Photo
+	keep := map[types.ID]bool{}
 	left := 0
 
 	for _, w := range wanted {
-		var found []photobus.Photo
+		var found []types.ID
 		for _, p := range queue {
 			if strings.HasPrefix(p.ID.String(), w) {
-				found = append(found, p)
+				found = append(found, p.ID)
 			}
 		}
 
@@ -217,15 +233,15 @@ func pick(queue []photobus.Photo, wanted []string) ([]photobus.Photo, int) {
 			continue
 		}
 
-		if !slices.ContainsFunc(out, func(p photobus.Photo) bool { return p.ID == found[0].ID }) {
-			out = append(out, found[0])
-		}
+		keep[found[0]] = true
 	}
 
-	slices.SortStableFunc(out, func(x, y photobus.Photo) int {
-		return slices.IndexFunc(queue, func(p photobus.Photo) bool { return p.ID == x.ID }) -
-			slices.IndexFunc(queue, func(p photobus.Photo) bool { return p.ID == y.ID })
-	})
+	var out []photobus.Photo
+	for _, p := range queue {
+		if keep[p.ID] {
+			out = append(out, p)
+		}
+	}
 
 	return out, left
 }

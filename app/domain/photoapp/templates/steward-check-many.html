@@ -8,7 +8,7 @@
 {{with .Problem}}<p class="problem" role="alert">{{.}}</p>{{end}}
 
 {{if .Plants}}
-<p class="lead">{{.Count}} {{if eq .Count 1}}photo{{else}}photos{{end}} not checked yet. {{if .Listed}}Untick any that do not show their plant{{else}}Tick the ones that show their plant{{end}}, then press the button at the bottom. Volunteers see a photo once it is checked.</p>
+<p class="lead">{{.Count}} {{if eq .Count 1}}photo{{else}}photos{{end}} not checked yet. {{if .Ticked}}Untick any that do not show their plant{{else}}Tick the ones that show their plant{{end}}, then press the button at the bottom. Volunteers see a photo once it is checked.</p>
 {{else if .Listed}}
 <div class="card empty"><p>None of these photos is waiting to be checked.</p></div>
 {{else}}
