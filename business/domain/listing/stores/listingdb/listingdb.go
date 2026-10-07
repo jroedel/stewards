@@ -122,10 +122,15 @@ func (s *Store) ForSpecies(ctx context.Context, speciesID types.ID) ([]listingbu
 	return s.list(ctx, `WHERE species_id = ?`, speciesID.String())
 }
 
-func (s *Store) list(ctx context.Context, where string, arg any) ([]listingbus.Listing, error) {
+// All is every listing.
+func (s *Store) All(ctx context.Context) ([]listingbus.Listing, error) {
+	return s.list(ctx, ``)
+}
+
+func (s *Store) list(ctx context.Context, where string, args ...any) ([]listingbus.Listing, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT place_id, species_id, action, planned, note_en, note_es, created_at, updated_at
-FROM listings `+where+` ORDER BY created_at, species_id`, arg)
+FROM listings `+where+` ORDER BY created_at, species_id`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("reading listings: %w", err)
 	}

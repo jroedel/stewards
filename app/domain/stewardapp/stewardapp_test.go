@@ -70,9 +70,9 @@ func serve(t *testing.T, withMail bool) *site {
 
 	cfg := muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
-		Places: placebus.NewBusiness(placedb.NewStore(db), nil), Users: s.users,
-		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
-		Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: photos(t, db),
+		Places: placebus.NewBusiness(placedb.NewStore(db), nil, nil), Users: s.users,
+		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil, nil),
+		Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil, nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil, nil), Photos: photos(t, db),
 		BaseURL: base,
 	}
 	if withMail {

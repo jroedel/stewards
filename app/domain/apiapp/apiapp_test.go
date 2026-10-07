@@ -97,9 +97,9 @@ func serve(t *testing.T) *site {
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
 	s := &site{
 		t:        t,
-		species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
-		places:   placebus.NewBusiness(placedb.NewStore(db), nil),
-		listings: listingbus.NewBusiness(listingdb.NewStore(db), nil),
+		species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil, nil),
+		places:   placebus.NewBusiness(placedb.NewStore(db), nil, nil),
+		listings: listingbus.NewBusiness(listingdb.NewStore(db), nil, nil),
 		photos:   photobus.NewBusiness(photodb.NewStore(db), files, nil),
 	}
 	s.nursery = nurserybus.NewBusiness(nurserydb.NewStore(db), nil)
@@ -108,7 +108,7 @@ func serve(t *testing.T) *site {
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
 		Places: s.places, Species: s.species, Users: users,
-		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
+		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil, nil),
 		Photos:   s.photos,
 		Listings: s.listings,
 		Inbox:    s.inbox,

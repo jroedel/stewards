@@ -31,6 +31,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/species/stores/speciesdb"
 	"github.com/jroedel/stewards/business/domain/subscriber/stores/subscriberdb"
 	"github.com/jroedel/stewards/business/domain/subscriber/subscriberbus"
+	"github.com/jroedel/stewards/business/domain/translation/stores/translationdb"
+	"github.com/jroedel/stewards/business/domain/translation/translationbus"
 	"github.com/jroedel/stewards/business/domain/user/stores/userdb"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
 	"github.com/jroedel/stewards/business/domain/workday/stores/workdaydb"
@@ -144,9 +146,22 @@ func run() error {
 		sender = smtp
 	}
 
+	translations, err := translationbus.NewBusiness(ctx, translationdb.NewStore(db), nil)
+	if err != nil {
+		return err
+	}
+
+	places := placebus.NewBusiness(placedb.NewStore(db), translations, nil)
+	species := speciesbus.NewBusiness(speciesdb.NewStore(db), translations, nil)
+	workdays := workdaybus.NewBusiness(workdaydb.NewStore(db), translations, nil)
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
 	photos := photobus.NewBusiness(photodb.NewStore(db), photoFiles, nil)
-	listings := listingbus.NewBusiness(listingdb.NewStore(db), nil)
+	listings := listingbus.NewBusiness(listingdb.NewStore(db), translations, nil)
+
+	if err := moveTranslations(ctx, log, places, species, listings, workdays); err != nil {
+		return err
+	}
+
 	nursery := nurserybus.NewBusiness(nurserydb.NewStore(db), nil)
 	inbox := inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, inboxbus.Deps{Photos: photos, Listings: listings, Stock: nursery}, nil)
 	subscribers := subscriberbus.NewBusiness(subscriberdb.NewStore(db), nil)
@@ -156,12 +171,12 @@ func run() error {
 		Log:      log,
 		DB:       db,
 		Expected: expected,
-		Places:   placebus.NewBusiness(placedb.NewStore(db), nil),
-		Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
+		Places:   places,
+		Species:  species,
 		Listings: listings,
 		Photos:   photos,
 		Users:    users,
-		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil),
+		Workdays: workdays,
 		Inbox:    inbox,
 		Nursery:  nursery,
 
@@ -216,8 +231,8 @@ func setMemoryLimit(env string) int64 {
 // layer points at a place, and the listings of species at places reference
 // both places and species, so they go after both; so do photos, for the same
 // reason. The inbox names a place and the steward who sent each photo, so it
-// follows the stewards. Stewardship days and the email list reference
-// nothing, and go last. A store added in
+// follows the stewards. Stewardship days, the email list and the translation
+// memory reference nothing, and go last. A store added in
 // the wrong place fails at startup on a fresh database and nowhere else, which
 // is the cheapest moment for it to fail.
 func prepare(ctx context.Context, db *sql.DB) error {
@@ -235,6 +250,7 @@ func prepare(ctx context.Context, db *sql.DB) error {
 		{"nursery stock", nurserydb.Init},
 		{"stewardship days", workdaydb.Init},
 		{"the email list", subscriberdb.Init},
+		{"the translations", translationdb.Init},
 	} {
 		if err := step.init(ctx, db); err != nil {
 			return fmt.Errorf("preparing %s: %w", step.what, err)
@@ -263,11 +279,44 @@ func expectedSchema() sqldb.Expected {
 		nurserydb.Expected,
 		workdaydb.Expected,
 		subscriberdb.Expected,
+		translationdb.Expected,
 	} {
 		maps.Copy(expected, store)
 	}
 
 	return expected
+}
+
+// moveTranslations runs each domain's MoveTranslations: the Spanish written
+// beside the English before the translation memory existed goes into the
+// memory, and the record keeps its English alone.
+//
+// At every startup rather than once, because a binary rolled back to before
+// the memory writes Spanish beside English again, and the next deploy should
+// pick that up without anyone remembering to. After the first run each is a
+// read of every record and no writes. A failure stops the start, as an Init's
+// would, so that it is seen. What was moved before it stays moved: a record
+// is written back only once its words are in the memory, so there is no
+// half-moved record to clean up.
+func moveTranslations(ctx context.Context, log *slog.Logger, domains ...interface {
+	MoveTranslations(context.Context) (int, error)
+}) error {
+	moved := 0
+
+	for _, d := range domains {
+		n, err := d.MoveTranslations(ctx)
+		if err != nil {
+			return fmt.Errorf("moving Spanish into the translation memory: %w", err)
+		}
+
+		moved += n
+	}
+
+	if moved > 0 {
+		log.Info("moved Spanish into the translation memory", "records", moved)
+	}
+
+	return nil
 }
 
 // prune clears expired sign-in links and sessions, sign-ups to the email list

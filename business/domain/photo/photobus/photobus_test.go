@@ -73,8 +73,8 @@ func setup(t *testing.T) *garden {
 
 	g := &garden{
 		photos:  photobus.NewBusiness(photodb.NewStore(db), files, func() time.Time { return clock }),
-		places:  placebus.NewBusiness(placedb.NewStore(db), nil),
-		species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
+		places:  placebus.NewBusiness(placedb.NewStore(db), nil, nil),
+		species: speciesbus.NewBusiness(speciesdb.NewStore(db), nil, nil),
 		dir:     dir,
 		clock:   &clock,
 	}

@@ -95,16 +95,16 @@ func setup(t *testing.T) *garden {
 	now := func() time.Time { return clock }
 
 	g := &garden{
-		places:   placebus.NewBusiness(placedb.NewStore(db), nil),
+		places:   placebus.NewBusiness(placedb.NewStore(db), nil, nil),
 		photos:   photobus.NewBusiness(photodb.NewStore(db), photoFiles, now),
-		listings: listingbus.NewBusiness(listingdb.NewStore(db), now),
+		listings: listingbus.NewBusiness(listingdb.NewStore(db), nil, now),
 		dir:      dir,
 		clock:    &clock,
 	}
 	g.nursery = nurserybus.NewBusiness(nurserydb.NewStore(db), now)
 	g.inbox = inboxbus.NewBusiness(inboxdb.NewStore(db), files, inboxbus.Deps{Photos: g.photos, Listings: g.listings, Stock: g.nursery}, now)
 
-	g.species = speciesbus.NewBusiness(speciesdb.NewStore(db), nil)
+	g.species = speciesbus.NewBusiness(speciesdb.NewStore(db), nil, nil)
 	if g.penstemon, err = g.species.Create(t.Context(), speciesbus.Fields{Slug: "brazos-penstemon", Common: types.Text{EN: "Brazos penstemon"}}); err != nil {
 		t.Fatal(err)
 	}

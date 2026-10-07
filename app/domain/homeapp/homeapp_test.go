@@ -63,16 +63,16 @@ func serverWithDays(t *testing.T) (http.Handler, *placebus.Business, *workdaybus
 		}
 	}
 
-	places := placebus.NewBusiness(placedb.NewStore(db), nil)
+	places := placebus.NewBusiness(placedb.NewStore(db), nil, nil)
 	clock := time.Date(2026, 10, 1, 9, 0, 0, 0, types.Garden)
-	days := workdaybus.NewBusiness(workdaydb.NewStore(db), func() time.Time { return clock })
+	days := workdaybus.NewBusiness(workdaydb.NewStore(db), nil, func() time.Time { return clock })
 
 	h, err := muxer.New(muxer.Config{
 		Log:      slog.New(slog.DiscardHandler),
 		DB:       db,
 		Expected: sqldb.Infrastructure,
 		Places:   places,
-		Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil), Photos: photos(t, db),
+		Species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil, nil), Listings: listingbus.NewBusiness(listingdb.NewStore(db), nil, nil), Photos: photos(t, db),
 		Users:    userbus.NewBusiness(slog.New(slog.DiscardHandler), userdb.NewStore(db), nil),
 		Workdays: days,
 	})

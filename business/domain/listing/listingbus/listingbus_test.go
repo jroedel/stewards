@@ -59,9 +59,9 @@ func setup(t *testing.T) *garden {
 	now := func() time.Time { return clock }
 
 	g := &garden{
-		listings: listingbus.NewBusiness(listingdb.NewStore(db), now),
-		places:   placebus.NewBusiness(placedb.NewStore(db), nil),
-		species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil),
+		listings: listingbus.NewBusiness(listingdb.NewStore(db), nil, now),
+		places:   placebus.NewBusiness(placedb.NewStore(db), nil, nil),
+		species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil, nil),
 		clock:    &clock,
 	}
 

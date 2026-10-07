@@ -34,7 +34,7 @@ func business(t *testing.T) *placebus.Business {
 
 	clock := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 
-	return placebus.NewBusiness(placedb.NewStore(db), func() time.Time {
+	return placebus.NewBusiness(placedb.NewStore(db), nil, func() time.Time {
 		clock = clock.Add(time.Minute)
 		return clock
 	})

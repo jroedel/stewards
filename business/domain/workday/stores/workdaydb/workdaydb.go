@@ -124,6 +124,11 @@ func (s *Store) EndedBy(ctx context.Context, t time.Time, limit int) ([]workdayb
 	return s.list(ctx, `WHERE ends_at <= ? ORDER BY starts_at DESC, id LIMIT ?`, t.UnixMilli(), limit)
 }
 
+// All is every day.
+func (s *Store) All(ctx context.Context) ([]workdaybus.Day, error) {
+	return s.list(ctx, ``)
+}
+
 func (s *Store) list(ctx context.Context, rest string, args ...any) ([]workdaybus.Day, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, starts_at, ends_at, title_en, title_es, details_en, details_es, created_at, updated_at

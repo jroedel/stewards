@@ -30,6 +30,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jroedel/stewards/business/domain/translation/translationbus"
 	"github.com/jroedel/stewards/business/types"
 )
 
@@ -212,16 +213,23 @@ type Storer interface {
 // Business applies the rules and then asks the store.
 type Business struct {
 	store Storer
+	tr    translationbus.Memory
 	now   func() time.Time
 }
 
-// NewBusiness constructs one; nil now means the wall clock.
-func NewBusiness(store Storer, now func() time.Time) *Business {
+// NewBusiness constructs one. tr is where a plant's words find their other
+// language; nil is translationbus.None, for a test not about translation. nil
+// now means the wall clock.
+func NewBusiness(store Storer, tr translationbus.Memory, now func() time.Time) *Business {
+	if tr == nil {
+		tr = translationbus.None{}
+	}
+
 	if now == nil {
 		now = time.Now
 	}
 
-	return &Business{store: store, now: now}
+	return &Business{store: store, tr: tr, now: now}
 }
 
 // Create adds a species.
@@ -240,6 +248,10 @@ func (b *Business) Create(ctx context.Context, f Fields) (Species, error) {
 		return Species{}, err
 	}
 
+	if err := translationbus.KeepAll(ctx, b.tr, f.texts(), nil); err != nil {
+		return Species{}, err
+	}
+
 	now := b.now()
 	s := Species{ID: types.NewID(), Slug: f.Slug, CreatedAt: now, UpdatedAt: now}
 	s.apply(f)
@@ -252,7 +264,7 @@ func (b *Business) Create(ctx context.Context, f Fields) (Species, error) {
 		return Species{}, fmt.Errorf("adding the species %q: %w", f.Slug, err)
 	}
 
-	return s, nil
+	return b.fill(s), nil
 }
 
 // Update changes everything but the address.
@@ -268,6 +280,10 @@ func (b *Business) Update(ctx context.Context, id types.ID, f Fields) (Species, 
 		return Species{}, err
 	}
 
+	if err := translationbus.KeepAll(ctx, b.tr, f.texts(), b.fill(s).words()); err != nil {
+		return Species{}, err
+	}
+
 	s.apply(f)
 	s.UpdatedAt = b.now()
 
@@ -275,7 +291,7 @@ func (b *Business) Update(ctx context.Context, id types.ID, f Fields) (Species, 
 		return Species{}, fmt.Errorf("saving the species %q: %w", s.Slug, err)
 	}
 
-	return s, nil
+	return b.fill(s), nil
 }
 
 // Delete removes a species that is not listed anywhere.
@@ -303,12 +319,22 @@ func (b *Business) Delete(ctx context.Context, id types.ID) error {
 
 // ByID is one species.
 func (b *Business) ByID(ctx context.Context, id types.ID) (Species, error) {
-	return b.store.ByID(ctx, id)
+	s, err := b.store.ByID(ctx, id)
+	if err != nil {
+		return Species{}, err
+	}
+
+	return b.fill(s), nil
 }
 
 // BySlug is the species at an address.
 func (b *Business) BySlug(ctx context.Context, slug string) (Species, error) {
-	return b.store.BySlug(ctx, slug)
+	s, err := b.store.BySlug(ctx, slug)
+	if err != nil {
+		return Species{}, err
+	}
+
+	return b.fill(s), nil
 }
 
 // All is every species, by English common name, ignoring case.
@@ -316,6 +342,10 @@ func (b *Business) All(ctx context.Context) ([]Species, error) {
 	all, err := b.store.All(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	for i := range all {
+		all[i] = b.fill(all[i])
 	}
 
 	slices.SortStableFunc(all, func(x, y Species) int {
@@ -326,6 +356,59 @@ func (b *Business) All(ctx context.Context) ([]Species, error) {
 	})
 
 	return all, nil
+}
+
+// MoveTranslations puts the Spanish that plants stored beside their English,
+// before the translation memory, into the memory, and leaves each plant
+// storing its English alone. It reports how many plants it changed; see
+// placebus's for when it runs.
+func (b *Business) MoveTranslations(ctx context.Context) (int, error) {
+	all, err := b.store.All(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	n := 0
+
+	for _, s := range all {
+		changed, err := translationbus.MoveAll(ctx, b.tr, s.texts()...)
+		if err != nil {
+			return n, fmt.Errorf("the plant %q: %w", s.Slug, err)
+		}
+
+		if !changed {
+			continue
+		}
+
+		if err := b.store.Update(ctx, s); err != nil {
+			return n, fmt.Errorf("saving the plant %q: %w", s.Slug, err)
+		}
+
+		n++
+	}
+
+	return n, nil
+}
+
+// fill is s with its words in both languages, from the translation memory.
+func (b *Business) fill(s Species) Species {
+	translationbus.FillAll(b.tr, s.texts()...)
+
+	return s
+}
+
+// texts are a plant's words, and words a copy of them, in the same order as
+// Fields.texts -- the order translationbus.KeepAll pairs them in.
+func (s *Species) texts() []*types.Text {
+	return []*types.Text{&s.Common, &s.FlowerColor, &s.Note}
+}
+
+func (s Species) words() []types.Text {
+	return []types.Text{s.Common, s.FlowerColor, s.Note}
+}
+
+func (f *Fields) texts() []*types.Text {
+	return []*types.Text{&f.Common, &f.FlowerColor, &f.Note}
 }
 
 // ------------------------------------------------------------------ rules

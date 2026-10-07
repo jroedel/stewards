@@ -34,7 +34,7 @@ func setup(t *testing.T) (*workdaybus.Business, *time.Time) {
 
 	clock := time.Date(2026, 10, 1, 9, 0, 0, 0, types.Garden)
 
-	return workdaybus.NewBusiness(workdaydb.NewStore(db), func() time.Time { return clock }), &clock
+	return workdaybus.NewBusiness(workdaydb.NewStore(db), nil, func() time.Time { return clock }), &clock
 }
 
 // at is a time on a date in October 2026, in the garden's zone.
