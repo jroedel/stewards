@@ -30,7 +30,7 @@ func TestCheckingManyAtOnce(t *testing.T) {
 	list := a[:8] + "," + strings.ToUpper(b) + "," + ref[:8] + ",deadbeef," + a
 	page := s.get("/steward/check/many?ids="+url.QueryEscape(list), true).Body.String()
 	contains(t, "the page from a list", page,
-		"2 photos not checked yet.", "Untick any that do not show their plant",
+		"2 photos not checked yet.", "Every photo with a blue frame and a tick will be checked.",
 		"Brazos penstemon",
 		`name="id" value="`+a+`" checked`, `name="id" value="`+b+`" checked`,
 		"2 of the photos in the list are not here")
@@ -61,7 +61,7 @@ func TestCheckingManyAtOnce(t *testing.T) {
 	page = w.Body.String()
 	contains(t, "the page after Check", page,
 		"Checked 1 photo. Volunteers see it now.", "1 photo not checked yet.",
-		"Tick the ones that show their plant", `name="id" value="`+b+`">`,
+		"Tap each photo that shows its plant", `name="id" value="`+b+`">`,
 		"2 of the photos in the list are not here")
 	if strings.Contains(page, `" checked>`) {
 		t.Error("after a press, a photo left on the page is ticked again")

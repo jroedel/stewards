@@ -8,7 +8,7 @@
 {{with .Problem}}<p class="problem" role="alert">{{.}}</p>{{end}}
 
 {{if .Plants}}
-<p class="lead">{{.Count}} {{if eq .Count 1}}photo{{else}}photos{{end}} not checked yet. {{if .Ticked}}Untick any that do not show their plant{{else}}Tick the ones that show their plant{{end}}, then press the button at the bottom. Volunteers see a photo once it is checked.</p>
+<p class="lead">{{.Count}} {{if eq .Count 1}}photo{{else}}photos{{end}} not checked yet. {{if .Ticked}}Every photo with a blue frame and a tick will be checked. Tap any that does not show its plant to leave it out: it fades.{{else}}Tap each photo that shows its plant: it gets a blue frame and a tick.{{end}} Then press the button. Volunteers see a photo once it is checked.</p>
 {{else if .Listed}}
 <div class="card empty"><p>None of these photos is waiting to be checked.</p></div>
 {{else}}
@@ -18,7 +18,7 @@
 {{if .Over}}<p class="help">The list was longer than one page takes. The last {{.Over}} are left for another time.</p>{{end}}
 
 {{if .Plants}}
-<form method="post" action="/steward/check/many">
+<form class="together" method="post" action="/steward/check/many">
   {{with .IDs}}<input type="hidden" name="ids" value="{{.}}">{{end}}
   {{range .Plants}}
   <section class="card photo-kind">
@@ -27,18 +27,22 @@
     {{if .Sources}}<p class="row-note">Sources: {{range $i, $s := .Sources}}{{if $i}}, {{end}}{{if .URL}}<a href="{{.URL}}" rel="noopener" target="_blank">{{.Label}}</a>{{else}}{{.Label}}{{end}}{{end}}</p>{{end}}
     <ul class="photo-list">
     {{range .Photos}}<li>
-      <a class="photo-thumb" href="/steward/check?at={{.ID}}"><img src="/photos/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="" loading="lazy"></a>
+      <label class="pick-one many-pick">
+        <input type="checkbox" name="id" value="{{.ID}}"{{if .Ticked}} checked{{end}}>
+        <img src="/photos/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="" loading="lazy">
+        <span class="pick-badge" aria-hidden="true"></span>
+        <span class="sr-only">Check {{template "photo-id" .ID}}</span>
+      </label>
       <div class="photo-about">
-        <label class="pill"><input type="checkbox" name="id" value="{{.ID}}"{{if .Ticked}} checked{{end}}><span>Check it</span></label>
         <p class="row-tags"><span class="tag">{{.Kind}}</span>{{if .InFlower}}<span class="tag tag-sun">In flower</span>{{end}}{{if .InFruit}}<span class="tag tag-sun">In fruit or seed</span>{{end}}</p>
         <p class="row-note">{{.Caption}}{{with .Source}} · <a href="{{.}}" rel="noopener" target="_blank">its source</a>{{end}}</p>
-        <p class="row-note">{{template "photo-id" .ID}}</p>
+        <p class="row-note"><a href="/steward/check?at={{.ID}}">{{template "photo-id" .ID}} in the queue</a></p>
       </div>
     </li>
     {{end}}</ul>
   </section>
   {{end}}
-  <button class="button button-block" type="submit">Check the ticked photos</button>
+  <div class="together-bar"><button class="button button-block" type="submit">Check the ticked photos</button></div>
 </form>
 {{end}}
 </div>
