@@ -23,6 +23,7 @@ import (
 	"github.com/jroedel/stewards/app/domain/signupapp"
 	"github.com/jroedel/stewards/app/domain/speciesapp"
 	"github.com/jroedel/stewards/app/domain/stewardapp"
+	"github.com/jroedel/stewards/app/domain/translationapp"
 	"github.com/jroedel/stewards/app/domain/workdayapp"
 	"github.com/jroedel/stewards/app/sdk/health"
 	"github.com/jroedel/stewards/app/sdk/mid"
@@ -107,7 +108,7 @@ func New(cfg Config) (http.Handler, error) {
 
 	// One renderer holding every app's pages: the stylesheet has one hashed
 	// path, and net/http panics on a pattern registered twice.
-	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, inboxapp.Templates, nurseryapp.Templates, stewardapp.Templates, oauthapp.Templates, workdayapp.Templates, signupapp.Templates)
+	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, inboxapp.Templates, nurseryapp.Templates, stewardapp.Templates, oauthapp.Templates, workdayapp.Templates, signupapp.Templates, translationapp.Templates)
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +125,9 @@ func New(cfg Config) (http.Handler, error) {
 	signUp := cfg.BaseURL != "" && cfg.Mail != nil && cfg.Subscribers != nil
 	homeapp.New(cfg.Log, render, cfg.Places, cfg.Workdays, signUp).Routes(mux)
 	places := placeapp.Config{Log: cfg.Log, Render: render, Places: cfg.Places, Species: cfg.Species, Listings: cfg.Listings, Photos: cfg.Photos}
+	if cfg.Translations != nil {
+		places.Translations = cfg.Translations
+	}
 	// Assigned only when there is one: a nil *inboxbus.Business inside
 	// the interface is not a nil interface, and the front page would call
 	// it.
@@ -175,6 +179,10 @@ func New(cfg Config) (http.Handler, error) {
 			}
 		}
 		workdayapp.Routes(mux, workdayapp.Config{Log: cfg.Log, Render: render, Days: cfg.Workdays}, guard)
+
+		if cfg.Translations != nil {
+			translationapp.Routes(mux, translationapp.Config{Log: cfg.Log, Render: render, Translations: cfg.Translations}, guard)
+		}
 
 		if signUp {
 			signupapp.Routes(mux, signupapp.Config{

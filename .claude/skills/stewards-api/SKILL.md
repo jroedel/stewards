@@ -365,6 +365,10 @@ a steward checks them when they choose, on the translations screen
 - **Use the glossary**, the names already translated, and the same words for
   them in every sentence.
 - **Keep every `{placeholder}` exactly as it is.** The app fills it in.
+- **One a steward sent back** has their `note` and the translation there
+  now (`current`). Translate it again with the note in mind, or send the
+  same words if they are right, which answers the note; say which in your
+  report.
 - **A translation a steward has checked is refused** unless sent unchanged.
   Tell the steward what you would change; they change it on the screen.
 - Translate only when the steward asks. To revise some at their request,

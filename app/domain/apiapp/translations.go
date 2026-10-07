@@ -42,8 +42,8 @@ func (a app) translationEndpoints() []Endpoint {
 		{
 			Method: http.MethodGet, Path: Prefix + "/translations/pending", Tool: "list_pending_translations", NeedsKey: true,
 			Query:   []Field{{Name: "limit", Type: "integer", Description: fmt.Sprintf("How many to give, %d by default and %d at most.", pendingDefault, pendingMost)}},
-			Summary: "The words people have written in the app that have no translation yet: place names and notes, plant names, flower colours and notes, the notes on plants listed at places, and work days. Names come first. Each is in the language it was written in, which written_in guesses from the page it was typed on; say which it really is when you translate it. The glossary is every name already translated, to use the same words again.",
-			Returns: `{"pending": [{key, text, written_in: "en" or "es", where: [string], name}], "remaining": n, "glossary": [{en, es}]}. remaining counts the ones given too; ask again until it is 0.`,
+			Summary: "The words people have written in the app that have no translation yet: place names and notes, plant names, flower colours and notes, the notes on plants listed at places, and work days. A translation a steward sent back comes first, with their note and the translation there now; then names. Each is in the language it was written in, which written_in guesses from the page it was typed on; say which it really is when you translate it. The glossary is every name already translated, to use the same words again.",
+			Returns: `{"pending": [{key, text, written_in: "en" or "es", where: [string], name, note, current}], "remaining": n, "glossary": [{en, es}]}. note and current only for one sent back. remaining counts the ones given too; ask again until it is 0.`,
 			handler: a.pendingTranslations,
 		},
 		{
@@ -76,6 +76,8 @@ type PendingJSON struct {
 	WrittenIn string   `json:"written_in"`
 	Where     []string `json:"where"`
 	Name      bool     `json:"name,omitempty"`
+	Note      string   `json:"note,omitempty"`
+	Current   string   `json:"current,omitempty"`
 }
 
 func (a app) pendingTranslations(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +95,7 @@ func (a app) pendingTranslations(w http.ResponseWriter, r *http.Request) {
 
 	pending := make([]PendingJSON, 0, len(got.Pending))
 	for _, p := range got.Pending {
-		pending = append(pending, PendingJSON{Key: p.Key, Text: p.Source, WrittenIn: string(p.Guess), Where: p.Where, Name: p.Name})
+		pending = append(pending, PendingJSON{Key: p.Key, Text: p.Source, WrittenIn: string(p.Guess), Where: p.Where, Name: p.Name, Note: p.Note, Current: p.Current})
 	}
 
 	glossary := make([]TextJSON, 0, len(got.Glossary))

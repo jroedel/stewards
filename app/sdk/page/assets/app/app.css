@@ -865,3 +865,20 @@ code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap
 .season-days dt { color: var(--muted); }
 .season-days dd { margin: 0; }
 .season-days .row-note { font-size: 13px; }
+
+/* ---------------------------------------------------------------- translations */
+
+/* One card per translation: the original above, its translation below, each
+   labelled with its language, then one button and two folded forms. Read
+   many in a sitting, so the text is the body's size and the labels quiet. */
+.translations { display: flex; flex-direction: column; gap: 12px; margin: 16px 0 0; padding: 0; list-style: none; }
+.translation { scroll-margin-top: 12px; }
+.translation .row-note { margin: 0 0 8px; }
+.card .translation-label { margin: 10px 0 2px; font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.card .translation-text { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
+.translation .row-tags { margin: 8px 0 0; }
+.translation .row-tags:empty { display: none; }
+.translation form { margin: 12px 0 0; }
+.translation-more { margin-top: 8px; border-top: 1px solid var(--rule); }
+.translation-more summary { display: flex; align-items: center; min-height: 48px; color: var(--sf-blue); font-weight: 700; cursor: pointer; }
+.translation-more .form { margin-top: 0; }

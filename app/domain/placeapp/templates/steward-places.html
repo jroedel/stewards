@@ -10,6 +10,7 @@
 {{if .Inbox}}<a class="onward" href="/steward/inbox"><span>Photo inbox <span class="quiet">{{if .Waiting}}{{.Waiting}} to sort{{else}}nothing waiting{{end}}</span></span><span aria-hidden="true">›</span></a>{{end}}
 <a class="onward" href="/steward/check"><span>Photos to check <span class="quiet">{{if .ToCheck}}{{.ToCheck}} waiting{{else}}nothing waiting{{end}}</span></span><span aria-hidden="true">›</span></a>
 {{if .Inbox}}<a class="button button-block" href="/steward/inbox/new">Send photos</a>{{end}}
+{{if .Translations}}<a class="onward" href="/steward/translations"><span>Translations <span class="quiet">{{with .TranslationCount}}{{if .ToCheck}}{{.ToCheck}} to check{{else}}all checked{{end}}{{if .Waiting}} · {{.Waiting}} waiting for Claude{{end}}{{end}}</span></span><span aria-hidden="true">›</span></a>{{end}}
 {{if .Nursery}}<a class="onward" href="/steward/nursery"><span>Nursery stock <span class="quiet">what the nurseries had, for planning a bed</span></span><span aria-hidden="true">›</span></a>{{end}}
 
 {{if .Places}}
