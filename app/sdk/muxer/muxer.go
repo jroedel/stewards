@@ -16,6 +16,7 @@ import (
 	"github.com/jroedel/stewards/app/domain/homeapp"
 	"github.com/jroedel/stewards/app/domain/inboxapp"
 	"github.com/jroedel/stewards/app/domain/nurseryapp"
+	"github.com/jroedel/stewards/app/domain/oauthapp"
 	"github.com/jroedel/stewards/app/domain/photoapp"
 	"github.com/jroedel/stewards/app/domain/placeapp"
 	"github.com/jroedel/stewards/app/domain/signupapp"
@@ -35,6 +36,7 @@ import (
 	"github.com/jroedel/stewards/business/domain/user/userbus"
 	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
 	"github.com/jroedel/stewards/foundation/mail"
+	"github.com/jroedel/stewards/foundation/oauth"
 	"github.com/jroedel/stewards/foundation/sqldb"
 	"github.com/jroedel/stewards/foundation/web"
 )
@@ -73,6 +75,11 @@ type Config struct {
 	// one-time secret.
 	Mail      mail.Sender
 	Bootstrap string
+
+	// OAuthClients reads the metadata documents of programs signing in
+	// through OAuth. nil means over the network, which is what main wants;
+	// a test passes one that reads none.
+	OAuthClients oauthapp.Clients
 }
 
 // maxBody is the most any write here may send. A sign-in form is a few
@@ -95,7 +102,7 @@ func New(cfg Config) (http.Handler, error) {
 
 	// One renderer holding every app's pages: the stylesheet has one hashed
 	// path, and net/http panics on a pattern registered twice.
-	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, inboxapp.Templates, nurseryapp.Templates, stewardapp.Templates, workdayapp.Templates, signupapp.Templates)
+	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, inboxapp.Templates, nurseryapp.Templates, stewardapp.Templates, oauthapp.Templates, workdayapp.Templates, signupapp.Templates)
 	if err != nil {
 		return nil, err
 	}
@@ -177,6 +184,19 @@ func New(cfg Config) (http.Handler, error) {
 			Users:   cfg.Users,
 			Mail:    cfg.Mail,
 			BaseURL: cfg.BaseURL,
+		}, guard)
+
+		// How Claude on claude.ai gets a key: the steward agrees on a page
+		// of ours, and the key comes back through the token endpoint
+		// instead of through the steward's clipboard. With the screens and
+		// behind the same guard, since agreeing is a signed-in steward's.
+		clients := cfg.OAuthClients
+		if clients == nil {
+			clients = oauth.NewFetcher(nil)
+		}
+
+		oauthapp.Routes(mux, oauthapp.Config{
+			Log: cfg.Log, Render: render, Users: cfg.Users, Clients: clients, BaseURL: cfg.BaseURL,
 		}, guard)
 	} else {
 		cfg.Log.Warn("sign-in is off: [server] base_url is not set")

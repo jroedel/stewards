@@ -179,6 +179,17 @@ type Storer interface {
 	DeleteAPIKey(ctx context.Context, userID, id types.ID) error
 	DeleteUserAPIKeys(ctx context.Context, userID types.ID) error
 
+	// ReplaceAPIKey records a key given to a program through OAuth in place
+	// of any the steward gave the same program before, unless that leaves
+	// them with more than limit; and then it changes nothing.
+	ReplaceAPIKey(ctx context.Context, k APIKey, limit int) (bool, error)
+
+	// CreateGrant records an OAuth code unless the steward already has limit
+	// unspent ones; UseGrant spends one. Both claims, as for links.
+	CreateGrant(ctx context.Context, g Grant, limit int) (bool, error)
+	GrantByID(ctx context.Context, id types.ID) (Grant, error)
+	UseGrant(ctx context.Context, id types.ID, at time.Time) (bool, error)
+
 	// TouchAPIKey records a use, only where the last one is before
 	// notAfter, so most uses write nothing.
 	TouchAPIKey(ctx context.Context, id types.ID, at, notAfter time.Time) error

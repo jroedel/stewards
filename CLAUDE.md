@@ -161,7 +161,10 @@ A question about *behaviour* starts in `business/domain/…bus`. A question abou
 - **Content reaches the live app through its API, and only when a person
   asks for it.** Adding plants, their photos and where they grow at a
   steward's request is what `/api/v1` and the `stewards-api` skill are for,
-  with the steward's own key from `STEWARDS_API_KEY`. That is the steward
+  with the steward's own key from `STEWARDS_API_KEY`. Claude on claude.ai
+  gets the same kind of key through OAuth (`/oauth/authorize`, where the
+  steward agrees), listed and revoked on the keys screen like any other,
+  and bound by everything below. That is the steward
   using their app, not an agent operating the server, so it is not a way
   around the rule above: never as a test, never while developing, and never
   to read or change anything but places, plants, photos, listings, the
