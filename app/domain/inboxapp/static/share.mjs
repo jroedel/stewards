@@ -56,7 +56,7 @@ const INBOX = "/steward/inbox";
 // fill puts the stashed photos in the send screen's file input, and says so.
 async function fill(form) {
   const input = form.querySelector('input[type="file"]');
-  const max = Number(form.dataset.max) || 20;
+  const max = Number(form.dataset.max) || 30;
 
   let files = [];
   try {

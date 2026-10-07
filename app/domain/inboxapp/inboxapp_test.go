@@ -347,7 +347,7 @@ func TestABatchThatCannotBeSentSaysWhy(t *testing.T) {
 		want   string
 	}{
 		"no photos":   {property(), nil, "Choose the photos to send."},
-		"too many":    {property(), many, "Send up to 20 at a time."},
+		"too many":    {property(), many, "Send up to 30 at a time."},
 		"nowhere":     {url.Values{}, []file{{"IMG.JPG", noisy(t, 5)}}, "taken on the property, at a nursery, or somewhere else"},
 		"a bad place": {url.Values{"at": {"property"}, "place": {"elsewhere"}}, []file{{"IMG.JPG", noisy(t, 5)}}, "Choose the place from the list"},
 	} {
@@ -464,7 +464,7 @@ func TestTheSendScreenLinksItsScript(t *testing.T) {
 		t.Fatal("the send screen does not load its script as a module")
 	}
 
-	for _, want := range []string{`data-send="/steward/inbox/send"`, `data-done="/steward/inbox"`, `data-max="20"`, `id="sending"`, `id="sent"`} {
+	for _, want := range []string{`data-send="/steward/inbox/send"`, `data-done="/steward/inbox"`, `data-max="30"`, `id="sending"`, `id="sent"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the send screen has no %s for its script", want)
 		}

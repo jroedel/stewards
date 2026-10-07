@@ -81,15 +81,23 @@ const IndexPath = "/steward/inbox"
 // gives it its own body limit and lets it be multipart.
 const UploadPattern = "POST " + IndexPath
 
-// MaxPhotos is the most photos one batch may hold. Twenty is two walks round
-// the rain garden, and a limit at all is what lets MaxBytes be a number.
-const MaxPhotos = 20
+// MaxPhotos is the most photos one batch may hold. It was twenty, two walks
+// round the rain garden, and is thirty since 2026-10-06 at the stewards'
+// asking. The limit costs nothing per photo where it
+// matters: the send screen's script sends each photo on its own request,
+// shrunk first, and the server keeps them one at a time, so the host's
+// memory sees one photo however many are chosen.
+const MaxPhotos = 30
 
-// MaxBytes is the body limit on a batch. A phone's photo is 2 to 8 MB, so
-// this is twenty ordinary ones; it is not twenty of the largest photobus
-// accepts, which would be half a gigabyte of temporary files on a shared
-// host. The photos past the first megabyte go to disk as they arrive, not
-// into memory, and each is read into memory only while it is being kept.
+// MaxBytes is the body limit on a batch sent without the script, all in one
+// request. A phone's photo is 2 to 8 MB, so this is twenty to thirty
+// ordinary ones; it is not thirty of the largest photobus accepts, which
+// would be three quarters of a gigabyte of temporary files on a shared host.
+// It stayed at 160 MB when MaxPhotos went to thirty because that is the size
+// make prod-upload-check proved Apache passes; raising it means running that
+// check again first. A batch over it is told to go in two goes. The photos
+// past the first megabyte go to disk as they arrive, not into memory, and
+// each is read into memory only while it is being kept.
 const MaxBytes = 160 << 20
 
 // uploadTime is how long a batch may take to arrive. Fifty megabytes on one
