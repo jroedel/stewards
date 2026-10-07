@@ -37,7 +37,7 @@ import { shrink } from "./shrink.mjs";
   const words = document.getElementById("sending-words");
   const bar = document.getElementById("sending-bar");
   const result = document.getElementById("sent");
-  const max = Number(form.dataset.max) || 20;
+  const max = Number(form.dataset.max) || 30;
   const label = button.textContent;
 
   // How long to wait before trying a photo again, each time it fails for
