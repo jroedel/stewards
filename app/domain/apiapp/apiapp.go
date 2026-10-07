@@ -165,12 +165,20 @@ type Body struct {
 
 // Endpoint is one route, as the index describes it and as Routes mounts it.
 type Endpoint struct {
-	Method   string `json:"method"`
-	Path     string `json:"path"`
-	Summary  string `json:"summary"`
-	NeedsKey bool   `json:"needs_key"`
-	Body     *Body  `json:"body,omitempty"`
-	Returns  string `json:"returns"`
+	Method   string  `json:"method"`
+	Path     string  `json:"path"`
+	Summary  string  `json:"summary"`
+	NeedsKey bool    `json:"needs_key"`
+	Query    []Field `json:"query,omitempty"`
+	Body     *Body   `json:"body,omitempty"`
+	Returns  string  `json:"returns"`
+
+	// Tool is the endpoint's name as a tool on /mcp (mcpapp), which is how
+	// Claude on claude.ai reaches it, and the tools are made from this index.
+	// "" for one not offered there: the index itself, the upload, whose file
+	// a chat cannot hand over, and the inbox's pictures, which mcpapp's own
+	// look_at_photo shows as pictures rather than as bytes.
+	Tool string `json:"tool,omitempty"`
 
 	handler http.HandlerFunc
 }
@@ -200,17 +208,17 @@ func (a app) endpoints() []Endpoint {
 			Returns: "This document.", handler: a.index,
 		},
 		{
-			Method: http.MethodGet, Path: Prefix + "/places", NeedsKey: true,
+			Method: http.MethodGet, Path: Prefix + "/places", Tool: "list_places", NeedsKey: true,
 			Summary: "Every place in the garden, in the stewards' order, with what its card says about it: what it is for, its conditions, where to stand for its photo, and where it is on the map. A photo's place is one of these slugs.",
 			Returns: `{"places": [place], "map": {"width", "height"}}. A place is {slug, name, parent, purpose, conditions, photo_point, trail_anchor, sort, spot: {x, y} or absent, card_url}.`, handler: a.listPlaces,
 		},
 		{
-			Method: http.MethodGet, Path: Prefix + "/places/{slug}", NeedsKey: true,
+			Method: http.MethodGet, Path: Prefix + "/places/{slug}", Tool: "get_place", NeedsKey: true,
 			Summary: "One place, as the list gives it, with the smaller places inside it.",
 			Returns: `{"place": place, "inside": [slug]}`, handler: a.onePlace,
 		},
 		{
-			Method: http.MethodPut, Path: Prefix + "/places/{slug}", NeedsKey: true,
+			Method: http.MethodPut, Path: Prefix + "/places/{slug}", Tool: "put_place", NeedsKey: true,
 			Summary: "Add the place at this address, or change it. Send the whole place: a field left out is emptied. Sending what is already there changes nothing. The slug is the place's address on its card, printed on stakes and QR boards, so it is chosen once and never changes. Where it is on the map is set apart, with PUT .../spot.",
 			Body: &Body{Encoding: "json", Fields: []Field{
 				text("name", "What people call it.", true),
@@ -225,7 +233,7 @@ func (a app) endpoints() []Endpoint {
 			handler: a.putPlace,
 		},
 		{
-			Method: http.MethodPut, Path: Prefix + "/places/{slug}/spot", NeedsKey: true,
+			Method: http.MethodPut, Path: Prefix + "/places/{slug}/spot", Tool: "put_place_spot", NeedsKey: true,
 			Summary: "Put a place on the map, or move it. The map is a drawing of the property, not a survey: x is across from its west edge and y down from its north edge, in the drawing's units (the list's map gives its size). Place it by its neighbours' spots. Only a place that stands on its own is on the map.",
 			Body: &Body{Encoding: "json", Fields: []Field{
 				{Name: "x", Type: "integer", Required: true, Description: "Across from the west edge."},
@@ -234,17 +242,17 @@ func (a app) endpoints() []Endpoint {
 			Returns: `200 {"place": place}`, handler: a.putSpot,
 		},
 		{
-			Method: http.MethodDelete, Path: Prefix + "/places/{slug}/spot", NeedsKey: true,
+			Method: http.MethodDelete, Path: Prefix + "/places/{slug}/spot", Tool: "remove_place_spot", NeedsKey: true,
 			Summary: "Take a place off the map. The place itself stays.",
 			Returns: `200 {"place": place}`, handler: a.deleteSpot,
 		},
 		{
-			Method: http.MethodGet, Path: Prefix + "/places/{slug}/plants", NeedsKey: true,
+			Method: http.MethodGet, Path: Prefix + "/places/{slug}/plants", Tool: "list_place_plants", NeedsKey: true,
 			Summary: "What is listed at a place: each plant, what to do with it there, and whether it is part of the planting.",
 			Returns: `{"place": slug, "plants": [{species, action, planned, note, card_url}]}`, handler: a.placePlants,
 		},
 		{
-			Method: http.MethodPut, Path: Prefix + "/places/{slug}/plants/{species}", NeedsKey: true,
+			Method: http.MethodPut, Path: Prefix + "/places/{slug}/plants/{species}", Tool: "put_place_plant", NeedsKey: true,
 			Summary: "List a plant at a place, or change how it is listed. The plant must already be added. Sending what is already there changes nothing. A listing is on the place card as soon as it is made, with nothing for a steward to tick first: a pull tells volunteers to take the plant out the next time they are there, so say why in the note.",
 			Body: &Body{Encoding: "json", Fields: []Field{
 				{Name: "action", Type: "string", Required: true, Values: actionNames(), Description: "protect: leave it. pull: take it out, root and all. careful: it stays or goes as the note says, but handle it with gloves on."},
@@ -255,29 +263,29 @@ func (a app) endpoints() []Endpoint {
 			handler: a.putPlacePlant,
 		},
 		{
-			Method: http.MethodDelete, Path: Prefix + "/places/{slug}/plants/{species}", NeedsKey: true,
+			Method: http.MethodDelete, Path: Prefix + "/places/{slug}/plants/{species}", Tool: "remove_place_plant", NeedsKey: true,
 			Summary: "Take a plant off a place's list, for one listed in the wrong place. It is off the place card at once. The plant itself, its photos and its other places stay.",
 			Returns: `200 {"outcome": "removed", "place": slug, "species": slug}, or "unchanged" when it was not listed there.`,
 			handler: a.deletePlacePlant,
 		},
 		{
-			Method: http.MethodGet, Path: Prefix + "/species", NeedsKey: true,
+			Method: http.MethodGet, Path: Prefix + "/species", Tool: "list_plants", NeedsKey: true,
 			Summary: "Every plant, by common name. Read this before adding, to see what is already here.",
 			Returns: `{"species": [plant]}`, handler: a.listSpecies,
 		},
 		{
-			Method: http.MethodGet, Path: Prefix + "/species/{slug}", NeedsKey: true,
+			Method: http.MethodGet, Path: Prefix + "/species/{slug}", Tool: "get_plant", NeedsKey: true,
 			Summary: "One plant, with its photos.",
 			Returns: `{"species": plant} with "photos": [photo]`, handler: a.oneSpecies,
 		},
 		{
-			Method: http.MethodGet, Path: Prefix + "/species/{slug}/flowering", NeedsKey: true,
+			Method: http.MethodGet, Path: Prefix + "/species/{slug}/flowering", Tool: "get_plant_flowering", NeedsKey: true,
 			Summary: "The plant's flowering and fruiting record, read from its photos: for each year, newest first, the first and last day it was photographed in flower, the first and last in fruit or seed, and the first day it was photographed at all, each with the photo, where it was taken and whether it is checked. Our own dated photos from anywhere count; borrowed ones never do. Volunteers' cards show only the dates from checked photos.",
 			Returns: `{"species": slug, "years": [{year, first_flower, last_flower, first_fruit, last_fruit, first_seen, in_flower, in_fruit, seen}]}, each date {photo_id, taken_on, place, elsewhere, taken_where, checked} or absent.`,
 			handler: a.flowering,
 		},
 		{
-			Method: http.MethodPut, Path: Prefix + "/species/{slug}", NeedsKey: true,
+			Method: http.MethodPut, Path: Prefix + "/species/{slug}", Tool: "put_plant", NeedsKey: true,
 			Summary: "Add the plant at this address, or change it. Sending what is already there changes nothing. A change to a confirmed plant takes its confirmation away, for a steward to give again.",
 			Body: &Body{Encoding: "json", Fields: []Field{
 				text("common", "The common name.", true),
@@ -319,7 +327,7 @@ func (a app) endpoints() []Endpoint {
 			handler: a.addPhoto,
 		},
 		{
-			Method: http.MethodPatch, Path: Prefix + "/photos/{id}", NeedsKey: true,
+			Method: http.MethodPatch, Path: Prefix + "/photos/{id}", Tool: "change_photo", NeedsKey: true,
 			Summary: "Change what is said about a plant photo: send only the fields that change, as the photo upload names them. A change to a checked photo takes the check away, for a steward to give again after looking; sending what is already there changes nothing. The picture itself never changes: a different photo is a new one. The id is a photo's id, as GET /api/v1/species/{slug} lists them.",
 			Body: &Body{Encoding: "json", Fields: []Field{
 				{Name: "kind", Type: "string", Values: kindNames(), Description: "What it shows."},
@@ -362,7 +370,7 @@ func (a app) index(w http.ResponseWriter, r *http.Request) {
 		Rules: []string{
 			"Nothing sent here is confirmed or checked. A steward confirms a plant, and checks a photo, on its screen after looking. Sending confirmed or checked is refused.",
 			"Nothing is removed through the API, an inbox photo included. A person does that on the screens.",
-			"An import never marks a plant to pull at a place. A steward does that on the place's Plants screen.",
+			"A plant listed at a place is on its card at once, pull included: mark one to pull only where a steward has agreed it comes out there, with a note saying why.",
 			"Sending a plant exactly as it is already changes nothing, and the same photo twice is kept once, so a batch can safely be sent again.",
 			"A plant's slug is its address, /plants/<slug>, and cannot change once made: lower-case letters, numbers and hyphens, such as winecup.",
 			"Sizes are whole inches. Months are 1 to 12.",

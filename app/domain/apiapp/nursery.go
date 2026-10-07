@@ -74,19 +74,19 @@ type LineIn struct {
 func (a app) nurseryEndpoints() []Endpoint {
 	return []Endpoint{
 		{
-			Method: http.MethodGet, Path: Prefix + "/nurseries", NeedsKey: true,
+			Method: http.MethodGet, Path: Prefix + "/nurseries", Tool: "list_nurseries", NeedsKey: true,
 			Summary: "The register of nurseries the stewards buy from, by name: where each is, how to reach it, a note on what to know there, and the day it was last visited. A stock sort's nursery is one of these names; a name not here is added to the register as it is written. Changed only by a steward, on the screens.",
 			Returns: `{"nurseries": [{id, name, address, website, phone, note, last_visit}]}`,
 			handler: a.listNurseries,
 		},
 		{
-			Method: http.MethodGet, Path: Prefix + "/nursery", NeedsKey: true,
+			Method: http.MethodGet, Path: Prefix + "/nursery", Tool: "list_nursery_stock", NeedsKey: true,
 			Summary: "Nursery stock: every visit to a nursery, the most recent first, with what it had. latest is true for each nursery's most recent visit, which is what is on its tables now; species is the plant here a line was matched to, for its light, water and status from GET /api/v1/species/{slug}.",
 			Returns: `{"visits": [{nursery_id, nursery, day, latest, lines: [{id, species, name_on_tag, pot_size, price, count, note, photo_url}]}]}`,
 			handler: a.listNursery,
 		},
 		{
-			Method: http.MethodPut, Path: Prefix + "/nursery/lines/{id}", NeedsKey: true,
+			Method: http.MethodPut, Path: Prefix + "/nursery/lines/{id}", Tool: "put_nursery_line", NeedsKey: true,
 			Summary: "Correct a line of nursery stock: a tag read wrongly, a plant matched, a price. Send the whole line; a field left out is emptied.",
 			Body: &Body{Encoding: "json", Fields: []Field{
 				{Name: "species", Type: "string", Description: "The plant here it is, by slug; leave it out for not matched."},

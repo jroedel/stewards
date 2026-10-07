@@ -5,6 +5,10 @@ description: Add plants, their photos and where they grow to the live garden ste
 
 # Adding plants, photos and listings, and sorting the inbox, through the API
 
+(Claude on claude.ai uses the same API as tools on `/mcp`, and is given the
+same guidance from `app/domain/mcpapp/guide.md`. A rule changed here is
+changed there too.)
+
 The garden steward app has a JSON API at `/api/v1` for exactly this: a
 steward's own Claude adding plants and photos without typing them into the
 screens. This skill is how to use it well. It writes to the **live site**

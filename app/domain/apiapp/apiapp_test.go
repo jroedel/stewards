@@ -928,3 +928,40 @@ func TestThePlantsFloweringRecordReadsFromItsPhotos(t *testing.T) {
 		t.Errorf("a plant not there: %d", w.Code)
 	}
 }
+
+// Every endpoint a chat can use is a tool on /mcp, by a name of its own, and
+// its arguments can be told apart: the path's parameters and the body's
+// fields are one flat set there (mcpapp).
+func TestEveryEndpointIsATool(t *testing.T) {
+	s := serve(t)
+
+	idx := decode[apiapp.Index](t, s.api(http.MethodGet, "/api/v1", "", nil, ""))
+	seen := map[string]bool{}
+
+	for _, e := range idx.Endpoints {
+		offered := e.Path != apiapp.Prefix && e.Path != apiapp.Prefix+"/inbox/{id}/{file}" && (e.Body == nil || e.Body.Encoding == "json")
+
+		switch {
+		case offered && e.Tool == "":
+			t.Errorf("%s %s has no tool name", e.Method, e.Path)
+		case !offered && e.Tool != "":
+			t.Errorf("%s %s is a tool, but cannot be one", e.Method, e.Path)
+		case seen[e.Tool] && e.Tool != "":
+			t.Errorf("two endpoints are %s", e.Tool)
+		}
+
+		seen[e.Tool] = true
+
+		var fields []apiapp.Field
+		fields = append(fields, e.Query...)
+		if e.Body != nil {
+			fields = append(fields, e.Body.Fields...)
+		}
+
+		for _, f := range fields {
+			if strings.Contains(e.Path, "{"+f.Name+"}") {
+				t.Errorf("%s %s has a field and a path parameter both called %s", e.Method, e.Path, f.Name)
+			}
+		}
+	}
+}

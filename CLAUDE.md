@@ -164,7 +164,8 @@ A question about *behaviour* starts in `business/domain/…bus`. A question abou
   with the steward's own key from `STEWARDS_API_KEY`. Claude on claude.ai
   gets the same kind of key through OAuth (`/oauth/authorize`, where the
   steward agrees), listed and revoked on the keys screen like any other,
-  and bound by everything below. That is the steward
+  and uses the API as tools on `/mcp`, which sends each call to `/api/v1`;
+  it is bound by everything below. That is the steward
   using their app, not an agent operating the server, so it is not a way
   around the rule above: never as a test, never while developing, and never
   to read or change anything but places, plants, photos, listings, the
