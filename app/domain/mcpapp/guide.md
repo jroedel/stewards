@@ -29,6 +29,14 @@ repository, which says the same for Claude Code. Change both together.)
 - **You cannot upload a photo file.** Photos reach the app through the
   steward's inbox, from their phone. Borrowed photos (iNaturalist, Commons)
   are uploaded from Claude Code.
+- **Many photos can be checked at once**, by the steward, at
+  `<base_url>/steward/check/many?ids=` followed by the first 8 characters of
+  each photo's id, separated by commas: the page shows them ticked, and one
+  press checks the ones still ticked. Give such a link only for photos
+  whose ID is settled somewhere the steward trusts, such as research-grade
+  iNaturalist observations you have read today. Say how many go in and
+  which you left out and why. They are not checked until the steward
+  presses the button.
 
 ## How to work
 

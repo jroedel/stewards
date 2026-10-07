@@ -118,6 +118,11 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 		"GET " + CheckPath:                   a.queue,
 		"POST " + CheckPath + "/{id}":        a.check,
 		"POST " + CheckPath + "/{id}/change": a.change,
+
+		// Many at once; many.go. More specific than /{id}, so the mux
+		// sends /steward/check/many here and not to check with id "many".
+		"GET " + ManyPath:  a.many,
+		"POST " + ManyPath: a.checkMany,
 	} {
 		mux.Handle(pattern, guard(h))
 	}
