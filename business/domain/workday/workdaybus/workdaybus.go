@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 	"unicode/utf8"
 
@@ -232,6 +233,35 @@ func (b *Business) MoveTranslations(ctx context.Context) (int, error) {
 	}
 
 	return n, nil
+}
+
+// Originals is every day's words as stored, with where each is read, for
+// the translation memory to find what is waiting for a translation. Days
+// that are over included: the stewards' screen still lists the recent ones.
+func (b *Business) Originals(ctx context.Context) ([]translationbus.Source, error) {
+	all, err := b.store.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	slices.SortFunc(all, func(x, y Day) int { return x.Starts.Compare(y.Starts) })
+
+	var out []translationbus.Source
+
+	for _, d := range all {
+		day := "the work day on " + d.Starts.In(types.Garden).Format("Monday 2 January 2006")
+
+		for _, s := range []translationbus.Source{
+			{Text: d.Title, Where: day + ": its title, on the home page"},
+			{Text: d.Details, Where: day + ": its details"},
+		} {
+			if s.Text != (types.Text{}) {
+				out = append(out, s)
+			}
+		}
+	}
+
+	return out, nil
 }
 
 func (b *Business) fill(d Day) Day {

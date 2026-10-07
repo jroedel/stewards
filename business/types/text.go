@@ -28,10 +28,10 @@ func ParseLang(s string) (Lang, error) {
 
 // Text is one piece of copy in both languages.
 //
-// English is written first and is the only half that is required. Spanish is
-// optional because it is written or checked by a native speaker, never left as
-// a machine translation (design.md, "Field-first principles" 6) -- so until
-// someone has written it, it is honestly absent rather than invented.
+// A person writes one half and Claude translates it into the other, through
+// the translation memory (translationbus), which fills the second half as a
+// record is read (design.md, "Field-first principles" 6). Until the
+// translation is made, that half is honestly absent rather than invented.
 type Text struct {
 	EN string
 	ES string

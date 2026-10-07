@@ -77,6 +77,11 @@ func TestANoteKeepsItsWordsAndTheMemoryTheirTranslation(t *testing.T) {
 		t.Fatalf("ForSpecies = %+v, %v", listed, err)
 	}
 
+	originals, err := b.Originals(t.Context())
+	if err != nil || len(originals) != 1 || originals[0].Where != "Inflow band: a note on Sedge, listed there as protect" || originals[0].Text != (types.Text{EN: note.EN}) {
+		t.Errorf("Originals = %+v, %v", originals, err)
+	}
+
 	changed := listingbus.Fields{Action: listingbus.Protect, Note: types.Text{EN: "Three at the back", ES: note.ES}}
 
 	l, err := b.Set(t.Context(), place.ID, sedge.ID, changed)

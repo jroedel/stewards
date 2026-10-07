@@ -491,6 +491,48 @@ func tidy(f Fields) Fields {
 	return f
 }
 
+// Originals is every place's words as stored, with where each is read, for
+// the translation memory to find what is waiting for a translation.
+func (b *Business) Originals(ctx context.Context) ([]translationbus.Source, error) {
+	all, err := b.store.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	slices.SortStableFunc(all, byListOrder)
+
+	names := map[types.ID]string{}
+	for _, p := range all {
+		names[p.ID] = written(p.Name)
+	}
+
+	var out []translationbus.Source
+
+	for _, p := range all {
+		label, nameWhere := names[p.ID], "the name of a place in the garden"
+		if !p.TopLevel() {
+			label = names[p.ParentID] + " › " + label
+			nameWhere = "the name of a part of " + names[p.ParentID]
+		}
+
+		for _, s := range []translationbus.Source{
+			{Text: p.Name, Where: nameWhere, Name: true},
+			{Text: p.Purpose, Where: label + ": what the place is for"},
+			{Text: p.Conditions, Where: label + ": its conditions, for a planter (sun, soil, water)"},
+			{Text: p.PhotoPoint, Where: label + ": where to stand, and which way to face, for its photo"},
+		} {
+			if s.Text != (types.Text{}) {
+				out = append(out, s)
+			}
+		}
+	}
+
+	return out, nil
+}
+
+// written is a text in whichever language it was written, for a label.
+func written(t types.Text) string { return cmp.Or(t.EN, t.ES) }
+
 // fill is p with its words in both languages, from the translation memory.
 func (b *Business) fill(p Place) Place {
 	translationbus.FillAll(b.tr, p.texts()...)

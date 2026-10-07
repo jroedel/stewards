@@ -268,7 +268,7 @@ func TestTheHomePageListsTheDaysComingUp(t *testing.T) {
 		t.Error("a day that is over is still on the home page")
 	}
 
-	// In Spanish, the English is marked until a native speaker writes it.
+	// In Spanish, the English is marked until it is translated.
 	_, es := get(t, h, "/", "es")
 	if !strings.Contains(es, `<span lang="en">Planting the rain garden</span>`) {
 		t.Error("an English-only title on the Spanish page is not marked lang=en")

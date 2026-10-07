@@ -162,6 +162,8 @@ func run() error {
 		return err
 	}
 
+	translations.ReadFrom(places, species, listings, workdays)
+
 	nursery := nurserybus.NewBusiness(nurserydb.NewStore(db), nil)
 	inbox := inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, inboxbus.Deps{Photos: photos, Listings: listings, Stock: nursery}, nil)
 	subscribers := subscriberbus.NewBusiness(subscriberdb.NewStore(db), nil)
@@ -179,6 +181,8 @@ func run() error {
 		Workdays: workdays,
 		Inbox:    inbox,
 		Nursery:  nursery,
+
+		Translations: translations,
 
 		Subscribers: subscribers,
 		BaseURL:     cfg.Server.BaseURL,

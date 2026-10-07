@@ -104,8 +104,8 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 	mux.Handle("POST "+stewardPath+"/{id}/remove", guard(http.HandlerFunc(a.remove)))
 }
 
-// The copy a newcomer reads. Spanish waits for a native speaker, as on the
-// home page.
+// The copy a newcomer reads. Spanish comes when the screens' own words are
+// translated, as on the home page.
 type wording struct {
 	Eyebrow types.Text
 

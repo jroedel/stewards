@@ -390,6 +390,42 @@ func (b *Business) MoveTranslations(ctx context.Context) (int, error) {
 	return n, nil
 }
 
+// Originals is every plant's words as stored, with where each is read, for
+// the translation memory to find what is waiting for a translation.
+//
+// The common name says which plant it names by its scientific name, because
+// that is what a Spanish name is looked up by: a plant's Spanish name is an
+// established one, from a source, or none.
+func (b *Business) Originals(ctx context.Context) ([]translationbus.Source, error) {
+	all, err := b.store.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []translationbus.Source
+
+	for _, s := range all {
+		label := cmp.Or(s.Common.EN, s.Common.ES)
+
+		nameWhere := "the common name of a plant"
+		if s.Scientific != "" {
+			nameWhere = "the common name of " + s.Scientific
+		}
+
+		for _, src := range []translationbus.Source{
+			{Text: s.Common, Where: nameWhere, Name: true},
+			{Text: s.FlowerColor, Where: label + ": the colour of its flowers"},
+			{Text: s.Note, Where: label + ": a note for whoever plants it"},
+		} {
+			if src.Text != (types.Text{}) {
+				out = append(out, src)
+			}
+		}
+	}
+
+	return out, nil
+}
+
 // fill is s with its words in both languages, from the translation memory.
 func (b *Business) fill(s Species) Species {
 	translationbus.FillAll(b.tr, s.texts()...)

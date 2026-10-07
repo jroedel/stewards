@@ -222,8 +222,8 @@ func (a app) back(w http.ResponseWriter, r *http.Request, req request, params ur
 
 // ------------------------------------------------------------------ the page
 
-// The words on these pages. English only, as for sign-in: a steward reads
-// them, and Spanish waits for a native speaker.
+// The words on these pages. English only for now, as for sign-in: Spanish
+// comes when the screens' own words are translated.
 var (
 	sayNotClaude        = types.Text{EN: "Only Claude can connect to the garden stewards' app this way. If you did not start this, close the page: nothing has happened."}
 	sayCannotReadClient = types.Text{EN: "We could not check who is asking to connect. Go back to Claude and try connecting again in a minute."}

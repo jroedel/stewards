@@ -106,6 +106,18 @@ type Storer interface {
 	ForPlace(ctx context.Context, placeID types.ID) ([]Listing, error)
 	ForSpecies(ctx context.Context, speciesID types.ID) ([]Listing, error)
 	All(ctx context.Context) ([]Listing, error)
+
+	// Noted is every listing with a note, with its place's and its plant's
+	// names, for a reader who meets the note away from the place's card.
+	Noted(ctx context.Context) ([]Noted, error)
+}
+
+// Noted is a listing with the names of its place and its plant, as stored:
+// each in whichever language it was written.
+type Noted struct {
+	Listing
+	Place string
+	Plant string
 }
 
 // Business applies the rules and then asks the store.
@@ -236,6 +248,25 @@ func (b *Business) MoveTranslations(ctx context.Context) (int, error) {
 	}
 
 	return n, nil
+}
+
+// Originals is every listing's note as stored, with where it is read, for
+// the translation memory to find what is waiting for a translation.
+func (b *Business) Originals(ctx context.Context) ([]translationbus.Source, error) {
+	noted, err := b.store.Noted(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]translationbus.Source, 0, len(noted))
+	for _, n := range noted {
+		out = append(out, translationbus.Source{
+			Text:  n.Note,
+			Where: fmt.Sprintf("%s: a note on %s, listed there as %s", n.Place, n.Plant, n.Action),
+		})
+	}
+
+	return out, nil
 }
 
 func (b *Business) fill(l Listing) Listing {

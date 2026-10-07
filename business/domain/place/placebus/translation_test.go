@@ -2,6 +2,7 @@ package placebus_test
 
 import (
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -110,6 +111,32 @@ func TestAPlaceKeepsItsWordsAndTheMemoryTheirTranslation(t *testing.T) {
 	twin := mustCreate(t, b, placebus.Fields{Slug: "basin", Name: types.Text{EN: "Rain garden basin"}})
 	if twin.Name != f.Name {
 		t.Errorf("a second place with the same name: %+v, want %+v", twin.Name, f.Name)
+	}
+
+	// Its words, for the memory to find what waits: a band is labelled
+	// with the place it is part of, and only what is written is listed.
+	band := mustCreate(t, b, placebus.Fields{Slug: "inflow", Name: types.Text{EN: "Inflow band"}, ParentID: twin.ID, Purpose: types.Text{ES: "Recibe el agua"}})
+
+	originals, err := b.Originals(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var wheres []string
+	for _, o := range originals {
+		wheres = append(wheres, o.Where)
+	}
+
+	// In list order, which ties go by name.
+	want := []string{
+		"the name of a part of Rain garden basin",
+		"Rain garden basin › Inflow band: what the place is for",
+		"the name of a place in the garden",
+		"Rain garden basin: what the place is for",
+		"the name of a place in the garden",
+	}
+	if !slices.Equal(wheres, want) || !originals[0].Name || originals[1].Name || originals[1].Text != band.Purpose {
+		t.Errorf("Originals = %+v", originals)
 	}
 
 	// And the old way of storing is gone: nothing left for a startup to move.

@@ -33,6 +33,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/domain/species/stores/speciesdb"
+	"github.com/jroedel/stewards/business/domain/translation/stores/translationdb"
+	"github.com/jroedel/stewards/business/domain/translation/translationbus"
 	"github.com/jroedel/stewards/business/domain/user/stores/userdb"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
 	"github.com/jroedel/stewards/business/domain/workday/stores/workdaydb"
@@ -53,6 +55,7 @@ type site struct {
 	photos   *photobus.Business
 	inbox    *inboxbus.Business
 	nursery  *nurserybus.Business
+	memory   *translationbus.Business
 	cookie   *http.Cookie
 	key      string
 	steward  types.ID
@@ -77,6 +80,7 @@ func serve(t *testing.T) *site {
 		func() error { return inboxdb.Init(t.Context(), db) },
 		func() error { return nurserydb.Init(t.Context(), db) },
 		func() error { return workdaydb.Init(t.Context(), db) },
+		func() error { return translationdb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
 			t.Fatal(err)
@@ -95,25 +99,38 @@ func serve(t *testing.T) *site {
 
 	log := slog.New(slog.DiscardHandler)
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
+
+	// The translation memory as main makes it, so that what the API reads
+	// and writes is what the app does.
+	memory, err := translationbus.NewBusiness(t.Context(), translationdb.NewStore(db), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	workdays := workdaybus.NewBusiness(workdaydb.NewStore(db), memory, nil)
 	s := &site{
 		t:        t,
-		species:  speciesbus.NewBusiness(speciesdb.NewStore(db), nil, nil),
-		places:   placebus.NewBusiness(placedb.NewStore(db), nil, nil),
-		listings: listingbus.NewBusiness(listingdb.NewStore(db), nil, nil),
+		species:  speciesbus.NewBusiness(speciesdb.NewStore(db), memory, nil),
+		places:   placebus.NewBusiness(placedb.NewStore(db), memory, nil),
+		listings: listingbus.NewBusiness(listingdb.NewStore(db), memory, nil),
 		photos:   photobus.NewBusiness(photodb.NewStore(db), files, nil),
+		memory:   memory,
 	}
+	memory.ReadFrom(s.places, s.species, s.listings, workdays)
 	s.nursery = nurserybus.NewBusiness(nurserydb.NewStore(db), nil)
 	s.inbox = inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, inboxbus.Deps{Photos: s.photos, Listings: s.listings, Stock: s.nursery}, nil)
 
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
 		Places: s.places, Species: s.species, Users: users,
-		Workdays: workdaybus.NewBusiness(workdaydb.NewStore(db), nil, nil),
+		Workdays: workdays,
 		Photos:   s.photos,
 		Listings: s.listings,
 		Inbox:    s.inbox,
 		Nursery:  s.nursery,
-		BaseURL:  base, Mail: &mail.Recorder{},
+
+		Translations: memory,
+		BaseURL:      base, Mail: &mail.Recorder{},
 	}); err != nil {
 		t.Fatal(err)
 	}
