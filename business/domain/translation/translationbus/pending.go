@@ -122,13 +122,18 @@ type Pending struct {
 
 	Where []string
 	Name  bool
+
+	// Current and Note are set for a translation a steward sent back: the
+	// translation there now, and what the steward said is wrong with it.
+	Current string
+	Note    string
 }
 
 // Waiting is what Claude is asked to translate.
 type Waiting struct {
-	// Pending is the first of what is waiting: names before everything
-	// else, so a batch's sentences can use the names the batch before
-	// settled; then in the order the domains list them.
+	// Pending is the first of what is waiting: what a steward sent back,
+	// since they asked; then names, so a batch's sentences can use the names
+	// the batch before settled; then in the order the domains list them.
 	Pending []Pending
 
 	// Remaining is how many are waiting, Pending included.
@@ -155,26 +160,36 @@ func (b *Business) Waiting(ctx context.Context, limit int) (Waiting, error) {
 	for _, key := range order {
 		u := byKey[key]
 
+		p := Pending{Key: key, Source: u.source, Guess: u.guess, Where: u.where, Name: u.name}
+
 		if tr, ok := b.Lookup(u.source); ok {
-			if u.name {
-				glossary = append(glossary, tr.Pair())
+			if tr.Note == "" {
+				if u.name {
+					glossary = append(glossary, tr.Pair())
+				}
+
+				continue
 			}
 
-			continue
+			p.Guess, p.Current, p.Note = tr.From, tr.Translated, tr.Note
 		}
 
-		pending = append(pending, Pending{Key: key, Source: u.source, Guess: u.guess, Where: u.where, Name: u.name})
+		pending = append(pending, p)
 	}
 
 	slices.SortStableFunc(pending, func(x, y Pending) int {
-		switch {
-		case x.Name == y.Name:
-			return 0
-		case x.Name:
-			return -1
+		rank := func(p Pending) int {
+			switch {
+			case p.Note != "":
+				return 0
+			case p.Name:
+				return 1
+			}
+
+			return 2
 		}
 
-		return 1
+		return cmp.Compare(rank(x), rank(y))
 	})
 
 	slices.SortFunc(glossary, func(x, y types.Text) int {
@@ -262,9 +277,7 @@ func (b *Business) translate(ctx context.Context, by Origin, u Upload, inUse map
 		return Result{Key: u.Key, Outcome: Refused, Field: field, Problem: problem}, nil
 	}
 
-	b.mu.RLock()
-	old, known := b.byKey[u.Key]
-	b.mu.RUnlock()
+	old, known := b.ByKey(u.Key)
 
 	source := old.Source
 	if !known {
@@ -289,7 +302,9 @@ func (b *Business) translate(ctx context.Context, by Origin, u Upload, inUse map
 		return refuse("text", fmt.Sprintf("keep each of %s exactly as it is, untranslated: the app fills it in", strings.Join(want, " ")))
 	}
 
-	if known && old.From == u.From && old.Translated == u.Translated {
+	// The same again is unchanged, unless a steward sent it back: then it
+	// is Claude's answer that it was right, and the note is answered.
+	if known && old.From == u.From && old.Translated == u.Translated && old.Note == "" {
 		return Result{Key: u.Key, Outcome: Unchanged}, nil
 	}
 

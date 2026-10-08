@@ -1,0 +1,72 @@
+{{define "title"}}Translations · Garden stewards{{end}}
+{{define "content"}}{{with .Data}}
+<div lang="en">
+<p class="eyebrow"><a href="/steward">Garden stewards</a></p>
+<h1>Translations</h1>
+<p class="lead">Claude translates what people write here, both ways between English and Spanish. Each translation is on the screens as soon as it is made. Read them here when you have time, and tap Looks right for each one that says what the original says.</p>
+<p class="help">{{.Counts.ToCheck}} not checked yet · {{if .Counts.Waiting}}{{.Counts.Waiting}} waiting for Claude: ask Claude to translate what is waiting{{else}}nothing waiting for Claude{{end}}</p>
+
+{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+
+<nav class="views" aria-label="Show">
+  <a href="/steward/translations"{{if eq .Show "check"}} aria-current="page"{{end}}>To check</a>
+  <a href="/steward/translations?show=all"{{if eq .Show "all"}} aria-current="page"{{end}}>All</a>
+</nav>
+
+{{if .Rows}}
+<ul class="translations">
+{{range .Rows}}<li class="card translation" id="t-{{.Key}}">
+  {{if .Where}}<p class="row-note">{{range $i, $w := .Where}}{{if $i}} · {{end}}{{$w}}{{end}}</p>{{end}}
+  <p class="translation-label">{{.SourceName}}, as written</p>
+  <p class="translation-text" lang="{{.SourceLang}}">{{.Source}}</p>
+  <p class="translation-label">{{.TransName}}, {{.By}}</p>
+  <p class="translation-text" lang="{{.TransLang}}">{{.Translated}}</p>
+  <p class="row-tags">{{if .Checked}}<span class="tag tag-ok">Checked</span>{{end}}{{if .Note}}<span class="tag tag-sun">Sent back</span>{{end}}</p>
+  {{with .Note}}<p class="row-note">Your note: “{{.}}” Waiting for Claude; the translation stays until then.</p>{{end}}
+  {{with .Problem}}<p class="field-problem" role="alert">{{.}}</p>{{end}}
+
+  {{if not .Checked}}<form method="post" action="/steward/translations/{{.Key}}/check">
+    {{template "translation-return" .}}
+    <button class="button button-quiet button-block" type="submit">Looks right</button>
+  </form>{{end}}
+
+  <details class="translation-more"{{if eq .Open "change"}} open{{end}}>
+    <summary>Change it</summary>
+    <form class="form" method="post" action="/steward/translations/{{.Key}}">
+      {{template "translation-return" .}}
+      <label for="text-{{.Key}}">{{.TransName}}</label>
+      <textarea id="text-{{.Key}}" name="text" rows="3" lang="{{.TransLang}}">{{if eq .Open "change"}}{{.Typed}}{{else}}{{.Translated}}{{end}}</textarea>
+      <p class="help">Saving it checks it. It is on the screens at once.</p>
+      <button class="button button-quiet" type="submit">Save and check</button>
+    </form>
+  </details>
+
+  <details class="translation-more"{{if eq .Open "back"}} open{{end}}>
+    <summary>Send back to Claude</summary>
+    <form class="form" method="post" action="/steward/translations/{{.Key}}/back">
+      {{template "translation-return" .}}
+      <label for="note-{{.Key}}">What is wrong with it?</label>
+      <textarea id="note-{{.Key}}" name="note" rows="2" maxlength="500">{{if eq .Open "back"}}{{.Typed}}{{end}}</textarea>
+      <p class="help">Claude sees your note the next time it translates what is waiting. The translation stays until then.</p>
+      <button class="button button-quiet" type="submit">Send back</button>
+    </form>
+  </details>
+</li>
+{{end}}</ul>
+
+{{if .More}}<a class="onward" href="/steward/translations?{{if eq .Show "all"}}show=all&amp;{{end}}n={{.Next}}"><span>Show more <span class="quiet">{{.More}} more</span></span><span aria-hidden="true">›</span></a>{{end}}
+
+{{if gt (len .Pending) 1}}<form class="card-gap" method="post" action="/steward/translations/check">
+  <input type="hidden" name="show" value="{{.Show}}">
+  {{range .Pending}}<input type="hidden" name="key" value="{{.}}">{{end}}
+  <button class="button button-quiet button-block" type="submit">All {{len .Pending}} above look right</button>
+</form>{{end}}
+{{else if eq .Show "check"}}
+<div class="card empty"><p>Nothing to check. Every translation has been read.</p></div>
+{{else}}
+<div class="card empty"><p>No translations yet. Ask Claude to translate what is waiting.</p></div>
+{{end}}
+</div>
+{{end}}{{end}}
+
+{{define "translation-return"}}<input type="hidden" name="show" value="{{.Show}}">{{with .Next}}<input type="hidden" name="next" value="{{.}}">{{end}}{{with .N}}<input type="hidden" name="n" value="{{.}}">{{end}}{{end}}

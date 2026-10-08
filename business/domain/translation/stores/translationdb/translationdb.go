@@ -28,7 +28,7 @@ var _ translationbus.Storer = (*Store)(nil)
 
 // Expected is what CheckSchema verifies at startup and on every /healthz.
 var Expected = sqldb.Expected{
-	"translations": {"key", "source", "source_lang", "translation", "origin", "checked", "created_at", "updated_at"},
+	"translations": {"key", "source", "source_lang", "translation", "origin", "checked", "created_at", "updated_at", "note"},
 }
 
 // Init creates the table. Idempotent, run at every startup. It references
@@ -57,20 +57,28 @@ CREATE TABLE IF NOT EXISTS translations (
 		return fmt.Errorf("creating the translations table: %w", err)
 	}
 
+	// What a steward asks Claude to look at again, when they send a
+	// translation back: "" for none. Added after the table first shipped,
+	// so it is here and not in the CREATE.
+	if err := sqldb.AddColumn(ctx, db, "translations", "note", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
-const columns = `key, source, source_lang, translation, origin, checked, created_at, updated_at`
+const columns = `key, source, source_lang, translation, origin, checked, created_at, updated_at, note`
 
 // Put inserts the translation, or replaces everything but when it was first
 // made.
 func (s *Store) Put(ctx context.Context, t translationbus.Translation) error {
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO translations (`+columns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO translations (`+columns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (key) DO UPDATE SET
     source = excluded.source, source_lang = excluded.source_lang,
     translation = excluded.translation, origin = excluded.origin,
-    checked = excluded.checked, updated_at = excluded.updated_at`,
+    checked = excluded.checked, updated_at = excluded.updated_at,
+    note = excluded.note`,
 		args(t)...)
 	if err != nil {
 		return fmt.Errorf("saving the translation: %w", err)
@@ -82,7 +90,7 @@ ON CONFLICT (key) DO UPDATE SET
 // Add inserts the translation unless one with its key is there already.
 func (s *Store) Add(ctx context.Context, t translationbus.Translation) (bool, error) {
 	res, err := s.db.ExecContext(ctx, `
-INSERT INTO translations (`+columns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO translations (`+columns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (key) DO NOTHING`, args(t)...)
 	if err != nil {
 		return false, fmt.Errorf("adding the translation: %w", err)
@@ -114,7 +122,7 @@ func (s *Store) All(ctx context.Context) ([]translationbus.Translation, error) {
 			created, updated int64
 		)
 
-		if err := rows.Scan(&t.Key, &t.Source, &lang, &t.Translated, &origin, &checked, &created, &updated); err != nil {
+		if err := rows.Scan(&t.Key, &t.Source, &lang, &t.Translated, &origin, &checked, &created, &updated, &t.Note); err != nil {
 			return nil, fmt.Errorf("reading a translation: %w", err)
 		}
 
@@ -145,6 +153,6 @@ func args(t translationbus.Translation) []any {
 
 	return []any{
 		t.Key, t.Source, string(t.From), t.Translated, string(t.By), checked,
-		t.CreatedAt.UnixMilli(), t.UpdatedAt.UnixMilli(),
+		t.CreatedAt.UnixMilli(), t.UpdatedAt.UnixMilli(), t.Note,
 	}
 }

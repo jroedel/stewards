@@ -90,6 +90,11 @@ type Translation struct {
 	// 2026-10-07 to trust Claude's, and to check them when they choose.
 	Checked bool
 
+	// Note is what a steward asked Claude to look at again, when they sent
+	// the translation back; "" for none. A translation sent back is waiting
+	// again, and still shown until Claude sends a better one.
+	Note string
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

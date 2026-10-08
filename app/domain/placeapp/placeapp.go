@@ -27,6 +27,7 @@ import (
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
+	"github.com/jroedel/stewards/business/domain/translation/translationbus"
 	"github.com/jroedel/stewards/business/types"
 	"github.com/jroedel/stewards/foundation/web"
 )
@@ -78,6 +79,13 @@ type InboxCounter interface {
 	Count(ctx context.Context) (int, error)
 }
 
+// TranslationCounter is what the stewards' front page needs from the
+// translation memory: how many translations nobody has checked, and how
+// many words wait for Claude.
+type TranslationCounter interface {
+	Counts(ctx context.Context) (translationbus.Counts, error)
+}
+
 // Config is what this app needs.
 type Config struct {
 	Log      *slog.Logger
@@ -92,6 +100,9 @@ type Config struct {
 	// arrives through the inbox.
 	Inbox        InboxCounter
 	NurseryStock bool
+
+	// Translations may be nil, for no link to the translations screen.
+	Translations TranslationCounter
 }
 
 type app struct {
@@ -103,10 +114,12 @@ type app struct {
 	photos   PhotoReader
 	inbox    InboxCounter
 	nursery  bool
+
+	translations TranslationCounter
 }
 
 func newApp(cfg Config) app {
-	return app{log: cfg.Log, render: cfg.Render, places: cfg.Places, species: cfg.Species, listings: cfg.Listings, photos: cfg.Photos, inbox: cfg.Inbox, nursery: cfg.NurseryStock}
+	return app{log: cfg.Log, render: cfg.Render, places: cfg.Places, species: cfg.Species, listings: cfg.Listings, photos: cfg.Photos, inbox: cfg.Inbox, nursery: cfg.NurseryStock, translations: cfg.Translations}
 }
 
 // Routes mounts the stewards' screens, every route behind guard.
@@ -151,6 +164,10 @@ type indexView struct {
 
 	// ToCheck is how many photos wait in the check queue.
 	ToCheck int
+
+	// Translations is whether to link to their screen, with its counts.
+	Translations     bool
+	TranslationCount translationbus.Counts
 }
 
 func (a app) index(w http.ResponseWriter, r *http.Request) {
@@ -185,6 +202,14 @@ func (a app) index(w http.ResponseWriter, r *http.Request) {
 		a.log.WarnContext(r.Context(), "counting the photos to check", "request_id", web.RequestIDFrom(r.Context()), "error", err)
 	} else {
 		v.ToCheck = len(unchecked)
+	}
+
+	if a.translations != nil {
+		v.Translations = true
+
+		if v.TranslationCount, err = a.translations.Counts(r.Context()); err != nil {
+			a.log.WarnContext(r.Context(), "counting translations", "request_id", web.RequestIDFrom(r.Context()), "error", err)
+		}
 	}
 
 	if a.inbox != nil {
