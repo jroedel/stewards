@@ -1,67 +1,65 @@
-{{define "title"}}Photos of {{.Data.Name}} · Garden stewards{{end}}
-{{define "content"}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow"><a href="/steward/species/{{.SpeciesID}}/edit">{{.Name}}</a></p>
-<h1>Photos</h1>
-<p class="lead">Volunteers see the best checked photo of each kind on <a href="/plants/{{.Slug}}">the plant's card</a>: our own before a borrowed one, then the most recent.</p>
+{{define "title"}}{{plain .Lang "Photos of {plant}" "plant" .Data.Name}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow"><a href="/steward/species/{{.SpeciesID}}/edit">{{say $l .Name}}</a></p>
+<h1>{{t $l "Photos"}}</h1>
+<p class="lead">{{t $l "Volunteers see the best checked photo of each kind on {card}: our own before a borrowed one, then the most recent." "card" (link (printf "/plants/%s" .Slug) (t $l "the plant's card"))}}</p>
 
-{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
-{{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below, choose the photo again, and press Add photo.</p>{{end}}
-{{if .Missing}}<p class="help">{{.Missing}} of the {{.Kinds}} kinds have no checked photo yet.</p>{{end}}
+{{if .Done.Written}}<p class="done" role="status">{{say $l .Done}}</p>{{end}}
+{{if .Problems}}<p class="problem" role="alert">{{t $l "Nothing was saved yet. Fix what is marked below, choose the photo again, and press Add photo."}}</p>{{end}}
+{{if .Missing}}<p class="help">{{t $l "{missing} of the {kinds} kinds have no checked photo yet." "missing" .Missing "kinds" .Kinds}}</p>{{end}}
 
 {{/* The flowering and fruiting record: read from the photos below, so a photo's day or
 its "In flower" corrected there corrects it here. */}}
 <section class="card flowering" aria-labelledby="flowering">
-  <h2 id="flowering">Flowering and fruiting</h2>
+  <h2 id="flowering">{{t $l "Flowering and fruiting"}}</h2>
   {{range .Seasons}}
   <div class="season">
     <h3>{{.Year}}</h3>
     <dl class="season-days">
-      <dt>First flower</dt><dd>{{template "sighting" .FirstFlower}}</dd>
-      <dt>Last flower</dt><dd>{{template "sighting" .LastFlower}}</dd>
-      <dt>First fruit</dt><dd>{{template "sighting" .FirstFruit}}</dd>
-      <dt>Last fruit</dt><dd>{{template "sighting" .LastFruit}}</dd>
-      <dt>First seen</dt><dd>{{template "sighting" .FirstSeen}}</dd>
+      <dt>{{t $l "First flower"}}</dt><dd>{{template "sighting" (pass $l .FirstFlower)}}</dd>
+      <dt>{{t $l "Last flower"}}</dt><dd>{{template "sighting" (pass $l .LastFlower)}}</dd>
+      <dt>{{t $l "First fruit"}}</dt><dd>{{template "sighting" (pass $l .FirstFruit)}}</dd>
+      <dt>{{t $l "Last fruit"}}</dt><dd>{{template "sighting" (pass $l .LastFruit)}}</dd>
+      <dt>{{t $l "First seen"}}</dt><dd>{{template "sighting" (pass $l .FirstSeen)}}</dd>
     </dl>
-    <p class="row-note">Of {{.Seen}} dated photos, {{.InFlower}} in flower and {{.InFruit}} in fruit.</p>
+    <p class="row-note">{{t $l "Of {seen} dated photos, {flower} in flower and {fruit} in fruit." "seen" .Seen "flower" .InFlower "fruit" .InFruit}}</p>
   </div>
   {{else}}
-  <p class="muted">No dated photos yet. Each photo with a day, ticked In flower or In fruit when the plant is, adds to it.</p>
+  <p class="muted">{{t $l "No dated photos yet. Each photo with a day, ticked In flower or In fruit when the plant is, adds to it."}}</p>
   {{end}}
-  {{if .Seasons}}<p class="help">From our own photos with a day, taken anywhere. Volunteers see only the dates from checked photos.</p>{{end}}
+  {{if .Seasons}}<p class="help">{{t $l "From our own photos with a day, taken anywhere. Volunteers see only the dates from checked photos."}}</p>{{end}}
 </section>
 
 {{range .Sections}}
 <section class="card photo-kind" id="{{.Kind}}" aria-labelledby="kind-{{.Kind}}">
-  <h2 id="kind-{{.Kind}}">{{.Label}}</h2>
+  <h2 id="kind-{{.Kind}}">{{say $l .Label}}</h2>
   {{if .Photos}}
   <ul class="photo-list">
   {{range .Photos}}<li>
     <a class="photo-thumb" href="/steward/photos/{{.ID}}/edit"><img src="/photos/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="" loading="lazy"></a>
     <div class="photo-about">
-      <p class="row-tags">{{if .Shown}}<span class="tag tag-ok">Shown on the card</span>{{else if .Checked}}<span class="tag">Checked</span>{{else}}<span class="tag tag-open">Not checked: volunteers don't see it</span>{{end}}</p>
-      <p class="row-note">{{.Caption}}</p>
-      <p class="row-note">{{template "photo-id" .ID}}</p>
-      <a href="/steward/photos/{{.ID}}/edit">Edit or check</a>
+      <p class="row-tags">{{if .Shown}}<span class="tag tag-ok">{{t $l "Shown on the card"}}</span>{{else if .Checked}}<span class="tag">{{t $l "Checked"}}</span>{{else}}<span class="tag tag-open">{{t $l "Not checked: volunteers don't see it"}}</span>{{end}}</p>
+      <p class="row-note">{{say $l .Caption}}</p>
+      <p class="row-note">{{template "photo-id" (pass $l .ID)}}</p>
+      <a href="/steward/photos/{{.ID}}/edit">{{t $l "Edit or check"}}</a>
     </div>
   </li>
   {{end}}</ul>
   {{else}}
-  <p class="muted">No photo yet. <a href="/steward/species/{{$.Data.SpeciesID}}/photos?kind={{.Kind}}#add">Add one</a></p>
+  <p class="muted">{{t $l "No photo yet."}} <a href="/steward/species/{{$.Data.SpeciesID}}/photos?kind={{.Kind}}#add">{{t $l "Add one"}}</a></p>
   {{end}}
 </section>
 {{end}}
 
-<h2 id="add">Add a photo</h2>
+<h2 id="add">{{t $l "Add a photo"}}</h2>
 <form class="card form" method="post" action="/steward/species/{{.SpeciesID}}/photos" enctype="multipart/form-data">
-  <label for="photo">Photo</label>
-  <p class="help" id="photo-help">A JPEG or PNG, as the camera saved it. Location and camera details are removed from every copy shown.</p>
-  {{template "photo-problem" (index .Problems "photo")}}
+  <label for="photo">{{t $l "Photo"}}</label>
+  <p class="help" id="photo-help">{{t $l "A JPEG or PNG, as the camera saved it. Location and camera details are removed from every copy shown."}}</p>
+  {{with index .Problems "photo"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   <input id="photo" name="photo" type="file" accept="image/jpeg,image/png" required aria-describedby="photo-help">
-  {{template "photo-fields" .}}
-  <button class="button" type="submit">Add photo</button>
+  {{template "photo-fields" (pass $l .)}}
+  <button class="button" type="submit">{{t $l "Add photo"}}</button>
 </form>
-</div>
 {{end}}{{end}}
 
-{{define "sighting"}}{{if .ID}}<a href="/steward/photos/{{.ID}}/edit">{{.Day}}</a> <span class="row-note">{{.Where}}{{if .Unchecked}} · not checked{{end}}</span>{{else}}<span class="muted">none</span>{{end}}{{end}}
+{{define "sighting"}}{{$l := .Lang}}{{with .Data}}{{if .ID}}<a href="/steward/photos/{{.ID}}/edit">{{say $l .Day}}</a> <span class="row-note">{{say $l .Where}}{{if .Unchecked}} · {{t $l "not checked"}}{{end}}</span>{{else}}<span class="muted">{{t $l "none"}}</span>{{end}}{{end}}{{end}}

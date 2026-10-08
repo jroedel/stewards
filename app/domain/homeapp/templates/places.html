@@ -9,7 +9,7 @@
      place; the drawn dot alone is about 24 px across on a phone. */}}
 <figure class="placemap">
 <svg viewBox="0 0 800 520" role="group" aria-label="{{.Copy.MapLabel.In $l}}" xmlns="http://www.w3.org/2000/svg">
-{{template "trailmap-drawing"}}
+{{template "trailmap-drawing" $l}}
 <g font-family="Ubuntu, system-ui, sans-serif" font-size="30" font-weight="700" text-anchor="middle">
 {{range .Pins}}<a href="/places/{{.Slug}}" aria-label="{{.Number}}. {{.Name.In $l}}">
   <circle cx="{{.At.X}}" cy="{{.At.Y}}" r="44" fill="transparent"/>

@@ -1,26 +1,24 @@
-{{define "title"}}{{.Data.Kind}} of {{.Data.Name}} · Garden stewards{{end}}
-{{define "content"}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow">{{if .FromCheck}}<a href="/steward/check?at={{.ID}}">Photos to check</a>{{else}}<a href="/steward/species/{{.SpeciesID}}/photos">Photos of {{.Name}}</a>{{end}}</p>
-<h1>{{.Kind}}</h1>
+{{define "title"}}{{plain .Lang "{kind} of {plant}" "kind" .Data.Kind "plant" .Data.Name}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow">{{if .FromCheck}}<a href="/steward/check?at={{.ID}}">{{t $l "Photos to check"}}</a>{{else}}<a href="/steward/species/{{.SpeciesID}}/photos">{{t $l "Photos of {plant}" "plant" .Name}}</a>{{end}}</p>
+<h1>{{say $l .Kind}}</h1>
 
-<p class="photo-large"><img src="/photos/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="The photo being edited"></p>
-<p class="help">{{template "photo-id" .ID}}. <a href="/plants/{{.Slug}}/photos/{{.ID}}">Zoom in</a> to compare it with the plant. {{.Original}}</p>
+<p class="photo-large"><img src="/photos/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="{{plain $l "The photo being edited"}}"></p>
+<p class="help">{{template "photo-id" (pass $l .ID)}}. {{t $l "{zoom} to compare it with the plant." "zoom" (link (printf "/plants/%s/photos/%s" .Slug .ID) (t $l "Zoom in"))}} {{say $l .Original}}</p>
 
-{{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below and press Save again.</p>{{end}}
+{{if .Problems}}<p class="problem" role="alert">{{t $l "Nothing was saved yet. Fix what is marked below and press Save again."}}</p>{{end}}
 
 <form class="card form" method="post" action="/steward/photos/{{.ID}}">
   {{if .FromCheck}}<input type="hidden" name="from" value="check">{{end}}
-  {{template "photo-fields" .}}
-  <button class="button" type="submit">Save</button>
+  {{template "photo-fields" (pass $l .)}}
+  <button class="button" type="submit">{{t $l "Save"}}</button>
 </form>
 
 <form class="card form danger" method="post" action="/steward/photos/{{.ID}}/delete">
-  <h2>Remove this photo</h2>
-  <p class="help">The photo and its files go. To use a different photo, add it and remove this one.</p>
-  {{with .DeleteProblem}}<p class="problem" role="alert">{{.}}</p>{{end}}
-  <label class="check"><input type="checkbox" name="confirm" value="yes"> Yes, remove this photo</label>
-  <button class="button button-quiet" type="submit">Remove</button>
+  <h2>{{t $l "Remove this photo"}}</h2>
+  <p class="help">{{t $l "The photo and its files go. To use a different photo, add it and remove this one."}}</p>
+  {{if .DeleteProblem.Written}}<p class="problem" role="alert">{{say $l .DeleteProblem}}</p>{{end}}
+  <label class="check"><input type="checkbox" name="confirm" value="yes"> {{t $l "Yes, remove this photo"}}</label>
+  <button class="button button-quiet" type="submit">{{t $l "Remove"}}</button>
 </form>
-</div>
 {{end}}{{end}}

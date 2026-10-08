@@ -5,9 +5,9 @@ import (
 	"errors"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 
+	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/types"
@@ -43,19 +43,21 @@ const ManyPath = CheckPath + "/many"
 const maxMany = 500
 
 type manyPhoto struct {
-	ID              string
-	Width, Height   int
-	Kind            string
-	InFlower        bool
-	InFruit         bool
-	Caption, Source string
-	Ticked          bool
+	ID            string
+	Width, Height int
+	Kind          types.Text
+	InFlower      bool
+	InFruit       bool
+	Caption       page.List
+	Source        string
+	Ticked        bool
 }
 
 type manyPlant struct {
-	Name, Scientific string
-	Sources          []speciesbus.Source
-	Photos           []manyPhoto
+	Name       types.Text
+	Scientific string
+	Sources    []speciesbus.Source
+	Photos     []manyPhoto
 }
 
 type manyView struct {
@@ -70,7 +72,7 @@ type manyView struct {
 	Left, Over     int
 	IDs            string
 
-	Done, Problem string
+	Done, Problem any
 }
 
 // many shows the page.
@@ -169,15 +171,15 @@ func (a app) checkMany(w http.ResponseWriter, r *http.Request) {
 	var v manyView
 	switch checked := len(done); checked {
 	case 0:
-		v.Problem = "Nothing was checked: no photo was ticked."
+		v.Problem = words.NoneTicked
 	case 1:
-		v.Done = "Checked 1 photo. Volunteers see it now."
+		v.Done = words.CheckedOne
 	default:
-		v.Done = "Checked " + strconv.Itoa(checked) + " photos. Volunteers see them now."
+		v.Done = page.Put(words.CheckedMany, "count", checked)
 	}
 
 	if refused > 0 {
-		v.Problem = strconv.Itoa(refused) + " could not be checked as they are. They are below, not ticked: open each one in the queue to see why."
+		v.Problem = page.Put(words.Refused, "count", refused)
 	}
 
 	a.showMany(w, r, http.StatusOK, ids, done, v)
@@ -264,13 +266,13 @@ func (a app) group(ctx context.Context, photos []photobus.Photo, ticked bool) ([
 				return nil, err
 			}
 
-			out = append(out, manyPlant{Name: sp.Common.In(types.English), Scientific: sp.Scientific, Sources: sp.Sources})
+			out = append(out, manyPlant{Name: sp.Common, Scientific: sp.Scientific, Sources: sp.Sources})
 			last = p.SpeciesID
 		}
 
 		out[len(out)-1].Photos = append(out[len(out)-1].Photos, manyPhoto{
 			ID: p.ID.String(), Width: p.Small.Width, Height: p.Small.Height,
-			Kind: p.Kind.Label(), InFlower: p.InFlower, InFruit: p.InFruit,
+			Kind: words.Kinds[p.Kind], InFlower: p.InFlower, InFruit: p.InFruit,
 			Caption: caption(p, names), Source: p.SourceURL, Ticked: ticked,
 		})
 	}

@@ -866,7 +866,7 @@ func TestABatchIsSortedOneAfterAnother(t *testing.T) {
 		t.Fatalf("sorting the first: %d %s\n%s", w.Code, w.Header().Get("Location"), w.Body.String())
 	}
 
-	if next := s.get(w.Header().Get("Location"), true).Body.String(); !strings.Contains(next, "Added to the plant&#39;s photos") {
+	if next := s.get(w.Header().Get("Location"), true).Body.String(); !strings.Contains(next, "Added to the plant's photos") {
 		t.Error("the next photo's screen does not say the last was added")
 	}
 

@@ -75,7 +75,7 @@
   <div class="map-pick-box">
     <div class="map-pick">
       <svg viewBox="0 0 800 520" width="280" height="182" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
-        {{template "trailmap-drawing"}}
+        {{template "trailmap-drawing" $l}}
         {{range .Others}}<circle cx="{{.X}}" cy="{{.Y}}" r="16" fill="#6A6A6A" stroke="#FFFFFF" stroke-width="4"/>{{end}}
         {{with .Spot}}<circle cx="{{.X}}" cy="{{.Y}}" r="26" fill="none" stroke="#FFCB00" stroke-width="10"/><circle cx="{{.X}}" cy="{{.Y}}" r="26" fill="none" stroke="#1E2A73" stroke-width="3"/>{{end}}
       </svg>

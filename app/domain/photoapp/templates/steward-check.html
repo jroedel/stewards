@@ -1,51 +1,51 @@
-{{define "title"}}Photos to check · Garden stewards{{end}}
-{{define "content"}}{{with .Data}}
+{{define "title"}}{{plain .Lang "Photos to check"}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
 {{/* Everything swap.mjs swaps is inside #swap, and data-next is the page it
 fetches ahead (check.go, and the page package's swap.mjs). Without the
 script these are ordinary forms and links. */}}
-<div lang="en" id="swap" class="check-queue"{{with .Next}} data-next="{{.}}"{{end}}>
-<p class="eyebrow"><a href="/steward">Places</a></p>
-<h1 tabindex="-1">Photos to check</h1>
+<div id="swap" class="check-queue"{{with .Next}} data-next="{{.}}"{{end}}>
+<p class="eyebrow"><a href="/steward">{{t $l "Places"}}</a></p>
+<h1 tabindex="-1">{{t $l "Photos to check"}}</h1>
 
-{{with .Done}}<div class="done check-done" role="status" tabindex="-1"><span>{{.}}</span>{{with $.Data.Undo}}
-  <form method="post" action="/steward/check/{{.}}" data-swap><input type="hidden" name="checked" value="no"><button class="linkish" type="submit">{{$.Data.UndoLabel}}</button></form>{{end}}
+{{with .Done}}<div class="done check-done" role="status" tabindex="-1"><span>{{say $l .}}</span>{{with $.Data.Undo}}
+  <form method="post" action="/steward/check/{{.}}" data-swap><input type="hidden" name="checked" value="no"><button class="linkish" type="submit">{{say $l $.Data.UndoLabel}}</button></form>{{end}}
 </div>{{end}}
-{{with .Problem}}<p class="problem" role="alert" tabindex="-1">{{.}}</p>{{end}}
+{{with .Problem}}<p class="problem" role="alert" tabindex="-1">{{say $l .}}</p>{{end}}
 
 {{if .Empty}}
-<div class="card empty"><p>Nothing to check. Photos sorted through the API, or added without the Checked tick, wait here.</p></div>
+<div class="card empty"><p>{{t $l "Nothing to check. Photos sorted through the API, or added without the Checked tick, wait here."}}</p></div>
 {{else}}
-<p class="lead">{{if eq .Count 1}}This is the last one.{{else}}{{.Count}} waiting.{{end}} Volunteers see a photo once it is checked.</p>
+<p class="lead">{{if eq .Count 1}}{{t $l "This is the last one."}}{{else}}{{t $l "{count} waiting." "count" .Count}}{{end}} {{t $l "Volunteers see a photo once it is checked."}}</p>
 
 <div class="compare">
   <figure>
-    <a class="photo-zoom" href="/plants/{{.Slug}}/photos/{{.ID}}"><span class="sr-only">Zoom in on this photo</span><img src="/photos/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt=""></a>
-    <figcaption><strong>This photo</strong>{{with .Taken}}, {{.}}{{end}}</figcaption>
+    <a class="photo-zoom" href="/plants/{{.Slug}}/photos/{{.ID}}"><span class="sr-only">{{t $l "Zoom in on this photo"}}</span><img src="/photos/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt=""></a>
+    <figcaption><strong>{{t $l "This photo"}}</strong>{{with .Taken}}, {{say $l .}}{{end}}</figcaption>
   </figure>
   {{if .Ref}}<figure>
-    <a class="photo-zoom" href="/plants/{{.Slug}}/photos/{{.Ref}}"><span class="sr-only">Zoom in on the checked photo</span><img src="/photos/{{.Ref}}/small.jpg" width="{{.RefW}}" height="{{.RefH}}" alt=""></a>
-    <figcaption>On the card now</figcaption>
+    <a class="photo-zoom" href="/plants/{{.Slug}}/photos/{{.Ref}}"><span class="sr-only">{{t $l "Zoom in on the checked photo"}}</span><img src="/photos/{{.Ref}}/small.jpg" width="{{.RefW}}" height="{{.RefH}}" alt=""></a>
+    <figcaption>{{t $l "On the card now"}}</figcaption>
   </figure>
   {{else}}<div class="compare-none">
-    <p>No checked {{.KindWord}} of {{.Name}} yet{{if .Sources}}. Compare it with the sources below{{end}}.</p>
+    <p>{{if .Sources}}{{t $l "No checked {kind} of {plant} yet. Compare it with the sources below." "kind" .KindWord "plant" .Name}}{{else}}{{t $l "No checked {kind} of {plant} yet." "kind" .KindWord "plant" .Name}}{{end}}</p>
   </div>{{end}}
 </div>
 
 <div class="card check-says">
-  <p class="check-name">{{.Name}}</p>
+  <p class="check-name">{{say $l .Name}}</p>
   {{with .Scientific}}<p class="row-note"><i>{{.}}</i></p>{{end}}
-  <p class="row-tags"><span class="tag">{{.Kind}}</span>{{if .InFlower}}<span class="tag tag-sun">In flower</span>{{end}}{{if .InFruit}}<span class="tag tag-sun">In fruit or seed</span>{{end}}</p>
-  <p class="row-note">{{.Caption}} · {{template "photo-id" .ID}}</p>
-  {{if .Sources}}<p class="row-note">Sources: {{range $i, $s := .Sources}}{{if $i}}, {{end}}{{if .URL}}<a href="{{.URL}}" rel="noopener" target="_blank">{{.Label}}</a>{{else}}{{.Label}}{{end}}{{end}}</p>{{end}}
+  <p class="row-tags"><span class="tag">{{say $l .Kind}}</span>{{if .InFlower}}<span class="tag tag-sun">{{t $l "In flower"}}</span>{{end}}{{if .InFruit}}<span class="tag tag-sun">{{t $l "In fruit or seed"}}</span>{{end}}</p>
+  <p class="row-note">{{say $l .Caption}} · {{template "photo-id" (pass $l .ID)}}</p>
+  {{if .Sources}}<p class="row-note">{{t $l "Sources:"}} {{range $i, $s := .Sources}}{{if $i}}, {{end}}{{if .URL}}<a href="{{.URL}}" rel="noopener" target="_blank">{{.Label}}</a>{{else}}{{.Label}}{{end}}{{end}}</p>{{end}}
 </div>
 
 <form class="check-yes" method="post" action="/steward/check/{{.ID}}" data-swap>
   <input type="hidden" name="checked" value="yes">
-  <button class="button button-block" type="submit">Yes, it shows {{.Name}}</button>
+  <button class="button button-block" type="submit">{{t $l "Yes, it shows {plant}" "plant" .Name}}</button>
 </form>
 <div class="check-other">
-  {{if .Sheet.Open}}<a class="button button-quiet button-small" href="#change">Change</a>{{else}}<button class="button button-quiet button-small" type="button" popovertarget="change">Change</button>{{end}}
-  {{with .Next}}<a class="button button-quiet button-small" href="{{.}}" data-swap>Skip</a>{{end}}
+  {{if .Sheet.Open}}<a class="button button-quiet button-small" href="#change">{{t $l "Change"}}</a>{{else}}<button class="button button-quiet button-small" type="button" popovertarget="change">{{t $l "Change"}}</button>{{end}}
+  {{with .Next}}<a class="button button-quiet button-small" href="{{.}}" data-swap>{{t $l "Skip"}}</a>{{end}}
 </div>
 
 {{/* The Change sheet (change.go): a popover the Change button opens, with no
@@ -54,46 +54,46 @@ because a popover cannot be sent open. */}}
 {{with .Sheet}}<div id="change" class="sheet{{if .Open}} sheet-open card{{end}}"{{if not .Open}} popover role="dialog"{{end}} aria-labelledby="change-title">
 <form class="form" method="post" action="/steward/check/{{$.Data.ID}}/change" data-swap>
   <div class="sheet-head">
-    <h2 id="change-title">Change this photo</h2>
-    {{if not .Open}}<button class="sheet-close" type="button" popovertarget="change" popovertargetaction="hide" aria-label="Close"></button>{{end}}
+    <h2 id="change-title">{{t $l "Change this photo"}}</h2>
+    {{if not .Open}}<button class="sheet-close" type="button" popovertarget="change" popovertargetaction="hide" aria-label="{{plain $l "Close"}}"></button>{{end}}
   </div>
-  {{with index .Problems "outcome"}}<p class="field-problem">{{.}}</p>{{end}}
+  {{with index .Problems "outcome"}}<p class="field-problem">{{say $l .}}</p>{{end}}
 
   <fieldset>
-    <legend>Which plant</legend>
-    {{with index .Problems "species"}}<p class="field-problem">{{.}}</p>{{end}}
+    <legend>{{t $l "Which plant"}}</legend>
+    {{with index .Problems "species"}}<p class="field-problem">{{say $l .}}</p>{{end}}
     <div class="chips">{{range .Recent}}
-      <label class="chip"><input type="radio" name="species" value="{{.Value}}"{{if .Selected}} checked{{end}}><span>{{.Label}}</span></label>{{end}}
+      <label class="chip"><input type="radio" name="species" value="{{.Value}}"{{if .Selected}} checked{{end}}><span>{{words $l .Label}}</span></label>{{end}}
     </div>
-    <label class="sr-only" for="change-species">Another plant</label>
-    <select id="change-species" name="species_other" data-find="Find another plant" data-find-with="species">{{range .Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
-    <p class="help">Its plant first, then the plants worked on lately.</p>
+    <label class="sr-only" for="change-species">{{t $l "Another plant"}}</label>
+    <select id="change-species" name="species_other" data-find="{{plain $l "Find another plant"}}" data-find-with="species">{{range .Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}{{if .Selected}} selected{{end}}>{{words $l .Label}}{{with .After}} ({{.}}){{end}}</option>{{end}}</select>
+    <p class="help">{{t $l "Its plant first, then the plants worked on lately."}}</p>
   </fieldset>
 
   <fieldset>
-    <legend>What it shows</legend>
-    {{with index .Problems "kind"}}<p class="field-problem">{{.}}</p>{{end}}
+    <legend>{{t $l "What it shows"}}</legend>
+    {{with index .Problems "kind"}}<p class="field-problem">{{say $l .}}</p>{{end}}
     <div class="tiles">{{range .Kinds}}
-      <label class="tile"><input type="radio" name="kind" value="{{.Value}}" required{{if .Selected}} checked{{end}}><span>{{.Label}}</span></label>{{end}}
+      <label class="tile"><input type="radio" name="kind" value="{{.Value}}" required{{if .Selected}} checked{{end}}><span>{{words $l .Label}}</span></label>{{end}}
     </div>
   </fieldset>
 
   <div class="pills">
-    <label class="pill"><input type="checkbox" name="in_flower" value="yes"{{if .InFlower}} checked{{end}}><span>In flower</span></label>
-    <label class="pill"><input type="checkbox" name="in_fruit" value="yes"{{if .InFruit}} checked{{end}}><span>In fruit or seed</span></label>
+    <label class="pill"><input type="checkbox" name="in_flower" value="yes"{{if .InFlower}} checked{{end}}><span>{{t $l "In flower"}}</span></label>
+    <label class="pill"><input type="checkbox" name="in_fruit" value="yes"{{if .InFruit}} checked{{end}}><span>{{t $l "In fruit or seed"}}</span></label>
   </div>
 
   {{if .Here}}
-  <label for="change-place">Where it was taken <span class="optional">optional</span></label>
-  {{with index .Problems "place"}}<p class="field-problem">{{.}}</p>{{end}}
-  <select id="change-place" name="place">{{range .Places}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+  <label for="change-place">{{t $l "Where it was taken"}} <span class="optional">{{t $l "optional"}}</span></label>
+  {{with index .Problems "place"}}<p class="field-problem">{{say $l .}}</p>{{end}}
+  <select id="change-place" name="place">{{range .Places}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{words $l .Label}}</option>{{end}}</select>
   {{end}}
 
   <div class="sheet-actions">
-    <button class="button button-block" type="submit" name="checked" value="yes">Save and check it</button>
-    <button class="button button-quiet button-block" type="submit" name="checked" value="no">Save without checking</button>
+    <button class="button button-block" type="submit" name="checked" value="yes">{{t $l "Save and check it"}}</button>
+    <button class="button button-quiet button-block" type="submit" name="checked" value="no">{{t $l "Save without checking"}}</button>
   </div>
-  <p class="help">The day, the source and the credit are on <a href="/steward/photos/{{$.Data.ID}}/edit?from=check">the photo's own screen</a>.</p>
+  <p class="help">{{t $l "The day, the source and the credit are on {screen}." "screen" (link (printf "/steward/photos/%s/edit?from=check" $.Data.ID) (t $l "the photo's own screen"))}}</p>
 </form>
 </div>{{end}}
 {{end}}

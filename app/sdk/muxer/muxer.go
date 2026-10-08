@@ -108,7 +108,7 @@ const maxUpload = photobus.MaxBytes + 1<<20
 // template, through t, are found by the renderer instead.
 func words() page.Catalog {
 	var out page.Catalog
-	for _, c := range []page.Catalog{homeapp.Words, placeapp.Words, speciesapp.Words, signupapp.Words, authapp.Words, oauthapp.Words, stewardapp.Words, workdayapp.Words, translationapp.Words, nurseryapp.Words, {page.CalendarWords, page.LanguageWords}} {
+	for _, c := range []page.Catalog{homeapp.Words, placeapp.Words, speciesapp.Words, signupapp.Words, authapp.Words, oauthapp.Words, stewardapp.Words, workdayapp.Words, translationapp.Words, nurseryapp.Words, photoapp.Words, inboxapp.Words, {page.CalendarWords, page.LanguageWords}} {
 		out = append(out, c...)
 	}
 

@@ -148,8 +148,8 @@ var Words = page.Catalog{{Where: "the stewards' screens for nursery stock and th
 
 type lineRow struct {
 	ID        string
-	InboxID   string // the photo, while it is kept
-	Name      string // the plant's common name, once matched
+	InboxID   string     // the photo, while it is kept
+	Name      types.Text // the plant's common name, once matched
 	Slug      string
 	Status    types.Text
 	Native    bool
@@ -220,7 +220,7 @@ func rowOf(l nurserybus.Line, plants map[types.ID]speciesbus.Species, withPhotos
 	}
 
 	if sp, ok := plants[l.SpeciesID]; ok {
-		row.Name, row.Slug = sp.Common.In(types.English), sp.Slug
+		row.Name, row.Slug = sp.Common, sp.Slug
 		row.Status, row.Native = words.Statuses[sp.Status], sp.Status == speciesbus.StatusNative
 	}
 
@@ -255,13 +255,15 @@ type option struct {
 
 // plantOption is a plant as a list of plants offers it: its common name with
 // its scientific one, so that either finds it in the list's search box, and
-// its Spanish name to be found by as well, which is not shown (the page
-// package's find.mjs, data-also).
+// its name in the other language to be found by as well, which is not shown
+// (the page package's find.mjs, data-also). Both names go in, since the
+// list may be shown in either language and the one it is shown in already
+// finds it.
 func plantOption(sp speciesbus.Species, selected bool) option {
 	o := option{Value: sp.ID.String(), Label: sp.Common, Scientific: sp.Scientific, Selected: selected}
 
-	if sp.Common.ES != sp.Common.EN {
-		o.Also = sp.Common.ES
+	if sp.Common.EN != "" && sp.Common.ES != "" && sp.Common.ES != sp.Common.EN {
+		o.Also = sp.Common.EN + " " + sp.Common.ES
 	}
 
 	return o

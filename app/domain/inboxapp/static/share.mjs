@@ -53,10 +53,15 @@ const INBOX = "/steward/inbox";
   }
 })();
 
-// fill puts the stashed photos in the send screen's file input, and says so.
+// fill puts the stashed photos in the send screen's file input, and says so,
+// in the page's language, from the page (words.mjs). Imported here rather
+// than at the top: this file is loaded by every steward's page, and only the
+// send screen, after a share, has anything to say.
 async function fill(form) {
   const input = form.querySelector('input[type="file"]');
   const max = Number(form.dataset.max) || 30;
+  const { sayer } = await import("./words.mjs");
+  const t = sayer(document);
 
   let files = [];
   try {
@@ -66,13 +71,12 @@ async function fill(form) {
   }
 
   if (files.length === 0) {
-    say("problem", "The photos you shared are not on this page any more: they were sent, or the phone cleared them. " +
-      "Look in the inbox, and if they are not there, share them again.");
+    say("problem", t("sharedGone"));
     return;
   }
 
   if (files.length > max) {
-    say("problem", `You shared ${files.length} photos. The inbox takes up to ${max} at a time: share them again in two goes.`);
+    say("problem", t("sharedTooMany", { count: files.length, max }));
     await caches.delete(STASH).catch(() => {});
     return;
   }
@@ -84,11 +88,11 @@ async function fill(form) {
     }
     input.files = chosen.files;
   } catch {
-    say("problem", `${count(files.length)} shared, but this browser cannot put them in the form. Choose them below instead.`);
+    say("problem", files.length === 1 ? t("sharedOneStuck") : t("sharedManyStuck", { count: files.length }));
     return;
   }
 
-  say("done", `${count(files.length)} from your phone, ready to send. Say where they were taken, then press Send.`);
+  say("done", files.length === 1 ? t("sharedOne") : t("sharedMany", { count: files.length }));
 }
 
 // take is the stashed photos, in the order they were shared.
@@ -124,10 +128,6 @@ async function take() {
   }
 
   return files;
-}
-
-function count(n) {
-  return n === 1 ? "1 photo" : `${n} photos`;
 }
 
 // say writes the one sentence about the share above the form, where the

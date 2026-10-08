@@ -135,7 +135,7 @@ const (
 // target's worker (see Routes). Named one by one rather than as
 // static/*.mjs, so the tests beside them are never served.
 //
-//go:embed static/send.mjs static/shrink.mjs static/jpeg.mjs static/share.mjs static/share-worker.mjs
+//go:embed static/send.mjs static/shrink.mjs static/jpeg.mjs static/share.mjs static/share-worker.mjs static/words.mjs
 var scripts embed.FS
 
 // scriptDir is where the modules are served from. They import each other by
@@ -319,32 +319,40 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 type itemRow struct {
 	ID            string
 	Width, Height int
-	Time          string
-	Where         string // the place here, if said
-	Here          bool   // on the property
-	Away          string // otherwise: "At a nursery: Natural Gardener"
+	Time          any
+	Where         any  // the place here, if said
+	Here          bool // on the property
+	Away          any  // otherwise: "At a nursery: Natural Gardener"
 	Note          string
+
+	// at is where, as a word to tell one from another by: Where and Away
+	// are words to show, and two phrases cannot be compared.
+	at string
 }
 
 type day struct {
-	Label string
+	Label any
 	Items []itemRow
 
 	// Tags and Notes are where the day's photos were taken and what they
 	// were sent with, each once: the grid of a day's photos has no room
 	// for them under every picture, and a day is mostly one batch.
-	Tags, Notes []string
-	Open        bool // a photo with no place said
+	Tags  []any
+	Notes []string
+	Open  bool // a photo with no place said
+
+	date string // the day, to tell one from the next
+	tags []string
 }
 
 type listView struct {
 	Count int
 	Days  []day
 	Aside []itemRow
-	Done  string
+	Done  any
 
 	// Problem is why the photos chosen to sort together were not.
-	Problem string
+	Problem types.Text
 }
 
 func (a app) list(w http.ResponseWriter, r *http.Request) {
@@ -362,7 +370,7 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	names, err := a.placeNames(r.Context())
+	names, _, err := a.placeNames(r.Context())
 	if err != nil {
 		a.fail(w, r, "naming places for the inbox", err)
 
@@ -380,9 +388,11 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 		d, _ := strconv.Atoi(q.Get("d"))
 		v.Done = sentWords(max(n, 0), max(d, 0))
 	case "none-chosen":
-		v.Problem = "No photos were chosen. Tap the photos of one plant, then Sort the chosen photos together."
+		v.Problem = words.NoneChosen
 	default:
-		v.Done = sortedWords(q.Get("done"))
+		if done := sortedWords(q.Get("done")); done.Written() {
+			v.Done = done
+		}
 	}
 
 	for _, it := range aside {
@@ -391,53 +401,50 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 
 	for _, it := range items {
 		when := it.When().In(types.Garden)
-		label := when.Format("Monday 2 January")
+		var label any = page.Weekday(when)
 		if when.Year() != time.Now().In(types.Garden).Year() {
-			label = when.Format("Monday 2 January 2006")
+			label = page.FullDate(when)
 		}
 
-		if len(v.Days) == 0 || v.Days[len(v.Days)-1].Label != label {
-			v.Days = append(v.Days, day{Label: label})
+		if date := when.Format(time.DateOnly); len(v.Days) == 0 || v.Days[len(v.Days)-1].date != date {
+			v.Days = append(v.Days, day{Label: label, date: date})
 		}
 
 		last := &v.Days[len(v.Days)-1]
 		row := rowOf(it, names)
 		last.Items = append(last.Items, row)
 
-		switch {
-		case !row.Here:
-			last.Tags = appendOnce(last.Tags, row.Away)
-		case row.Where != "":
-			last.Tags = appendOnce(last.Tags, row.Where)
-		default:
-			last.Open = true
+		tag := row.Where
+		if !row.Here {
+			tag = row.Away
 		}
 
-		if row.Note != "" {
-			last.Notes = appendOnce(last.Notes, row.Note)
+		switch {
+		case tag == nil:
+			last.Open = true
+		case !slices.Contains(last.tags, row.at):
+			last.tags = append(last.tags, row.at)
+			last.Tags = append(last.Tags, tag)
+		}
+
+		if row.Note != "" && !slices.Contains(last.Notes, row.Note) {
+			last.Notes = append(last.Notes, row.Note)
 		}
 	}
 
 	a.render.Render(w, r, http.StatusOK, "steward-inbox", v)
 }
 
-func appendOnce(list []string, s string) []string {
-	if slices.Contains(list, s) {
-		return list
-	}
-
-	return append(list, s)
-}
-
-func rowOf(it inboxbus.Item, names map[types.ID]string) itemRow {
+func rowOf(it inboxbus.Item, names map[types.ID]any) itemRow {
 	row := itemRow{
 		ID: it.ID.String(), Width: it.Small.Width, Height: it.Small.Height,
 		Here: it.At.Here(), Away: awayWords(it), Note: it.Note,
 		Where: names[it.PlaceID],
+		at:    string(it.At) + ":" + it.Site + ":" + it.PlaceID.String(),
 	}
 
 	if !it.TakenAt.IsZero() {
-		row.Time = it.TakenAt.In(types.Garden).Format("3:04 pm")
+		row.Time = page.Time(it.TakenAt)
 	}
 
 	return row
@@ -445,65 +452,43 @@ func rowOf(it inboxbus.Item, names map[types.ID]string) itemRow {
 
 // awayWords is where off the property a photo was taken, as its tag says it:
 // "At a nursery: Natural Gardener", "Somewhere else: Pedernales Falls State
-// Park", or the choice alone when nothing more was said. Empty on the
+// Park", or the choice alone when nothing more was said. Nothing on the
 // property.
-func awayWords(it inboxbus.Item) string {
+func awayWords(it inboxbus.Item) any {
 	switch {
 	case it.At.Here():
-		return ""
+		return nil
 	case it.Site == "":
-		return it.At.Label()
+		return words.At[it.At]
 	}
 
-	return it.At.Label() + ": " + it.Site
+	return page.List{Items: []any{words.At[it.At], it.Site}, Sep: ": "}
 }
 
 // sortedWords is the sentence after a photo is sorted, chosen by the word
 // the redirect carries; nothing for a word it does not know.
-func sortedWords(done string) string {
-	switch done {
-	case "photo":
-		return "Added to the plant's photos. It is shown to volunteers once a steward checks it."
-	case "photo-checked":
-		return "Added to the plant's photos, checked. Volunteers see it now."
-	case "planted":
-		return "Listed as planted there, and added to the plant's photos to be checked."
-	case "planted-checked":
-		return "Listed as planted there, and added to the plant's photos, checked."
-	case "stock":
-		return "Added to the nursery's stock."
-	case "unsure":
-		return "Set aside, with the question."
-	case "discard":
-		return "Discarded."
-	case "taken":
-		return "That photo had already been sorted, by somebody else or on another screen."
-
-	}
-
-	return ""
-}
+func sortedWords(done string) types.Text { return words.Sorted[done] }
 
 // sentWords is the sentence after a batch: how many are now in the inbox,
 // and how many were there already.
-func sentWords(kept, already int) string {
-	var s string
+func sentWords(kept, already int) page.List {
+	s := page.List{Sep: " "}
 
 	switch kept {
 	case 0:
-		s = "No new photos."
+		s.Items = append(s.Items, words.NoNew)
 	case 1:
-		s = "1 photo is in the inbox."
+		s.Items = append(s.Items, words.OneIn)
 	default:
-		s = fmt.Sprintf("%d photos are in the inbox.", kept)
+		s.Items = append(s.Items, page.Put(words.ManyIn, "count", kept))
 	}
 
 	switch already {
 	case 0:
 	case 1:
-		s += " 1 was there already."
+		s.Items = append(s.Items, words.OneAlready)
 	default:
-		s += fmt.Sprintf(" %d were there already.", already)
+		s.Items = append(s.Items, page.Put(words.ManyAlready, "count", already))
 	}
 
 	return s
@@ -512,8 +497,13 @@ func sentWords(kept, already int) string {
 // ------------------------------------------------------------------ sending
 
 type option struct {
-	Value, Label string
-	Selected     bool
+	Value    string
+	Label    any    // a name, or words of the form's own
+	After    string // a plant's scientific name, shown after it
+	Selected bool
+
+	// name is the label in English, to put a list in order by.
+	name string
 
 	// Also is more to find a plant by in a searchable list, not shown: see
 	// plantOption.
@@ -522,16 +512,15 @@ type option struct {
 
 // plantOption is a plant as a list of plants offers it: its common name with
 // its scientific one, so that either finds it in the list's search box, and
-// its Spanish name to be found by as well, which is not shown (the page
-// package's find.mjs, data-also).
+// its name in the other language to be found by as well, which is not shown
+// (the page package's find.mjs, data-also). Both names go in, since the
+// list may be shown in either language and the one it is shown in already
+// finds it.
 func plantOption(sp speciesbus.Species, selected bool) option {
-	o := option{Value: sp.ID.String(), Label: sp.Common.In(types.English), Selected: selected}
-	if sp.Scientific != "" {
-		o.Label += " (" + sp.Scientific + ")"
-	}
+	o := option{Value: sp.ID.String(), Label: sp.Common, After: sp.Scientific, Selected: selected}
 
-	if sp.Common.ES != sp.Common.EN {
-		o.Also = sp.Common.ES
+	if sp.Common.EN != "" && sp.Common.ES != "" && sp.Common.ES != sp.Common.EN {
+		o.Also = sp.Common.EN + " " + sp.Common.ES
 	}
 
 	return o
@@ -541,7 +530,7 @@ type newView struct {
 	At       string // property, nursery or elsewhere
 	Places   []option
 	Note     string
-	Problems map[string]string
+	Problems map[string]any
 
 	// The nursery, offered from the register, or where else, as given.
 	Nursery, Where string
@@ -549,7 +538,7 @@ type newView struct {
 
 	// After a batch some of which could not be kept: what was, and each
 	// photo that was not, by the name the phone gave it.
-	Kept    string
+	Kept    any
 	Refused []refusal
 
 	MaxPhotos int
@@ -561,17 +550,22 @@ type newView struct {
 
 	// Shared is why photos shared from the phone are not in the form, when
 	// the server knows; share.mjs says the rest.
-	Shared string
+	Shared types.Text
+
+	// ScriptWords are the scripts' sentences in the page's language
+	// (scriptWords).
+	ScriptWords map[string]string
 }
 
 type refusal struct {
-	Name, Problem string
+	Name    string
+	Problem any
 }
 
 func (a app) newForm(w http.ResponseWriter, r *http.Request) {
 	// On the property, every time the screen opens. A nursery setting that
 	// carried over would file next week's garden photos as stock.
-	v := newView{Problems: map[string]string{}, Shared: sharedWords(r.URL.Query().Get("shared"))}
+	v := newView{Problems: map[string]any{}, Shared: sharedWords(r.URL.Query().Get("shared"))}
 	a.showNew(w, r, http.StatusOK, v, inboxbus.Fields{At: inboxbus.Property})
 }
 
@@ -579,15 +573,15 @@ func (a app) newForm(w http.ResponseWriter, r *http.Request) {
 // word the redirect carries: "again" from the server, "lost" from the worker.
 // Nothing for a count, which is a share that did, and is share.mjs's to
 // describe.
-func sharedWords(shared string) string {
+func sharedWords(shared string) types.Text {
 	switch shared {
 	case "again":
-		return "Those photos did not arrive: the app was not ready for them yet. It is now. Share them again from your photos app."
+		return words.SharedAgain
 	case "lost":
-		return "Those photos did not arrive: the phone could not keep them for this page, perhaps for want of room. Share them again, or choose them below."
+		return words.SharedLost
 	}
 
-	return ""
+	return types.Text{}
 }
 
 // shared is a share the phone's worker did not catch: see SharePattern. It
@@ -625,13 +619,13 @@ func (a app) upload(w http.ResponseWriter, r *http.Request) {
 	_ = rc.SetReadDeadline(time.Now().Add(uploadTime))
 	_ = rc.SetWriteDeadline(time.Now().Add(uploadTime + keepTime))
 
-	v := newView{Problems: map[string]string{}}
+	v := newView{Problems: map[string]any{}}
 
 	// A megabyte in memory, for the few text fields; the photos go to
 	// temporary files, which RemoveAll takes away.
 	if err := r.ParseMultipartForm(1 << 20); err != nil {
 		if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-			v.Problems["photo"] = fmt.Sprintf("That is more than %d MB at once. Send the photos in two or three goes.", MaxBytes>>20)
+			v.Problems["photo"] = page.Put(words.MoreThan, "size", MaxBytes>>20)
 			a.showNew(w, r, http.StatusRequestEntityTooLarge, v, inboxbus.Fields{At: inboxbus.Property})
 
 			return
@@ -649,15 +643,15 @@ func (a app) upload(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case len(headers) == 0:
-		v.Problems["photo"] = "Choose the photos to send."
+		v.Problems["photo"] = words.ChoosePhotos
 	case len(headers) > MaxPhotos:
-		v.Problems["photo"] = fmt.Sprintf("That is %d photos. Send up to %d at a time.", len(headers), MaxPhotos)
+		v.Problems["photo"] = page.Put(words.TooMany, "count", len(headers), "max", MaxPhotos)
 	}
 
 	// The batch's own fields once, before any photo is read.
 	checked, err := a.inbox.Check(f)
 	if invalid, ok := errors.AsType[inboxbus.Invalid](err); ok {
-		v.Problems[invalid.Field] = page.Sentence(invalid.Problem)
+		v.Problems[invalid.Field] = types.Text{EN: page.Sentence(invalid.Problem)}
 	} else if err != nil {
 		a.fail(w, r, "checking a batch for the inbox", err)
 
@@ -674,7 +668,7 @@ func (a app) upload(w http.ResponseWriter, r *http.Request) {
 
 	for _, h := range headers {
 		data, problem := readPhoto(h)
-		if problem == "" {
+		if problem == nil {
 			_, err := a.inbox.Add(r.Context(), checked, data)
 
 			invalid, isInvalid := errors.AsType[inboxbus.Invalid](err)
@@ -690,14 +684,14 @@ func (a app) upload(w http.ResponseWriter, r *http.Request) {
 
 				continue
 			case isInvalid && invalid.Field == "photo":
-				problem = page.Sentence(invalid.Problem)
+				problem = types.Text{EN: page.Sentence(invalid.Problem)}
 			case isInvalid:
 				// The place went while the photos were on their way:
 				// the same for every photo after this one, so the
 				// batch stops here and says so once.
-				v.Problems[invalid.Field] = page.Sentence(invalid.Problem)
+				v.Problems[invalid.Field] = types.Text{EN: page.Sentence(invalid.Problem)}
 			case r.Context().Err() != nil:
-				problem = "The connection dropped before this one was kept. Send it again."
+				problem = words.Dropped
 			default:
 				a.fail(w, r, "adding a photo to the inbox", err)
 
@@ -730,7 +724,7 @@ func (a app) upload(w http.ResponseWriter, r *http.Request) {
 
 // fieldsOf is what a batch says about every photo in it, as the form sent it,
 // noting in problems a place that is not one from the list.
-func fieldsOf(r *http.Request, problems map[string]string) inboxbus.Fields {
+func fieldsOf(r *http.Request, problems map[string]any) inboxbus.Fields {
 	f := inboxbus.Fields{
 		At:   inboxbus.At(r.PostFormValue("at")),
 		Note: r.PostFormValue("note"),
@@ -754,7 +748,7 @@ func fieldsOf(r *http.Request, problems map[string]string) inboxbus.Fields {
 	if s := r.PostFormValue("place"); s != "" {
 		id, err := types.ParseID(s)
 		if err != nil {
-			problems["place"] = "Choose the place from the list, or leave it empty."
+			problems["place"] = words.ChoosePlace
 		}
 		f.PlaceID = id
 	}
@@ -780,38 +774,43 @@ func (a app) sendOne(w http.ResponseWriter, r *http.Request) {
 	_ = rc.SetReadDeadline(time.Now().Add(sendTime))
 	_ = rc.SetWriteDeadline(time.Now().Add(sendTime + keepOneTime))
 
+	// The script shows the sentence as it is, so it is in the page's
+	// language here.
+	l := mid.LangFrom(r.Context())
+	problem := func(field string, said any) web.ProblemBody { return web.Problem(field, a.render.Plain(l, said)) }
+
 	if err := r.ParseMultipartForm(1 << 20); err != nil {
 		if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-			web.WriteJSON(w, http.StatusRequestEntityTooLarge, web.Problem("photo", tooLarge))
+			web.WriteJSON(w, http.StatusRequestEntityTooLarge, problem("photo", tooLarge()))
 
 			return
 		}
 
-		web.WriteJSON(w, http.StatusBadRequest, web.Problem("photo", notWhole))
+		web.WriteJSON(w, http.StatusBadRequest, problem("photo", words.NotWhole))
 
 		return
 	}
 	defer r.MultipartForm.RemoveAll()
 
-	problems := map[string]string{}
+	problems := map[string]any{}
 	f := fieldsOf(r, problems)
 
-	if problem, ok := problems["place"]; ok {
-		web.WriteJSON(w, http.StatusUnprocessableEntity, web.Problem("place", problem))
+	if said, ok := problems["place"]; ok {
+		web.WriteJSON(w, http.StatusUnprocessableEntity, problem("place", said))
 
 		return
 	}
 
 	headers := r.MultipartForm.File["photo"]
 	if len(headers) != 1 {
-		web.WriteJSON(w, http.StatusUnprocessableEntity, web.Problem("photo", "Send one photo at a time here."))
+		web.WriteJSON(w, http.StatusUnprocessableEntity, problem("photo", words.OneAtATime))
 
 		return
 	}
 
 	checked, err := a.inbox.Check(f)
 	if invalid, ok := errors.AsType[inboxbus.Invalid](err); ok {
-		web.WriteJSON(w, http.StatusUnprocessableEntity, web.Problem(invalid.Field, page.Sentence(invalid.Problem)))
+		web.WriteJSON(w, http.StatusUnprocessableEntity, problem(invalid.Field, page.Sentence(invalid.Problem)))
 
 		return
 	} else if err != nil {
@@ -820,9 +819,9 @@ func (a app) sendOne(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, problem := readPhoto(headers[0])
-	if problem != "" {
-		web.WriteJSON(w, http.StatusUnprocessableEntity, web.Problem("photo", problem))
+	data, refused := readPhoto(headers[0])
+	if refused != nil {
+		web.WriteJSON(w, http.StatusUnprocessableEntity, problem("photo", refused))
 
 		return
 	}
@@ -838,7 +837,7 @@ func (a app) sendOne(w http.ResponseWriter, r *http.Request) {
 	case isDup:
 		web.WriteJSON(w, http.StatusOK, sent{Outcome: "already"})
 	case isInvalid:
-		web.WriteJSON(w, http.StatusUnprocessableEntity, web.Problem(invalid.Field, page.Sentence(invalid.Problem)))
+		web.WriteJSON(w, http.StatusUnprocessableEntity, problem(invalid.Field, page.Sentence(invalid.Problem)))
 	case r.Context().Err() != nil:
 		// The phone has gone: nobody is left to answer. The script tries
 		// this photo again when it can, and Add knows it if it was kept.
@@ -878,21 +877,19 @@ func (a app) script(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(body))
 }
 
-// The sentences a photo is refused with, where both ways of sending say them.
-var (
-	tooLarge = fmt.Sprintf("Larger than %d MB. Send it as the camera saved it, not a video.", inboxbus.MaxBytes>>20)
-	notWhole = "It did not arrive whole. Send it again."
-)
+// tooLarge is the sentence a photo too large is refused with, where both
+// ways of sending say it.
+func tooLarge() page.Phrase { return page.Put(words.TooLarge, "size", inboxbus.MaxBytes>>20) }
 
 // readPhoto is one uploaded file's bytes, or a sentence saying what to do.
-func readPhoto(h *multipart.FileHeader) ([]byte, string) {
+func readPhoto(h *multipart.FileHeader) ([]byte, any) {
 	if h.Size > inboxbus.MaxBytes {
-		return nil, tooLarge
+		return nil, tooLarge()
 	}
 
 	file, err := h.Open()
 	if err != nil {
-		return nil, notWhole
+		return nil, words.NotWhole
 	}
 	defer file.Close()
 
@@ -900,14 +897,14 @@ func readPhoto(h *multipart.FileHeader) ([]byte, string) {
 
 	switch {
 	case err != nil:
-		return nil, notWhole
+		return nil, words.NotWhole
 	case len(data) > inboxbus.MaxBytes:
-		return nil, tooLarge
+		return nil, tooLarge()
 	case len(data) == 0:
-		return nil, "It arrived empty. Send it again."
+		return nil, words.Empty
 	}
 
-	return data, ""
+	return data, nil
 }
 
 func (a app) showNew(w http.ResponseWriter, r *http.Request, status int, v newView, f inboxbus.Fields) {
@@ -936,13 +933,14 @@ func (a app) showNew(w http.ResponseWriter, r *http.Request, status int, v newVi
 	}
 	v.MaxPhotos, v.MaxMB = MaxPhotos, MaxBytes>>20
 	v.Script, v.SendURL = scriptDir+"send.mjs", strings.TrimPrefix(SendPattern, "POST ")
+	v.ScriptWords = a.scriptWordsIn(mid.LangFrom(r.Context()))
 
 	byID := map[types.ID]placebus.Place{}
 	for _, p := range places {
 		byID[p.ID] = p
 	}
 
-	v.Places = []option{{Value: "", Label: "Not sure, or more than one", Selected: f.PlaceID.Zero()}}
+	v.Places = []option{{Value: "", Label: words.NotSure, Selected: f.PlaceID.Zero()}}
 	for _, p := range places {
 		v.Places = append(v.Places, option{Value: p.ID.String(), Label: placeName(p, byID), Selected: p.ID == f.PlaceID})
 	}
@@ -957,10 +955,10 @@ type sortView struct {
 	Width, Height int
 
 	// What is known of it.
-	Taken    string
-	Here     bool   // on the property: a planting is offered, and a place
-	Away     string // otherwise: "At a nursery: Natural Gardener"
-	Where    string
+	Taken    any
+	Here     bool // on the property: a planting is offered, and a place
+	Away     any  // otherwise: "At a nursery: Natural Gardener"
+	Where    any
 	Note     string
 	Unsure   bool
 	Question string
@@ -980,7 +978,8 @@ type sortView struct {
 	// the next one's screen: Skip goes there, and swap.mjs fetches it
 	// ahead. Both empty for a photo set aside, which is not in the order.
 	// For one of a group (together.go), both are within the group.
-	Position, Next string
+	Position any
+	Next     string
 
 	// Group is the group the photo is being sorted with, as its address
 	// carries it, and Plant the plant chosen for it so far: both sent
@@ -995,8 +994,8 @@ type sortView struct {
 
 	Species, Kinds, Places []option
 	NoPlants               bool
-	Problems               map[string]string
-	Done                   string
+	Problems               map[string]any
+	Done                   types.Text
 
 	// Stock is whether a nursery photo can be stock, and the line's fields
 	// as given or as offered.
@@ -1010,8 +1009,9 @@ type sortView struct {
 	StockNote string
 
 	// Sorted is set once it has been: what it became, and where to see it.
-	Sorted          string
-	SeeAt, SeeLabel string
+	Sorted   any
+	SeeAt    string
+	SeeLabel types.Text
 }
 
 func (a app) sortForm(w http.ResponseWriter, r *http.Request) {
@@ -1050,7 +1050,7 @@ func (a app) sortForm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	v := sortView{As: as, Problems: map[string]string{}, Done: sortedWords(r.URL.Query().Get("done"))}
+	v := sortView{As: as, Problems: map[string]any{}, Done: sortedWords(r.URL.Query().Get("done"))}
 	s := inboxbus.Sorting{Outcome: inboxbus.Outcome(as), PlaceID: it.PlaceID}
 
 	// One of a group, after the first: the plant chosen for the group is
@@ -1086,7 +1086,7 @@ func (a app) sort(w http.ResponseWriter, r *http.Request) {
 	}
 
 	v := sortView{
-		As: r.PostFormValue("as"), Problems: map[string]string{},
+		As: r.PostFormValue("as"), Problems: map[string]any{},
 		InFlower: r.PostFormValue("in_flower") != "", InFruit: r.PostFormValue("in_fruit") != "",
 		Checked: r.PostFormValue("checked") == "yes",
 	}
@@ -1110,12 +1110,12 @@ func (a app) sort(w http.ResponseWriter, r *http.Request) {
 
 		var err error
 		if s.Stock.PriceCents, err = nurserybus.ParsePrice(v.Price); err != nil {
-			v.Problems["price"] = page.Sentence(err.Error())
+			v.Problems["price"] = types.Text{EN: page.Sentence(err.Error())}
 		}
 
 		if c := strings.TrimSpace(v.Count); c != "" {
 			if s.Stock.Count, err = strconv.Atoi(c); err != nil {
-				v.Problems["count"] = "Write how many there were as a number, or leave it empty."
+				v.Problems["count"] = words.Count
 			}
 		}
 	}
@@ -1126,7 +1126,7 @@ func (a app) sort(w http.ResponseWriter, r *http.Request) {
 	species := r.PostFormValue("species")
 	switch other := r.PostFormValue("species_other"); {
 	case other != "" && species != "" && other != species:
-		v.Problems["species"] = "Choose one plant: a button or the list, not both."
+		v.Problems["species"] = words.OnePlant
 	case other != "":
 		species = other
 	}
@@ -1144,7 +1144,7 @@ func (a app) sort(w http.ResponseWriter, r *http.Request) {
 
 		id, err := types.ParseID(f.raw)
 		if err != nil {
-			v.Problems[f.field] = "Choose from the list."
+			v.Problems[f.field] = words.FromList
 		}
 		*f.dst = id
 	}
@@ -1156,7 +1156,7 @@ func (a app) sort(w http.ResponseWriter, r *http.Request) {
 	// A discard is the one sort that cannot be undone, so it asks, as
 	// removing a plant or a place does.
 	if s.Outcome == inboxbus.AsDiscard && r.PostFormValue("confirm") != "yes" {
-		v.Problems["confirm"] = "Tick the box to confirm, then press Discard again."
+		v.Problems["confirm"] = words.Confirm
 	}
 
 	if len(v.Problems) > 0 {
@@ -1224,7 +1224,7 @@ func (a app) sort(w http.ResponseWriter, r *http.Request) {
 
 		return
 	case isInvalid:
-		v.Problems[invalid.Field] = page.Sentence(invalid.Problem)
+		v.Problems[invalid.Field] = types.Text{EN: page.Sentence(invalid.Problem)}
 	default:
 		a.fail(w, r, "sorting an inbox photo", err)
 
@@ -1258,7 +1258,7 @@ func (a app) nextAfter(ctx context.Context, id types.ID) (types.ID, error) {
 }
 
 func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inboxbus.Item, v sortView, s inboxbus.Sorting) {
-	names, err := a.placeNames(r.Context())
+	names, english, err := a.placeNames(r.Context())
 	if err != nil {
 		a.fail(w, r, "naming places for the inbox", err)
 
@@ -1273,24 +1273,24 @@ func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inb
 	}
 
 	if !it.TakenAt.IsZero() {
-		v.Taken = it.TakenAt.In(types.Garden).Format("Monday 2 January 2006, 3:04 pm")
+		v.Taken = page.Put(words.TakenAt, "date", page.FullDate(it.TakenAt), "time", page.Time(it.TakenAt))
 	}
 
 	switch it.Status {
 	case inboxbus.Sorted:
-		v.Sorted = "This photo has been sorted: " + sortedWords(string(it.Outcome))
+		v.Sorted = page.Put(words.SortedAs, "what", sortedWords(string(it.Outcome)))
 
 		switch {
 		case it.Outcome == inboxbus.AsStock:
-			v.SeeAt, v.SeeLabel = "/steward/nursery", "See the nursery stock"
+			v.SeeAt, v.SeeLabel = "/steward/nursery", words.SeeStock
 		case !it.SpeciesID.Zero():
-			v.SeeAt, v.SeeLabel = "/steward/species/"+it.SpeciesID.String()+"/photos", "See the plant's photos"
+			v.SeeAt, v.SeeLabel = "/steward/species/"+it.SpeciesID.String()+"/photos", words.SeePhotos
 		}
 	case inboxbus.Discarded:
-		v.Sorted = "This photo was discarded."
+		v.Sorted = words.WasDiscarded
 	}
 
-	if v.Sorted != "" {
+	if v.Sorted != nil {
 		a.render.Render(w, r, http.StatusOK, "steward-inbox-sort", v)
 
 		return
@@ -1320,7 +1320,7 @@ func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inb
 	chosen := false
 	for _, id := range recent {
 		if sp, ok := byID[id]; ok {
-			v.Recent = append(v.Recent, option{Value: id.String(), Label: sp.Common.In(types.English), Selected: id == s.SpeciesID})
+			v.Recent = append(v.Recent, option{Value: id.String(), Label: sp.Common, Selected: id == s.SpeciesID})
 			chosen = chosen || id == s.SpeciesID
 		}
 	}
@@ -1343,13 +1343,13 @@ func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inb
 
 		plant, _ := types.ParseID(v.Plant)
 		v.Group, v.Chosen = v.group.String(), len(v.group)
-		v.Position = fmt.Sprintf("%d of the %d chosen", slices.Index(v.group, it.ID)+1, len(v.group))
+		v.Position = page.Put(words.OfChosen, "n", slices.Index(v.group, it.ID)+1, "count", len(v.group))
 
 		if next, ok := v.group.after(it.ID, open); ok {
 			v.Next = sortURL(next, v.group, plant, "")
 		}
 	case i >= 0:
-		v.Position = fmt.Sprintf("%d of %d", i+1, len(waiting))
+		v.Position = page.Put(words.Of, "n", i+1, "count", len(waiting))
 
 		if len(waiting) > 1 {
 			v.Next = IndexPath + "/" + waiting[(i+1)%len(waiting)].ID.String()
@@ -1381,9 +1381,9 @@ func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inb
 
 	// The whole list, chosen from only when the plant is not one of the
 	// buttons: a plant chosen by its button is not chosen here as well.
-	first := "Choose the plant"
+	first := words.ChooseThePlant
 	if len(v.Recent) > 0 {
-		first = "Another plant"
+		first = words.AnotherPlant
 	}
 
 	v.Species = []option{{Value: "", Label: first, Selected: s.SpeciesID.Zero() || chosen}}
@@ -1400,7 +1400,7 @@ func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inb
 	// the short name of each fits a button on one line, where "Leaf
 	// close-up" broke in the middle of a word.
 	for _, k := range photobus.Kinds {
-		v.Kinds = append(v.Kinds, option{Value: string(k), Label: k.Word(), Selected: k == kind})
+		v.Kinds = append(v.Kinds, option{Value: string(k), Label: words.Buttons[k], Selected: k == kind})
 	}
 
 	place := s.PlaceID
@@ -1408,12 +1408,12 @@ func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inb
 		place = it.PlaceID
 	}
 
-	v.Places = []option{{Value: "", Label: "Not said, or not here", Selected: place.Zero()}}
+	v.Places = []option{{Value: "", Label: words.NotSaid, Selected: place.Zero()}}
 	for id, name := range names {
-		v.Places = append(v.Places, option{Value: id.String(), Label: name, Selected: id == place})
+		v.Places = append(v.Places, option{Value: id.String(), Label: name, Selected: id == place, name: english[id]})
 	}
 
-	slices.SortStableFunc(v.Places[1:], func(x, y option) int { return strings.Compare(x.Label, y.Label) })
+	slices.SortStableFunc(v.Places[1:], func(x, y option) int { return strings.Compare(x.name, y.name) })
 
 	a.render.Render(w, r, status, "steward-inbox-sort", v)
 }
@@ -1536,11 +1536,11 @@ func (a app) file(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------ the parts
 
 // placeNames is every place's name by id, a band named with the place it is
-// in.
-func (a app) placeNames(ctx context.Context) (map[types.ID]string, error) {
+// in, and the same in English, to put a list of them in order by.
+func (a app) placeNames(ctx context.Context) (map[types.ID]any, map[types.ID]string, error) {
 	all, err := a.places.All(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	byID := map[types.ID]placebus.Place{}
@@ -1548,20 +1548,26 @@ func (a app) placeNames(ctx context.Context) (map[types.ID]string, error) {
 		byID[p.ID] = p
 	}
 
-	names := map[types.ID]string{}
+	names, english := map[types.ID]any{}, map[types.ID]string{}
 	for _, p := range all {
 		names[p.ID] = placeName(p, byID)
+		english[p.ID] = p.Name.In(types.English)
+		if parent, ok := byID[p.ParentID]; ok && !p.TopLevel() {
+			english[p.ID] = parent.Name.In(types.English) + ": " + english[p.ID]
+		}
 	}
 
-	return names, nil
+	return names, english, nil
 }
 
-func placeName(p placebus.Place, byID map[types.ID]placebus.Place) string {
+// placeName is a place's name, a band's with the place it is in: "Rain
+// garden: Inflow".
+func placeName(p placebus.Place, byID map[types.ID]placebus.Place) any {
 	if parent, ok := byID[p.ParentID]; ok && !p.TopLevel() {
-		return parent.Name.In(types.English) + ": " + p.Name.In(types.English)
+		return page.List{Items: []any{parent.Name, p.Name}, Sep: ": "}
 	}
 
-	return p.Name.In(types.English)
+	return p.Name
 }
 
 func (a app) fail(w http.ResponseWriter, r *http.Request, what string, err error) {
@@ -1572,5 +1578,5 @@ func (a app) fail(w http.ResponseWriter, r *http.Request, what string, err error
 // failJSON is fail for the script, which reads the sentence out of the JSON.
 func (a app) failJSON(w http.ResponseWriter, r *http.Request, what string, err error) {
 	a.log.ErrorContext(r.Context(), what, "request_id", web.RequestIDFrom(r.Context()), "error", err)
-	web.WriteJSON(w, http.StatusInternalServerError, web.Problem("", "Something went wrong on our end. Try again in a few minutes."))
+	web.WriteJSON(w, http.StatusInternalServerError, web.Problem("", a.render.Plain(mid.LangFrom(r.Context()), words.WentWrong)))
 }

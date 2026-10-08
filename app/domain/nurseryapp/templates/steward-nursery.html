@@ -29,9 +29,9 @@
   {{range .Lines}}<li id="line-{{.ID}}">
     {{if .InboxID}}<a class="photo-thumb" href="/steward/inbox/{{.InboxID}}/large.jpg"><img src="/steward/inbox/{{.InboxID}}/small.jpg" alt="" loading="lazy"></a>{{end}}
     <div class="photo-about">
-      <p class="row-name">{{if .Name}}<a href="/plants/{{.Slug}}">{{.Name}}</a>{{else}}{{.NameOnTag}}{{end}}</p>
-      <p class="row-tags">{{if .Native}}<span class="tag tag-ok">{{say $l .Status}}</span>{{else if .Status.Written}}<span class="tag">{{say $l .Status}}</span>{{else if not .Name}}<span class="tag tag-open">{{t $l "Not matched to a plant yet"}}</span>{{end}}</p>
-      {{if and .Name .NameOnTag}}<p class="row-note">{{t $l "Tag: {name}" "name" .NameOnTag}}</p>{{end}}
+      <p class="row-name">{{if .Name.Written}}<a href="/plants/{{.Slug}}">{{say $l .Name}}</a>{{else}}{{.NameOnTag}}{{end}}</p>
+      <p class="row-tags">{{if .Native}}<span class="tag tag-ok">{{say $l .Status}}</span>{{else if .Status.Written}}<span class="tag">{{say $l .Status}}</span>{{else if not .Name.Written}}<span class="tag tag-open">{{t $l "Not matched to a plant yet"}}</span>{{end}}</p>
+      {{if and .Name.Written .NameOnTag}}<p class="row-note">{{t $l "Tag: {name}" "name" .NameOnTag}}</p>{{end}}
       {{if .Facts.Items}}<p class="row-note">{{say $l .Facts}}</p>{{end}}
       {{with .Note}}<p class="row-note">{{.}}</p>{{end}}
       <a href="/steward/nursery/lines/{{.ID}}/edit">{{t $l "Correct"}}</a>

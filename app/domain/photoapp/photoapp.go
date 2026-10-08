@@ -9,11 +9,9 @@
 package photoapp
 
 import (
-	"cmp"
 	"context"
 	"embed"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -194,8 +192,10 @@ func (a app) file(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------ a plant's photos
 
 type option struct {
-	Value, Label string
-	Selected     bool
+	Value    string
+	Label    any    // a name, or words of the form's own
+	After    string // a plant's scientific name, shown after it
+	Selected bool
 
 	// Also is more to find a plant by in a searchable list, not shown: see
 	// plantOption.
@@ -203,15 +203,17 @@ type option struct {
 }
 
 type photoRow struct {
-	ID, Caption   string
+	ID            string
+	Caption       page.List
 	Width, Height int
 	Checked       bool
 	Shown         bool // the one volunteers see for this kind
 }
 
 type section struct {
-	Kind, Label string
-	Photos      []photoRow
+	Kind   string
+	Label  types.Text
+	Photos []photoRow
 }
 
 // fieldsView is the part of a form both screens share: what a steward says
@@ -229,13 +231,14 @@ type fieldsView struct {
 }
 
 type listView struct {
-	SpeciesID, Name, Slug string
-	Seasons               []season
-	Sections              []section
-	Missing, Kinds        int
-	Fields                fieldsView
-	Problems              map[string]string
-	Done                  string
+	SpeciesID, Slug string
+	Name            types.Text
+	Seasons         []season
+	Sections        []section
+	Missing, Kinds  int
+	Fields          fieldsView
+	Problems        map[string]any
+	Done            types.Text
 }
 
 func (a app) list(w http.ResponseWriter, r *http.Request) {
@@ -246,15 +249,15 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 
 	f := photobus.Fields{Kind: photobus.Kind(r.URL.Query().Get("kind")), Source: photobus.Ours}
 
-	v := listView{Problems: map[string]string{}}
+	v := listView{Problems: map[string]any{}}
 
 	switch r.URL.Query().Get("done") {
 	case "added":
-		v.Done = "Photo added."
+		v.Done = words.Added
 	case "saved":
-		v.Done = "Photo saved."
+		v.Done = words.Saved
 	case "removed":
-		v.Done = "Photo removed."
+		v.Done = words.Removed
 	}
 
 	a.showList(w, r, http.StatusOK, sp, v, f)
@@ -273,13 +276,13 @@ func (a app) upload(w http.ResponseWriter, r *http.Request) {
 	_ = rc.SetReadDeadline(time.Now().Add(uploadTime))
 	_ = rc.SetWriteDeadline(time.Now().Add(uploadTime + time.Minute))
 
-	v := listView{Problems: map[string]string{}}
+	v := listView{Problems: map[string]any{}}
 
 	// The form's text fields are a few hundred bytes; a megabyte in memory
 	// and the photo goes to a temporary file, which RemoveAll takes away.
 	if err := r.ParseMultipartForm(1 << 20); err != nil {
 		if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-			v.Problems["photo"] = fmt.Sprintf("That photo is larger than %d MB. Send it as the camera saved it, not a video or a screen recording.", photobus.MaxBytes>>20)
+			v.Problems["photo"] = page.Put(words.TooLarge, "size", photobus.MaxBytes>>20)
 			a.showList(w, r, http.StatusRequestEntityTooLarge, sp, v, photobus.Fields{Source: photobus.Ours})
 
 			return
@@ -294,7 +297,7 @@ func (a app) upload(w http.ResponseWriter, r *http.Request) {
 	f := fieldsFrom(r, v.Problems)
 
 	data, problem := readPhoto(r)
-	if problem != "" {
+	if problem != nil {
 		v.Problems["photo"] = problem
 	}
 
@@ -310,9 +313,9 @@ func (a app) upload(w http.ResponseWriter, r *http.Request) {
 
 			return
 		case isDup:
-			v.Problems["photo"] = fmt.Sprintf("That photo is already here, under %s. Choose a different one.", dup.Photo.Kind.Label())
+			v.Problems["photo"] = page.Put(words.Already, "kind", words.Kinds[dup.Photo.Kind])
 		case isInvalid:
-			v.Problems[invalid.Field] = page.Sentence(invalid.Problem)
+			v.Problems[invalid.Field] = types.Text{EN: page.Sentence(invalid.Problem)}
 		default:
 			a.fail(w, r, "adding a photo", err)
 
@@ -324,10 +327,10 @@ func (a app) upload(w http.ResponseWriter, r *http.Request) {
 }
 
 // readPhoto is the uploaded file's bytes, or a sentence saying what to do.
-func readPhoto(r *http.Request) ([]byte, string) {
+func readPhoto(r *http.Request) ([]byte, any) {
 	file, _, err := r.FormFile("photo")
 	if err != nil {
-		return nil, "Choose a photo to send."
+		return nil, words.ChooseAPhoto
 	}
 	defer file.Close()
 
@@ -335,14 +338,14 @@ func readPhoto(r *http.Request) ([]byte, string) {
 
 	switch {
 	case err != nil:
-		return nil, "The photo did not arrive whole. Try once more, nearer the house if the signal is weak."
+		return nil, words.NotWhole
 	case len(data) > photobus.MaxBytes:
-		return nil, fmt.Sprintf("That photo is larger than %d MB. Send it as the camera saved it.", photobus.MaxBytes>>20)
+		return nil, page.Put(words.TooLargeSent, "size", photobus.MaxBytes>>20)
 	case len(data) == 0:
-		return nil, "Choose a photo to send."
+		return nil, words.ChooseAPhoto
 	}
 
-	return data, ""
+	return data, nil
 }
 
 func (a app) showList(w http.ResponseWriter, r *http.Request, status int, sp speciesbus.Species, v listView, f photobus.Fields) {
@@ -360,13 +363,13 @@ func (a app) showList(w http.ResponseWriter, r *http.Request, status int, sp spe
 		return
 	}
 
-	v.SpeciesID, v.Name, v.Slug = sp.ID.String(), sp.Common.In(types.English), sp.Slug
+	v.SpeciesID, v.Name, v.Slug = sp.ID.String(), sp.Common, sp.Slug
 	v.Fields = fieldsOf(f, places)
 	v.Seasons = seasonsOf(photobus.Flowering(photos, false), names)
 	v.Kinds = len(photobus.Kinds)
 
 	for _, k := range photobus.Kinds {
-		s := section{Kind: string(k), Label: k.Label()}
+		s := section{Kind: string(k), Label: words.Kinds[k]}
 		best, hasBest := photobus.Best(photos, k)
 
 		for _, p := range photos {
@@ -404,11 +407,12 @@ type season struct {
 // sighting is one date in the record: the photo's day, where it was seen,
 // and whether a steward has checked it shows this plant.
 type sighting struct {
-	ID, Day, Where string
-	Unchecked      bool
+	ID         string
+	Day, Where any
+	Unchecked  bool
 }
 
-func seasonsOf(record []photobus.Season, names map[types.ID]string) []season {
+func seasonsOf(record []photobus.Season, names map[types.ID]any) []season {
 	var out []season
 	for _, s := range record {
 		out = append(out, season{
@@ -421,13 +425,13 @@ func seasonsOf(record []photobus.Season, names map[types.ID]string) []season {
 	return out
 }
 
-func sightingOf(p photobus.Photo, names map[types.ID]string) sighting {
+func sightingOf(p photobus.Photo, names map[types.ID]any) sighting {
 	if p.ID.Zero() {
 		return sighting{}
 	}
 
 	return sighting{
-		ID: p.ID.String(), Day: p.TakenAt.In(types.Garden).Format("2 Jan"),
+		ID: p.ID.String(), Day: page.DayMonth(p.TakenAt),
 		Where: whereSeen(p, names), Unchecked: !p.Checked,
 	}
 }
@@ -435,30 +439,30 @@ func sightingOf(p photobus.Photo, names map[types.ID]string) sighting {
 // whereSeen is where one of our photos was taken, in a few words: a place
 // here, a place off the property by its name, or "here" when nobody said
 // which place.
-func whereSeen(p photobus.Photo, names map[types.ID]string) string {
+func whereSeen(p photobus.Photo, names map[types.ID]any) any {
 	switch {
 	case p.Elsewhere && p.TakenWhere != "":
 		return p.TakenWhere
 	case p.Elsewhere:
-		return "off the property"
+		return words.OffTheProperty
 	case !p.PlaceID.Zero():
 		return names[p.PlaceID]
 	}
 
-	return "here"
+	return words.Here
 }
 
 // ------------------------------------------------------------------ one photo
 
 type editView struct {
-	ID, SpeciesID, Name string
-	Kind                string
-	Width, Height       int
-	Original            string
-	Slug                string // the plant's, for the page that zooms in
-	Fields              fieldsView
-	Problems            map[string]string
-	DeleteProblem       string
+	ID, SpeciesID string
+	Name, Kind    types.Text
+	Width, Height int
+	Original      page.Phrase
+	Slug          string // the plant's, for the page that zooms in
+	Fields        fieldsView
+	Problems      map[string]any
+	DeleteProblem types.Text
 
 	// FromCheck is set when the steward came from the check queue's
 	// Change, so that saving goes back there rather than to the plant's
@@ -472,7 +476,7 @@ func (a app) editForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v := editView{Problems: map[string]string{}, FromCheck: r.URL.Query().Get("from") == "check"}
+	v := editView{Problems: map[string]any{}, FromCheck: r.URL.Query().Get("from") == "check"}
 	a.showEdit(w, r, http.StatusOK, p, sp, v, photobus.FieldsOf(p))
 }
 
@@ -488,7 +492,7 @@ func (a app) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v := editView{Problems: map[string]string{}, FromCheck: r.PostFormValue("from") == "check"}
+	v := editView{Problems: map[string]any{}, FromCheck: r.PostFormValue("from") == "check"}
 	f := fieldsFrom(r, v.Problems)
 
 	if len(v.Problems) == 0 {
@@ -510,7 +514,7 @@ func (a app) update(w http.ResponseWriter, r *http.Request) {
 
 			return
 		case isInvalid:
-			v.Problems[invalid.Field] = page.Sentence(invalid.Problem)
+			v.Problems[invalid.Field] = types.Text{EN: page.Sentence(invalid.Problem)}
 		default:
 			a.fail(w, r, "saving a photo", err)
 
@@ -534,7 +538,7 @@ func (a app) remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v := editView{Problems: map[string]string{}, DeleteProblem: "Tick the box to confirm, then press Remove again."}
+	v := editView{Problems: map[string]any{}, DeleteProblem: words.Confirm}
 
 	if r.PostFormValue("confirm") == "yes" {
 		switch err := a.photos.Delete(r.Context(), p.ID); {
@@ -560,10 +564,10 @@ func (a app) showEdit(w http.ResponseWriter, r *http.Request, status int, p phot
 		return
 	}
 
-	v.ID, v.SpeciesID, v.Name = p.ID.String(), sp.ID.String(), sp.Common.In(types.English)
-	v.Kind = p.Kind.Label()
+	v.ID, v.SpeciesID, v.Name = p.ID.String(), sp.ID.String(), sp.Common
+	v.Kind = words.Kinds[p.Kind]
 	v.Width, v.Height = p.Small.Width, p.Small.Height
-	v.Original = fmt.Sprintf("%d × %d kept for the cards. Zoomed in, it is the photo as it was sent, with where it was taken and the camera's details taken out.", p.Large.Width, p.Large.Height)
+	v.Original = page.Put(words.Original, "width", p.Large.Width, "height", p.Large.Height)
 	v.Slug = sp.Slug
 	v.Fields = fieldsOf(f, places)
 
@@ -574,7 +578,7 @@ func (a app) showEdit(w http.ResponseWriter, r *http.Request, status int, p phot
 
 // fieldsFrom reads what a steward said about a photo, noting anything that is
 // not even the right shape.
-func fieldsFrom(r *http.Request, problems map[string]string) photobus.Fields {
+func fieldsFrom(r *http.Request, problems map[string]any) photobus.Fields {
 	f := photobus.Fields{
 		Kind:      photobus.Kind(r.PostFormValue("kind")),
 		Source:    photobus.Source(r.PostFormValue("source")),
@@ -587,7 +591,7 @@ func fieldsFrom(r *http.Request, problems map[string]string) photobus.Fields {
 	}
 
 	if day, err := photobus.Day(strings.TrimSpace(r.PostFormValue("taken_on"))); err != nil {
-		problems["taken_on"] = "Choose the day, or leave it empty."
+		problems["taken_on"] = words.ChooseDay
 	} else {
 		f.TakenAt = day
 	}
@@ -605,7 +609,7 @@ func fieldsFrom(r *http.Request, problems map[string]string) photobus.Fields {
 	default:
 		id, err := types.ParseID(s)
 		if err != nil {
-			problems["place"] = "Choose the place from the list, or leave it empty."
+			problems["place"] = words.ChoosePlace
 		}
 		f.PlaceID = id
 	}
@@ -613,7 +617,7 @@ func fieldsFrom(r *http.Request, problems map[string]string) photobus.Fields {
 	if s := strings.TrimSpace(r.PostFormValue("taken_year")); s != "" {
 		y, err := strconv.Atoi(s)
 		if err != nil {
-			problems["taken_year"] = "Write the year as four figures, such as 2027, or leave it empty."
+			problems["taken_year"] = words.Year
 		}
 		f.TakenYear = y
 	}
@@ -621,7 +625,7 @@ func fieldsFrom(r *http.Request, problems map[string]string) photobus.Fields {
 	if s := r.PostFormValue("taken_month"); s != "" {
 		m, err := strconv.Atoi(s)
 		if err != nil {
-			problems["taken_month"] = "Choose the month from the list."
+			problems["taken_month"] = words.Month
 		}
 		f.TakenMonth = m
 	}
@@ -645,20 +649,20 @@ func fieldsOf(f photobus.Fields, places []option) fieldsView {
 	if len(v.Places) > 0 && f.Elsewhere {
 		v.Places[0].Selected = false
 	}
-	v.Places = slices.Insert(v.Places, min(1, len(v.Places)), option{Value: elsewhere, Label: "Somewhere else, off the property", Selected: f.Elsewhere})
+	v.Places = slices.Insert(v.Places, min(1, len(v.Places)), option{Value: elsewhere, Label: words.Elsewhere, Selected: f.Elsewhere})
 
 	if f.TakenYear != 0 {
 		v.TakenYear = strconv.Itoa(f.TakenYear)
 	}
 
-	v.Kinds = []option{{Value: "", Label: "Choose a kind", Selected: f.Kind == ""}}
+	v.Kinds = []option{{Value: "", Label: words.ChooseAKind, Selected: f.Kind == ""}}
 	for _, k := range photobus.Kinds {
-		v.Kinds = append(v.Kinds, option{Value: string(k), Label: k.Label(), Selected: k == f.Kind})
+		v.Kinds = append(v.Kinds, option{Value: string(k), Label: words.Kinds[k], Selected: k == f.Kind})
 	}
 
-	v.Months = []option{{Value: "", Label: "Not known", Selected: f.TakenMonth == 0}}
+	v.Months = []option{{Value: "", Label: words.NotKnown, Selected: f.TakenMonth == 0}}
 	for m := time.January; m <= time.December; m++ {
-		v.Months = append(v.Months, option{Value: strconv.Itoa(int(m)), Label: m.String(), Selected: int(m) == f.TakenMonth})
+		v.Months = append(v.Months, option{Value: strconv.Itoa(int(m)), Label: page.Month(m), Selected: int(m) == f.TakenMonth})
 	}
 
 	return v
@@ -666,7 +670,7 @@ func fieldsOf(f photobus.Fields, places []option) fieldsView {
 
 // placeOptions is every place for the "where it was taken" list, a band named
 // with the place it is in, and the same names by id for the captions.
-func (a app) placeOptions(ctx context.Context, chosen types.ID) ([]option, map[types.ID]string, error) {
+func (a app) placeOptions(ctx context.Context, chosen types.ID) ([]option, map[types.ID]any, error) {
 	all, err := a.places.All(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -677,13 +681,13 @@ func (a app) placeOptions(ctx context.Context, chosen types.ID) ([]option, map[t
 		byID[p.ID] = p
 	}
 
-	names := map[types.ID]string{}
-	opts := []option{{Value: "", Label: "Not said", Selected: chosen.Zero()}}
+	names := map[types.ID]any{}
+	opts := []option{{Value: "", Label: words.NotSaid, Selected: chosen.Zero()}}
 
 	for _, p := range all {
-		name := p.Name.In(types.English)
+		var name any = p.Name
 		if parent, ok := byID[p.ParentID]; ok && !p.TopLevel() {
-			name = parent.Name.In(types.English) + ": " + name
+			name = page.List{Items: []any{parent.Name, p.Name}, Sep: ": "}
 		}
 
 		names[p.ID] = name
@@ -694,41 +698,35 @@ func (a app) placeOptions(ctx context.Context, chosen types.ID) ([]option, map[t
 }
 
 // caption is the stewards' one line about a photo: whose, where, when.
-func caption(p photobus.Photo, places map[types.ID]string) string {
-	var parts []string
+func caption(p photobus.Photo, places map[types.ID]any) page.List {
+	c := page.List{Sep: " · "}
 
-	if p.Source == photobus.Borrowed {
-		parts = append(parts, p.Credit, p.License)
-	} else {
-		parts = append(parts, cmp.Or(p.Credit, "Our photo"))
-		if name, ok := places[p.PlaceID]; ok {
-			parts = append(parts, name)
-		}
-
-		if p.Elsewhere {
-			parts = append(parts, cmp.Or(p.TakenWhere, "not taken here"))
-		}
+	switch {
+	case p.Source == photobus.Borrowed:
+		c.Items = append(c.Items, p.Credit, p.License)
+	case p.Credit != "":
+		c.Items = append(c.Items, p.Credit)
+	default:
+		c.Items = append(c.Items, words.OurPhoto)
 	}
 
-	if when := takenWords(p.TakenYear, p.TakenMonth); when != "" {
-		parts = append(parts, when)
+	if name, ok := places[p.PlaceID]; ok && p.Source != photobus.Borrowed {
+		c.Items = append(c.Items, name)
 	}
 
-	return strings.Join(parts, " · ")
-}
-
-// takenWords is "April 2027", "April", "2027" or nothing.
-func takenWords(year, month int) string {
-	var parts []string
-	if month >= 1 && month <= 12 {
-		parts = append(parts, time.Month(month).String())
+	switch {
+	case p.Source == photobus.Borrowed || !p.Elsewhere:
+	case p.TakenWhere != "":
+		c.Items = append(c.Items, p.TakenWhere)
+	default:
+		c.Items = append(c.Items, words.NotTakenHere)
 	}
 
-	if year != 0 {
-		parts = append(parts, strconv.Itoa(year))
+	if when := page.MonthYear(p.TakenYear, p.TakenMonth); when != nil {
+		c.Items = append(c.Items, when)
 	}
 
-	return strings.Join(parts, " ")
+	return c
 }
 
 func listPath(speciesID types.ID) string { return "/steward/species/" + speciesID.String() + "/photos" }

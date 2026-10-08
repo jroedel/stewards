@@ -1,30 +1,30 @@
-{{define "title"}}Sort a photo · Garden stewards{{end}}
-{{define "content"}}{{with .Data}}
+{{define "title"}}{{plain .Lang "Sort a photo"}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
 {{/* Everything swap.mjs swaps is inside #swap, and data-next is the photo it
 fetches ahead (the page package's swap.mjs). Without the script these are
 ordinary forms and links. */}}
-<div lang="en" id="swap" class="sort"{{with .Next}} data-next="{{.}}"{{end}}>
+<div id="swap" class="sort"{{with .Next}} data-next="{{.}}"{{end}}>
 <div class="sort-top">
-  <p class="eyebrow"><a href="/steward/inbox">Photo inbox</a></p>
-  {{if not .Sorted}}<p class="sort-where">{{with .Position}}<span>{{.}}</span>{{end}}{{with .Next}}<a class="sort-skip" href="{{.}}" data-swap>Skip</a>{{end}}</p>{{end}}
+  <p class="eyebrow"><a href="/steward/inbox">{{t $l "Photo inbox"}}</a></p>
+  {{if not .Sorted}}<p class="sort-where">{{with .Position}}<span>{{say $l .}}</span>{{end}}{{with .Next}}<a class="sort-skip" href="{{.}}" data-swap>{{t $l "Skip"}}</a>{{end}}</p>{{end}}
 </div>
-<h1 tabindex="-1">What is this photo?</h1>
+<h1 tabindex="-1">{{t $l "What is this photo?"}}</h1>
 
-{{with .Done}}<p class="done" role="status" tabindex="-1">{{.}}</p>{{end}}
-{{if .Problems}}<p class="problem" role="alert" tabindex="-1">Nothing was saved yet. Fix what is marked below and press the button again.</p>{{end}}
+{{if .Done.Written}}<p class="done" role="status" tabindex="-1">{{say $l .Done}}</p>{{end}}
+{{if .Problems}}<p class="problem" role="alert" tabindex="-1">{{t $l "Nothing was saved yet. Fix what is marked below and press the button again."}}</p>{{end}}
 
 {{if .Sorted}}
-<p class="lead">{{.Sorted}}</p>
-{{with .SeeAt}}<a class="button button-block" href="{{.}}">{{$.Data.SeeLabel}}</a>{{end}}
-<a class="onward" href="/steward/inbox"><span>Back to the inbox</span><span aria-hidden="true">›</span></a>
+<p class="lead">{{say $l .Sorted}}</p>
+{{with .SeeAt}}<a class="button button-block" href="{{.}}">{{say $l $.Data.SeeLabel}}</a>{{end}}
+<a class="onward" href="/steward/inbox"><span>{{t $l "Back to the inbox"}}</span><span aria-hidden="true">›</span></a>
 {{else}}
 
 <div class="card">
-  <a class="photo-large photo-zoom" href="/steward/inbox/{{.ID}}/zoom"><span class="sr-only">Zoom in on the photo</span><img src="/steward/inbox/{{.ID}}/large.jpg" width="{{.Width}}" height="{{.Height}}" alt=""></a>
+  <a class="photo-large photo-zoom" href="/steward/inbox/{{.ID}}/zoom"><span class="sr-only">{{t $l "Zoom in on the photo"}}</span><img src="/steward/inbox/{{.ID}}/large.jpg" width="{{.Width}}" height="{{.Height}}" alt=""></a>
   <div>
-    <p class="row-tags">{{if not .Here}}<span class="tag">{{.Away}}</span>{{else if .Where}}<span class="tag">{{.Where}}</span>{{else}}<span class="tag tag-open">Place not said</span>{{end}}{{if .Unsure}} <span class="tag tag-open">Not sure yet</span>{{end}}</p>
-    <p class="row-note">{{with .Taken}}{{.}} · {{end}}{{template "photo-id" .ID}}</p>
-    {{if .Unsure}}<p class="row-note">Question: {{.Question}}</p>{{else}}{{with .Note}}<p class="row-note">{{.}}</p>{{end}}{{end}}
+    <p class="row-tags">{{if not .Here}}<span class="tag">{{say $l .Away}}</span>{{else if .Where}}<span class="tag">{{say $l .Where}}</span>{{else}}<span class="tag tag-open">{{t $l "Place not said"}}</span>{{end}}{{if .Unsure}} <span class="tag tag-open">{{t $l "Not sure yet"}}</span>{{end}}</p>
+    <p class="row-note">{{with .Taken}}{{say $l .}} · {{end}}{{template "photo-id" (pass $l .ID)}}</p>
+    {{if .Unsure}}<p class="row-note">{{t $l "Question: {question}" "question" .Question}}</p>{{else}}{{with .Note}}<p class="row-note">{{.}}</p>{{end}}{{end}}
   </div>
 </div>
 
@@ -32,115 +32,115 @@ ordinary forms and links. */}}
   <input type="hidden" name="as" value="{{.As}}">
   {{with .Group}}<input type="hidden" name="group" value="{{.}}">{{end}}
   {{with .Plant}}<input type="hidden" name="plant" value="{{.}}">{{end}}
-  {{with index .Problems "outcome"}}<p class="field-problem">{{.}}</p>{{end}}
+  {{with index .Problems "outcome"}}<p class="field-problem">{{say $l .}}</p>{{end}}
 
   {{if or (eq .As "photo") (eq .As "planted")}}
-  {{if eq .As "planted"}}<h2 class="sort-as">Just planted</h2>{{end}}
+  {{if eq .As "planted"}}<h2 class="sort-as">{{t $l "Just planted"}}</h2>{{end}}
   <fieldset>
-    <legend>Which plant</legend>
-    {{with index .Problems "species"}}<p class="field-problem">{{.}}</p>{{end}}
-    {{if .Carried}}<p class="help">Chosen for the {{.Chosen}} photos you picked together. Tap another if this one is different.</p>{{end}}
+    <legend>{{t $l "Which plant"}}</legend>
+    {{with index .Problems "species"}}<p class="field-problem">{{say $l .}}</p>{{end}}
+    {{if .Carried}}<p class="help">{{t $l "Chosen for the {count} photos you picked together. Tap another if this one is different." "count" .Chosen}}</p>{{end}}
     {{if .Recent}}<div class="chips">{{range .Recent}}
-      <label class="chip"><input type="radio" name="species" value="{{.Value}}"{{if .Selected}} checked{{end}}><span>{{.Label}}</span></label>{{end}}
+      <label class="chip"><input type="radio" name="species" value="{{.Value}}"{{if .Selected}} checked{{end}}><span>{{words $l .Label}}</span></label>{{end}}
     </div>{{end}}
-    <label class="sr-only" for="species_other">{{if .Recent}}Another plant{{else}}Which plant{{end}}</label>
-    <select id="species_other" name="species_other" aria-describedby="species-help" data-find="{{if .Recent}}Find another plant{{else}}Type part of its name{{end}}" data-find-with="species">{{range .Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
-    <p class="help" id="species-help">{{if .NoPlants}}There are no plants yet.{{else}}Not in the list?{{end}} <a href="/steward/species/new">Add the plant</a>, then come back to this photo.</p>
+    <label class="sr-only" for="species_other">{{if .Recent}}{{t $l "Another plant"}}{{else}}{{t $l "Which plant"}}{{end}}</label>
+    <select id="species_other" name="species_other" aria-describedby="species-help" data-find="{{if .Recent}}{{plain $l "Find another plant"}}{{else}}{{plain $l "Type part of its name"}}{{end}}" data-find-with="species">{{range .Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}{{if .Selected}} selected{{end}}>{{words $l .Label}}{{with .After}} ({{.}}){{end}}</option>{{end}}</select>
+    <p class="help" id="species-help">{{if .NoPlants}}{{t $l "There are no plants yet."}}{{else}}{{t $l "Not in the list?"}}{{end}} {{t $l "{add}, then come back to this photo." "add" (link "/steward/species/new" (t $l "Add the plant"))}}</p>
   </fieldset>
 
   <fieldset>
-    <legend>What it shows</legend>
-    {{with index .Problems "kind"}}<p class="field-problem">{{.}}</p>{{end}}
+    <legend>{{t $l "What it shows"}}</legend>
+    {{with index .Problems "kind"}}<p class="field-problem">{{say $l .}}</p>{{end}}
     <div class="tiles">{{range .Kinds}}
-      <label class="tile"><input type="radio" name="kind" value="{{.Value}}" required{{if .Selected}} checked{{end}}><span>{{.Label}}</span></label>{{end}}
+      <label class="tile"><input type="radio" name="kind" value="{{.Value}}" required{{if .Selected}} checked{{end}}><span>{{words $l .Label}}</span></label>{{end}}
     </div>
   </fieldset>
 
   <div class="pills">
-    <label class="pill"><input type="checkbox" name="in_flower" value="yes"{{if .InFlower}} checked{{end}}><span>In flower</span></label>
-    <label class="pill"><input type="checkbox" name="in_fruit" value="yes"{{if .InFruit}} checked{{end}}><span>In fruit or seed</span></label>
+    <label class="pill"><input type="checkbox" name="in_flower" value="yes"{{if .InFlower}} checked{{end}}><span>{{t $l "In flower"}}</span></label>
+    <label class="pill"><input type="checkbox" name="in_fruit" value="yes"{{if .InFruit}} checked{{end}}><span>{{t $l "In fruit or seed"}}</span></label>
   </div>
-  <p class="help">What the plant is doing, whatever the photo shows. A flower or a fruit photo always counts.</p>
+  <p class="help">{{t $l "What the plant is doing, whatever the photo shows. A flower or a fruit photo always counts."}}</p>
 
   {{if .Here}}
-  <label for="place">{{if eq .As "planted"}}Where it was planted{{else}}Where it was taken <span class="optional">optional</span>{{end}}</label>
-  {{with index .Problems "place"}}<p class="field-problem">{{.}}</p>{{end}}
-  <select id="place" name="place"{{if eq .As "planted"}} required{{end}}>{{range .Places}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+  <label for="place">{{if eq .As "planted"}}{{t $l "Where it was planted"}}{{else}}{{t $l "Where it was taken"}} <span class="optional">{{t $l "optional"}}</span>{{end}}</label>
+  {{with index .Problems "place"}}<p class="field-problem">{{say $l .}}</p>{{end}}
+  <select id="place" name="place"{{if eq .As "planted"}} required{{end}}>{{range .Places}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{words $l .Label}}</option>{{end}}</select>
   {{end}}
-  {{if eq .As "planted"}}<p class="help">It is listed there to protect, and comes off the To plant list if it was on it.</p>{{end}}
+  {{if eq .As "planted"}}<p class="help">{{t $l "It is listed there to protect, and comes off the To plant list if it was on it."}}</p>{{end}}
 
-  <label class="check sure"><input type="checkbox" name="checked" value="yes"{{if .Checked}} checked{{end}} aria-describedby="sure-help"> I'm sure: mark it checked</label>
-  <p class="help" id="sure-help">When you know this plant well enough to put the photo on its card now. Left unticked, it waits in Photos to check.</p>
+  <label class="check sure"><input type="checkbox" name="checked" value="yes"{{if .Checked}} checked{{end}} aria-describedby="sure-help"> {{t $l "I'm sure: mark it checked"}}</label>
+  <p class="help" id="sure-help">{{t $l "When you know this plant well enough to put the photo on its card now. Left unticked, it waits in Photos to check."}}</p>
 
-  <button class="button button-block sort-save" type="submit">{{if eq .As "planted"}}Save the planting{{else if .Next}}Save, next photo{{else}}Save{{end}}</button>
+  <button class="button button-block sort-save" type="submit">{{if eq .As "planted"}}{{t $l "Save the planting"}}{{else if .Next}}{{t $l "Save, next photo"}}{{else}}{{t $l "Save"}}{{end}}</button>
   {{end}}
 
   {{if eq .As "stock"}}
-  <h2 class="sort-as">Nursery stock</h2>
-  <label for="nursery">Which nursery</label>
-  <p class="help" id="nursery-help">Choose one from the list, or write a new one's name: it is added to the <a href="/steward/nurseries">nurseries</a>.</p>
-  {{with index .Problems "nursery"}}<p class="field-problem">{{.}}</p>{{end}}
+  <h2 class="sort-as">{{t $l "Nursery stock"}}</h2>
+  <label for="nursery">{{t $l "Which nursery"}}</label>
+  <p class="help" id="nursery-help">{{t $l "Choose one from the list, or write a new one's name: it is added to the {nurseries}." "nurseries" (link "/steward/nurseries" (t $l "nurseries"))}}</p>
+  {{with index .Problems "nursery"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   <input id="nursery" name="nursery" type="text" value="{{.NurseryAt}}" maxlength="100" list="nurseries" required autocomplete="off" aria-describedby="nursery-help">
   <datalist id="nurseries">{{range .Nurseries}}<option value="{{.}}">{{end}}</datalist>
 
-  <label for="name_on_tag">Name on the tag</label>
-  <p class="help" id="tag-help">As the tag writes it, scientific name and all. Needed unless you choose the plant below.</p>
-  {{with index .Problems "name_on_tag"}}<p class="field-problem">{{.}}</p>{{end}}
+  <label for="name_on_tag">{{t $l "Name on the tag"}}</label>
+  <p class="help" id="tag-help">{{t $l "As the tag writes it, scientific name and all. Needed unless you choose the plant below."}}</p>
+  {{with index .Problems "name_on_tag"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   <input id="name_on_tag" name="name_on_tag" type="text" value="{{.NameOnTag}}" maxlength="100" aria-describedby="tag-help" autocomplete="off">
 
-  <label for="species">Which of our plants it is <span class="optional">optional</span></label>
-  <p class="help" id="species-help">Only if you are sure. A tag can be wrong, and a plant for sale is not an identification.</p>
-  {{with index .Problems "species"}}<p class="field-problem">{{.}}</p>{{end}}
-  <select id="species" name="species" aria-describedby="species-help" data-find="Type part of its name">{{range .Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}{{if .Selected}} selected{{end}}>{{if .Value}}{{.Label}}{{else}}Not matched yet{{end}}</option>{{end}}</select>
+  <label for="species">{{t $l "Which of our plants it is"}} <span class="optional">{{t $l "optional"}}</span></label>
+  <p class="help" id="species-help">{{t $l "Only if you are sure. A tag can be wrong, and a plant for sale is not an identification."}}</p>
+  {{with index .Problems "species"}}<p class="field-problem">{{say $l .}}</p>{{end}}
+  <select id="species" name="species" aria-describedby="species-help" data-find="{{plain $l "Type part of its name"}}">{{range .Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}{{if .Selected}} selected{{end}}>{{if .Value}}{{words $l .Label}}{{with .After}} ({{.}}){{end}}{{else}}{{t $l "Not matched yet"}}{{end}}</option>{{end}}</select>
 
   <div class="pair">
     <div>
-      <label for="pot_size">Pot size <span class="optional">optional</span></label>
-      {{with index .Problems "pot_size"}}<p class="field-problem">{{.}}</p>{{end}}
-      <input id="pot_size" name="pot_size" type="text" value="{{.PotSize}}" maxlength="40" placeholder="1 gal">
+      <label for="pot_size">{{t $l "Pot size"}} <span class="optional">{{t $l "optional"}}</span></label>
+      {{with index .Problems "pot_size"}}<p class="field-problem">{{say $l .}}</p>{{end}}
+      <input id="pot_size" name="pot_size" type="text" value="{{.PotSize}}" maxlength="40" placeholder="{{plain $l "1 gal"}}">
     </div>
     <div>
-      <label for="price">Price <span class="optional">optional</span></label>
-      {{with index .Problems "price"}}<p class="field-problem">{{.}}</p>{{end}}
+      <label for="price">{{t $l "Price"}} <span class="optional">{{t $l "optional"}}</span></label>
+      {{with index .Problems "price"}}<p class="field-problem">{{say $l .}}</p>{{end}}
       <input id="price" name="price" type="text" value="{{.Price}}" inputmode="decimal" placeholder="12.99">
     </div>
   </div>
 
-  <label for="count">How many there were <span class="optional">optional</span></label>
-  {{with index .Problems "count"}}<p class="field-problem">{{.}}</p>{{end}}
+  <label for="count">{{t $l "How many there were"}} <span class="optional">{{t $l "optional"}}</span></label>
+  {{with index .Problems "count"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   <input id="count" name="count" type="text" value="{{.Count}}" inputmode="numeric">
 
-  <label for="stock_note">A note <span class="optional">optional</span></label>
-  {{with index .Problems "note"}}<p class="field-problem">{{.}}</p>{{end}}
-  <input id="stock_note" name="stock_note" type="text" value="{{.StockNote}}" maxlength="300" placeholder="healthy, in bloom, on the shade table">
-  <p class="help">Nursery stock is for planning beds. Volunteers never see it, and the photo is removed after three months.</p>
-  <button class="button button-block" type="submit">Add to the nursery's list</button>
+  <label for="stock_note">{{t $l "A note"}} <span class="optional">{{t $l "optional"}}</span></label>
+  {{with index .Problems "note"}}<p class="field-problem">{{say $l .}}</p>{{end}}
+  <input id="stock_note" name="stock_note" type="text" value="{{.StockNote}}" maxlength="300" placeholder="{{plain $l "healthy, in bloom, on the shade table"}}">
+  <p class="help">{{t $l "Nursery stock is for planning beds. Volunteers never see it, and the photo is removed after three months."}}</p>
+  <button class="button button-block" type="submit">{{t $l "Add to the nursery's list"}}</button>
   {{end}}
 
   {{if eq .As "unsure"}}
-  <h2 class="sort-as">Not sure yet</h2>
-  <label for="note">The question <span class="optional">optional</span></label>
-  <p class="help" id="note-help">What would settle it, such as "frostweed or wingstem? check the leaf base".</p>
-  {{with index .Problems "note"}}<p class="field-problem">{{.}}</p>{{end}}
+  <h2 class="sort-as">{{t $l "Not sure yet"}}</h2>
+  <label for="note">{{t $l "The question"}} <span class="optional">{{t $l "optional"}}</span></label>
+  <p class="help" id="note-help">{{t $l "What would settle it, such as \"frostweed or wingstem? check the leaf base\"."}}</p>
+  {{with index .Problems "note"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   <input id="note" name="note" type="text" value="{{.Question}}" maxlength="300" aria-describedby="note-help">
-  <button class="button button-block" type="submit">Set it aside</button>
+  <button class="button button-block" type="submit">{{t $l "Set it aside"}}</button>
   {{end}}
 
   {{if eq .As "discard"}}
-  <h2 class="sort-as">Discard</h2>
-  <p class="help">The photo is deleted. This cannot be undone.</p>
-  {{with index .Problems "confirm"}}<p class="field-problem">{{.}}</p>{{end}}
-  <label class="check"><input type="checkbox" name="confirm" value="yes"> Yes, discard this photo</label>
-  <button class="button button-block" type="submit">Discard</button>
+  <h2 class="sort-as">{{t $l "Discard"}}</h2>
+  <p class="help">{{t $l "The photo is deleted. This cannot be undone."}}</p>
+  {{with index .Problems "confirm"}}<p class="field-problem">{{say $l .}}</p>{{end}}
+  <label class="check"><input type="checkbox" name="confirm" value="yes"> {{t $l "Yes, discard this photo"}}</label>
+  <button class="button button-block" type="submit">{{t $l "Discard"}}</button>
   {{end}}
 </form>
 
-<p class="sort-else"><span>Or:</span>
-  {{if ne .As "photo"}}<a href="/steward/inbox/{{.ID}}?as=photo{{with .Group}}&amp;group={{.}}{{end}}{{with .Plant}}&amp;plant={{.}}{{end}}" data-swap>A plant's photo</a>{{end}}
-  {{if and .Here (ne .As "planted")}}<a href="/steward/inbox/{{.ID}}?as=planted{{with .Group}}&amp;group={{.}}{{end}}{{with .Plant}}&amp;plant={{.}}{{end}}" data-swap>Just planted</a>{{end}}
-  {{if and .Stock (ne .As "stock")}}<a href="/steward/inbox/{{.ID}}?as=stock{{with .Group}}&amp;group={{.}}{{end}}{{with .Plant}}&amp;plant={{.}}{{end}}" data-swap>Nursery stock</a>{{end}}
-  {{if ne .As "unsure"}}<a href="/steward/inbox/{{.ID}}?as=unsure{{with .Group}}&amp;group={{.}}{{end}}{{with .Plant}}&amp;plant={{.}}{{end}}" data-swap>Not sure yet</a>{{end}}
-  {{if ne .As "discard"}}<a class="sort-discard" href="/steward/inbox/{{.ID}}?as=discard{{with .Group}}&amp;group={{.}}{{end}}{{with .Plant}}&amp;plant={{.}}{{end}}" data-swap>Discard</a>{{end}}
+<p class="sort-else"><span>{{t $l "Or:"}}</span>
+  {{if ne .As "photo"}}<a href="/steward/inbox/{{.ID}}?as=photo{{with .Group}}&amp;group={{.}}{{end}}{{with .Plant}}&amp;plant={{.}}{{end}}" data-swap>{{t $l "A plant's photo"}}</a>{{end}}
+  {{if and .Here (ne .As "planted")}}<a href="/steward/inbox/{{.ID}}?as=planted{{with .Group}}&amp;group={{.}}{{end}}{{with .Plant}}&amp;plant={{.}}{{end}}" data-swap>{{t $l "Just planted"}}</a>{{end}}
+  {{if and .Stock (ne .As "stock")}}<a href="/steward/inbox/{{.ID}}?as=stock{{with .Group}}&amp;group={{.}}{{end}}{{with .Plant}}&amp;plant={{.}}{{end}}" data-swap>{{t $l "Nursery stock"}}</a>{{end}}
+  {{if ne .As "unsure"}}<a href="/steward/inbox/{{.ID}}?as=unsure{{with .Group}}&amp;group={{.}}{{end}}{{with .Plant}}&amp;plant={{.}}{{end}}" data-swap>{{t $l "Not sure yet"}}</a>{{end}}
+  {{if ne .As "discard"}}<a class="sort-discard" href="/steward/inbox/{{.ID}}?as=discard{{with .Group}}&amp;group={{.}}{{end}}{{with .Plant}}&amp;plant={{.}}{{end}}" data-swap>{{t $l "Discard"}}</a>{{end}}
 </p>
 {{end}}
 </div>

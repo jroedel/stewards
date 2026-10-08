@@ -55,7 +55,7 @@ type changeSheet struct {
 
 	// Open is the sheet shown in the page, with Problems to fix.
 	Open     bool
-	Problems map[string]string
+	Problems map[string]any
 }
 
 // recentPlants is how many plants the sheet offers as a button each: a row
@@ -63,7 +63,7 @@ type changeSheet struct {
 const recentPlants = 6
 
 // sheet is the Change sheet for p, saying what f says.
-func (a app) sheet(ctx context.Context, p photobus.Photo, f changeForm, places []option, problems map[string]string) (changeSheet, error) {
+func (a app) sheet(ctx context.Context, p photobus.Photo, f changeForm, places []option, problems map[string]any) (changeSheet, error) {
 	s := changeSheet{
 		InFlower: f.InFlower, InFruit: f.InFruit,
 		Here:     p.Source == photobus.Ours && !p.Elsewhere,
@@ -96,7 +96,7 @@ func (a app) sheet(ctx context.Context, p photobus.Photo, f changeForm, places [
 	onButton := false
 	for _, id := range buttons {
 		if sp, ok := byID[id]; ok {
-			s.Recent = append(s.Recent, option{Value: id.String(), Label: sp.Common.In(types.English), Selected: id == f.SpeciesID})
+			s.Recent = append(s.Recent, option{Value: id.String(), Label: sp.Common, Selected: id == f.SpeciesID})
 			onButton = onButton || id == f.SpeciesID
 		}
 	}
@@ -105,13 +105,13 @@ func (a app) sheet(ctx context.Context, p photobus.Photo, f changeForm, places [
 		return cmp.Compare(strings.ToLower(x.Common.In(types.English)), strings.ToLower(y.Common.In(types.English)))
 	})
 
-	s.Species = []option{{Value: "", Label: "Another plant", Selected: onButton || f.SpeciesID.Zero()}}
+	s.Species = []option{{Value: "", Label: words.AnotherPlant, Selected: onButton || f.SpeciesID.Zero()}}
 	for _, sp := range plants {
 		s.Species = append(s.Species, plantOption(sp, sp.ID == f.SpeciesID && !onButton))
 	}
 
 	for _, k := range photobus.Kinds {
-		s.Kinds = append(s.Kinds, option{Value: string(k), Label: k.Word(), Selected: k == f.Kind})
+		s.Kinds = append(s.Kinds, option{Value: string(k), Label: words.Buttons[k], Selected: k == f.Kind})
 	}
 
 	place := ""
@@ -128,16 +128,14 @@ func (a app) sheet(ctx context.Context, p photobus.Photo, f changeForm, places [
 }
 
 // plantOption is a plant as the search box offers it: its common name with
-// its scientific one, so that either finds it, and its Spanish name to be
-// found by as well (the page package's find.mjs, data-also).
+// its scientific one, so that either finds it, and its name in the other
+// language to be found by as well (the page package's find.mjs, data-also).
+// Both names go in, since the list may be shown in either language.
 func plantOption(sp speciesbus.Species, selected bool) option {
-	o := option{Value: sp.ID.String(), Label: sp.Common.In(types.English), Selected: selected}
-	if sp.Scientific != "" {
-		o.Label += " (" + sp.Scientific + ")"
-	}
+	o := option{Value: sp.ID.String(), Label: sp.Common, After: sp.Scientific, Selected: selected}
 
-	if sp.Common.ES != sp.Common.EN {
-		o.Also = sp.Common.ES
+	if sp.Common.EN != "" && sp.Common.ES != "" && sp.Common.ES != sp.Common.EN {
+		o.Also = sp.Common.EN + " " + sp.Common.ES
 	}
 
 	return o
@@ -176,7 +174,7 @@ func (a app) change(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	problems := map[string]string{}
+	problems := map[string]any{}
 	form := changeForm{Kind: photobus.Kind(r.PostFormValue("kind")), InFlower: r.PostFormValue("in_flower") == "yes", InFruit: r.PostFormValue("in_fruit") == "yes", PlaceID: p.PlaceID}
 
 	// One plant, by its button or from the list. Both, and different, is a
@@ -186,12 +184,12 @@ func (a app) change(w http.ResponseWriter, r *http.Request) {
 	button, list := r.PostFormValue("species"), r.PostFormValue("species_other")
 	switch {
 	case button != "" && list != "" && button != list:
-		problems["species"] = "Choose one plant: a button or the list, not both."
+		problems["species"] = words.OnePlant
 	case cmp.Or(button, list) == "":
-		problems["species"] = "Choose the plant this photo shows."
+		problems["species"] = words.WhichPlant
 	default:
 		if form.SpeciesID, err = types.ParseID(cmp.Or(button, list)); err != nil {
-			problems["species"] = "Choose the plant from the list."
+			problems["species"] = words.ChoosePlant
 		}
 	}
 
@@ -199,13 +197,13 @@ func (a app) change(w http.ResponseWriter, r *http.Request) {
 		form.PlaceID = types.ID{}
 		if raw := r.PostFormValue("place"); raw != "" {
 			if form.PlaceID, err = types.ParseID(raw); err != nil {
-				problems["place"] = "Choose the place from the list."
+				problems["place"] = words.PlaceFromList
 			}
 		}
 	}
 
 	if !slices.Contains(photobus.Kinds, form.Kind) {
-		problems["kind"] = "Choose what the photo shows."
+		problems["kind"] = words.ChooseKind
 	}
 
 	checked := r.PostFormValue("checked") == "yes"
@@ -247,9 +245,9 @@ func (a app) change(w http.ResponseWriter, r *http.Request) {
 
 			return
 		case isInvalid && slices.Contains([]string{"species", "kind", "place"}, invalid.Field):
-			problems[invalid.Field] = page.Sentence(invalid.Problem)
+			problems[invalid.Field] = types.Text{EN: page.Sentence(invalid.Problem)}
 		case isInvalid:
-			problems["outcome"] = page.Sentence(invalid.Problem) + " Change it on the photo's own screen, linked below."
+			problems["outcome"] = page.Put(words.OnItsScreen, "problem", types.Text{EN: page.Sentence(invalid.Problem)})
 		default:
 			a.fail(w, r, "changing a photo", err)
 
@@ -258,7 +256,7 @@ func (a app) change(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.showQueue(w, r, http.StatusUnprocessableEntity, id.String(), checkView{
-		Problem: "Nothing was saved yet. Fix what is marked in the form below and press the button again.",
+		Problem: words.NothingSaved,
 		form:    &form,
 		formOf:  id,
 		probs:   problems,

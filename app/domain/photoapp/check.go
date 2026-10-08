@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"slices"
-	"strings"
 
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
@@ -33,17 +32,19 @@ type checkView struct {
 	// Done is what the last button did, and Undo the photo it did it to
 	// when its check can be undone, UndoLabel the button's word for that.
 	// Problem is why it could not be done.
-	Done, Undo, UndoLabel, Problem string
+	Done, UndoLabel, Problem any
+	Undo                     string
 
 	Empty bool
 
-	ID, Name, Scientific, Slug string
-	SpeciesID                  string
-	Kind, KindWord             string
-	Width, Height              int
-	InFlower, InFruit          bool
-	Caption, Taken             string
-	Sources                    []speciesbus.Source
+	ID, Scientific, Slug string
+	SpeciesID            string
+	Name, Kind, KindWord types.Text
+	Width, Height        int
+	InFlower, InFruit    bool
+	Caption              page.List
+	Taken                any
+	Sources              []speciesbus.Source
 
 	// Ref is the plant's checked photo of the same kind, the one the card
 	// shows: what this one is compared with. Empty when there is none yet.
@@ -57,7 +58,7 @@ type checkView struct {
 	Sheet  changeSheet
 	form   *changeForm
 	formOf types.ID
-	probs  map[string]string
+	probs  map[string]any
 }
 
 // queue shows one photo of the queue: the one ?at= names, or the first.
@@ -79,20 +80,22 @@ func (a app) showQueue(w http.ResponseWriter, r *http.Request, status int, at st
 	// and the photo's own record, never the query echoed (placeapp's index
 	// has why).
 	q := r.URL.Query()
-	if last, err := types.ParseID(q.Get("last")); err == nil && v.Done == "" {
+	if last, err := types.ParseID(q.Get("last")); err == nil && v.Done == nil {
 		if p, err := a.photos.ByID(ctx, last); err == nil {
 			if sp, err := a.species.ByID(ctx, p.SpeciesID); err == nil {
+				said := func(t types.Text) page.Phrase { return page.Put(t, "plant", sp.Common, "kind", words.Mid[p.Kind]) }
+
 				switch {
 				case q.Get("done") == "checked" && p.Checked:
-					v.Done, v.Undo, v.UndoLabel = "Checked: "+sp.Common.In(types.English)+", "+lower(p.Kind.Label())+".", p.ID.String(), "Undo"
+					v.Done, v.Undo, v.UndoLabel = said(words.Checked), p.ID.String(), words.Undo
 				case q.Get("done") == "changed-checked" && p.Checked:
-					v.Done, v.Undo, v.UndoLabel = "Changed and checked: "+sp.Common.In(types.English)+", "+lower(p.Kind.Label())+".", p.ID.String(), "Uncheck"
+					v.Done, v.Undo, v.UndoLabel = said(words.ChangedChecked), p.ID.String(), words.Uncheck
 				case q.Get("done") == "changed" && !p.Checked:
-					v.Done = "Changed: " + sp.Common.In(types.English) + ", " + lower(p.Kind.Label()) + ". It waits here to be checked."
+					v.Done = said(words.Changed)
 				case q.Get("done") == "unchecked" && !p.Checked:
-					v.Done = "Not checked any more. It is back in the queue."
+					v.Done = words.Unchecked
 				case q.Get("done") == "saved":
-					v.Done = "Changes saved."
+					v.Done = words.ChangesSaved
 				}
 			}
 		}
@@ -131,13 +134,13 @@ func (a app) showQueue(w http.ResponseWriter, r *http.Request, status int, at st
 	}
 
 	v.ID, v.SpeciesID = p.ID.String(), sp.ID.String()
-	v.Name, v.Scientific, v.Slug, v.Sources = sp.Common.In(types.English), sp.Scientific, sp.Slug, sp.Sources
-	v.Kind, v.KindWord, v.InFlower, v.InFruit = p.Kind.Label(), lower(p.Kind.Label()), p.InFlower, p.InFruit
+	v.Name, v.Scientific, v.Slug, v.Sources = sp.Common, sp.Scientific, sp.Slug, sp.Sources
+	v.Kind, v.KindWord, v.InFlower, v.InFruit = words.Kinds[p.Kind], words.Mid[p.Kind], p.InFlower, p.InFruit
 	v.Width, v.Height = p.Small.Width, p.Small.Height
 	v.Caption = caption(p, names)
 
 	if !p.TakenAt.IsZero() {
-		v.Taken = p.TakenAt.In(types.Garden).Format("2 January 2006")
+		v.Taken = page.DayMonthYear(p.TakenAt)
 	}
 
 	if ref, ok := photobus.Best(theirs, p.Kind); ok {
@@ -149,7 +152,7 @@ func (a app) showQueue(w http.ResponseWriter, r *http.Request, status int, at st
 	}
 
 	form := changeForm{SpeciesID: p.SpeciesID, Kind: p.Kind, InFlower: p.InFlower, InFruit: p.InFruit, PlaceID: p.PlaceID}
-	var problems map[string]string
+	var problems map[string]any
 	if v.form != nil && v.formOf == p.ID {
 		form, problems = *v.form, v.probs
 	}
@@ -224,18 +227,9 @@ func (a app) check(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, CheckPath, http.StatusSeeOther)
 	case isInvalid:
 		a.showQueue(w, r, http.StatusUnprocessableEntity, id.String(), checkView{
-			Problem: "Not checked: " + page.Sentence(invalid.Problem) + " Change it first.",
+			Problem: page.Put(words.NotChecked, "problem", types.Text{EN: page.Sentence(invalid.Problem)}),
 		})
 	default:
 		a.fail(w, r, "checking a photo", err)
 	}
-}
-
-// lower is a kind's label in the middle of a sentence: "leaf close-up".
-func lower(s string) string {
-	if s == "" {
-		return s
-	}
-
-	return strings.ToLower(s[:1]) + s[1:]
 }

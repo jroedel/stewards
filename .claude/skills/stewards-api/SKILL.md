@@ -265,8 +265,8 @@ inbox in batches, and sorts them later. "Sort my inbox" means this:
    A plant's photo has a `full_url` too, once it has been sorted.
 3. **Propose, in one table, and wait for a yes.** Name each photo by the
    first 8 characters of its id (`cbb9fac4`): the steward's screens show
-   every photo as "Photo cbb9fac4", inbox and plant photos alike, so that is
-   how the person finds the one you mean. Never a number of your own ("photo
+   every photo as "Photo cbb9fac4" ("Foto cbb9fac4" in Spanish), inbox and
+   plant photos alike, so that is how the person finds the one you mean. Never a number of your own ("photo
    3"), which nothing on the screen matches. For each photo: what you
    think it shows and *why* (leaf shape, flower, habit — what you can see),
    how sure you are, the outcome, the plant's slug, the kind, the place. Your
