@@ -93,7 +93,7 @@ func serveAt(t *testing.T, baseURL string) *site {
 
 	listings := listingbus.NewBusiness(listingdb.NewStore(db), memory, nil)
 	workdays := workdaybus.NewBusiness(workdaydb.NewStore(db), memory, nil)
-	memory.ReadFrom(s.places, s.species, listings, workdays)
+	memory.ReadFrom(s.places, s.species, listings, workdays, muxer.Words())
 
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
@@ -554,8 +554,10 @@ func TestAStewardWritesInSpanish(t *testing.T) {
 		t.Error("the English card does not show the Spanish conditions, marked")
 	}
 
-	waiting, err := s.memory.Waiting(t.Context(), 10)
-	if err != nil || waiting.Remaining != 2 || waiting.Pending[1].Guess != types.Spanish || waiting.Pending[1].Source != got.Conditions.ES {
+	// The place's two come first; after them, the screens' own words.
+	waiting, err := s.memory.Waiting(t.Context(), 3)
+	if err != nil || len(waiting.Pending) != 3 || waiting.Pending[1].Guess != types.Spanish || waiting.Pending[1].Source != got.Conditions.ES ||
+		strings.HasPrefix(waiting.Pending[2].Where[0], "Rain garden") {
 		t.Errorf("waiting: %+v, %v", waiting, err)
 	}
 }

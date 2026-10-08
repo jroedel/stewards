@@ -3,14 +3,13 @@ package speciesapp
 import (
 	"cmp"
 	"errors"
-	"fmt"
 	"net/http"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/jroedel/stewards/app/sdk/mid"
+	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
@@ -47,7 +46,7 @@ func CardRoutes(mux *http.ServeMux, cfg Config) {
 
 type cardWording struct {
 	Back, Planting, Weeding, NotConfirmed, CheckedAgainst, Sources,
-	Flower, Blooms, NoBloom, SeenInFlower, SeenInFruit, Size, Tall, Wide, Light, Water, Note,
+	Flower, Blooms, NoBloom, SeenInFlower, SeenInFruit, Size, Light, Water, Note,
 	WhereItGrows, NotListedAnywhere, Planned, NotSure, Edit types.Text
 
 	Actions  map[listingbus.Action]types.Text
@@ -65,10 +64,19 @@ type cardWording struct {
 
 	// The photo on a page of its own, to look closer.
 	ZoomIn, Pinch, ByItself types.Text
+
+	// Phrases things are put into: the mature size, a photo's alt text, and
+	// a year of the flowering record and the days in it.
+	TallWide, Tall, Alt, Season, SeasonTo, DayWhere types.Text
 }
 
-// The card's own words. English, with Spanish to be written by a native
-// speaker (design.md principle 6); until then say marks the English.
+// Words is the card's copy, for the catalog the translation memory lists.
+var Words = page.Catalog{
+	{Where: "the plant card, which a volunteer reads standing in the garden to tell what a plant is", Words: cardWords},
+}
+
+// The card's own words, in English; Claude translates them through the
+// translation memory, and say looks them up (page/words.go).
 var cardWords = cardWording{
 	Back:              types.Text{EN: "All places"},
 	Planting:          types.Text{EN: "Planting"},
@@ -82,8 +90,6 @@ var cardWords = cardWording{
 	SeenInFlower:      types.Text{EN: "Seen in flower"},
 	SeenInFruit:       types.Text{EN: "Seen in fruit"},
 	Size:              types.Text{EN: "Mature size"},
-	Tall:              types.Text{EN: "tall"},
-	Wide:              types.Text{EN: "wide"},
 	Light:             types.Text{EN: "Light"},
 	Water:             types.Text{EN: "Water"},
 	Note:              types.Text{EN: "For planters"},
@@ -100,6 +106,13 @@ var cardWords = cardWording{
 	ZoomIn:            types.Text{EN: "Zoom in:"},
 	Pinch:             types.Text{EN: "Pinch to zoom in."},
 	ByItself:          types.Text{EN: "Open the photo by itself"},
+
+	TallWide: types.Text{EN: "{height} tall, {width} wide"},
+	Tall:     types.Text{EN: "{height} tall"},
+	Alt:      types.Text{EN: "{plant}: {kind}"},
+	Season:   types.Text{EN: "{year}: {day}"},
+	SeasonTo: types.Text{EN: "{year}: {first} – {last}"},
+	DayWhere: types.Text{EN: "{day} ({where})"},
 
 	Actions: map[listingbus.Action]types.Text{
 		listingbus.Protect: {EN: "Protect"},
@@ -160,11 +173,10 @@ type cardView struct {
 	FlowerColor types.Text
 	Swatches    []string
 	Months      []monthCell
-	BloomWords  string
-	Flowering   []types.Text // the last two years seen in flower, newest first
-	Fruiting    []types.Text // and in fruit
-	Height      string
-	Width       string
+	BloomWords  page.List
+	Flowering   []page.Phrase // the last two years seen in flower, newest first
+	Fruiting    []page.Phrase // and in fruit
+	Size        any           // a page.Phrase, or nil for none recorded
 	Light       []types.Text
 	Water       []types.Text
 	Note        types.Text
@@ -181,9 +193,10 @@ type figure struct {
 	ID                 string
 	Width, Height      int // the small picture's, which reserves the space
 	SmallW, LargeW     int
-	Kind, Alt          types.Text
+	Kind               types.Text
+	Alt                page.Phrase
 	Credit, Where      types.Text
-	When               string
+	When               any // page.MonthYear
 	License, SourceURL string
 }
 
@@ -194,7 +207,7 @@ var viewKinds = map[bool][]photobus.Kind{
 }
 
 type monthCell struct {
-	Letter string
+	Month  types.Text // headed by its initial
 	On     bool
 	Swatch string
 }
@@ -219,18 +232,17 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 		Slug: sp.Slug, Name: sp.Common, Scientific: sp.Scientific,
 		Status: cardWords.Statuses[sp.Status], Invasive: sp.Status == speciesbus.StatusInvasive,
 		Confirmed: sp.Confirmed, Sources: sp.Sources,
-		FlowerColor: sp.FlowerColor, Swatches: sp.Swatches, BloomWords: sp.Bloom.String(),
-		Height: sp.Height.String(), Width: sp.Width.String(), Note: sp.Note,
+		FlowerColor: sp.FlowerColor, Swatches: sp.Swatches, BloomWords: page.Run(sp.Bloom),
+		Size: sizeOf(sp), Note: sp.Note,
 	}
 
-	letters := map[types.Lang]string{types.English: "JFMAMJJASOND", types.Spanish: "EFMAMJJASOND"}[mid.LangFrom(ctx)]
 	swatch := "#2B3990"
 	if len(sp.Swatches) > 0 {
 		swatch = sp.Swatches[0]
 	}
 
 	for m := time.January; m <= time.December; m++ {
-		v.Months = append(v.Months, monthCell{Letter: letters[m-1 : m], On: sp.Bloom.Has(m), Swatch: swatch})
+		v.Months = append(v.Months, monthCell{Month: page.Month(m), On: sp.Bloom.Has(m), Swatch: swatch})
 	}
 
 	for _, l := range []speciesbus.Light{speciesbus.FullSun, speciesbus.PartShade, speciesbus.Shade} {
@@ -359,12 +371,8 @@ func figureOf(p photobus.Photo, sp speciesbus.Species, names map[types.ID]types.
 		ID: p.ID.String(), Width: p.Small.Width, Height: p.Small.Height,
 		SmallW: p.Small.Width, LargeW: p.Large.Width,
 		Kind: kind,
-		Alt:  types.Text{EN: sp.Common.In(types.English) + ": " + strings.ToLower(kind.EN)},
-		When: takenWords(p.TakenYear, p.TakenMonth),
-	}
-
-	if sp.Common.ES != "" && kind.ES != "" {
-		f.Alt.ES = sp.Common.ES + ": " + strings.ToLower(kind.ES)
+		Alt:  page.Put(cardWords.Alt, "plant", sp.Common, "kind", kind),
+		When: page.MonthYear(p.TakenYear, p.TakenMonth),
 	}
 
 	if p.Source == photobus.Borrowed {
@@ -389,22 +397,6 @@ func figureOf(p photobus.Photo, sp speciesbus.Species, names map[types.ID]types.
 	}
 
 	return f
-}
-
-// takenWords is "April 2027", "April", "2027" or nothing. English month
-// names, like the rest of the card's words until the screens' own words are
-// translated.
-func takenWords(year, month int) string {
-	var parts []string
-	if month >= 1 && month <= 12 {
-		parts = append(parts, time.Month(month).String())
-	}
-
-	if year != 0 {
-		parts = append(parts, strconv.Itoa(year))
-	}
-
-	return strings.Join(parts, " ")
 }
 
 // ------------------------------------------------------------------ one photo, closer
@@ -504,10 +496,7 @@ func (a app) photo(w http.ResponseWriter, r *http.Request) {
 // "2026: 3 Apr – 20 May", a day seen off the property naming where, since
 // the record counts photos from everywhere and a park two weeks ahead is not
 // this garden.
-//
-// English, with the Spanish to come with the rest of the card's: the month
-// names are a date's, not copy, and are written as English writes them.
-func flowering(photos []photobus.Photo) (flower, fruit []types.Text) {
+func flowering(photos []photobus.Photo) (flower, fruit []page.Phrase) {
 	record := photobus.Flowering(photos, true)
 
 	return spans(record, func(s photobus.Season) (photobus.Photo, photobus.Photo) { return s.FirstFlower, s.LastFlower }),
@@ -516,8 +505,8 @@ func flowering(photos []photobus.Photo) (flower, fruit []types.Text) {
 
 // spans is up to two years' first-to-last days, newest first, of whichever
 // pair of days ends picks out.
-func spans(record []photobus.Season, ends func(photobus.Season) (first, last photobus.Photo)) []types.Text {
-	var out []types.Text
+func spans(record []photobus.Season, ends func(photobus.Season) (first, last photobus.Photo)) []page.Phrase {
+	var out []page.Phrase
 
 	for _, s := range record {
 		first, last := ends(s)
@@ -525,12 +514,14 @@ func spans(record []photobus.Season, ends func(photobus.Season) (first, last pho
 			continue
 		}
 
-		line := fmt.Sprintf("%d: %s", s.Year, dayAndWhere(first))
+		year := strconv.Itoa(s.Year)
+
+		line := page.Put(cardWords.Season, "year", year, "day", dayAndWhere(first))
 		if last.ID != first.ID && dayOf(last) != dayOf(first) {
-			line += " – " + dayAndWhere(last)
+			line = page.Put(cardWords.SeasonTo, "year", year, "first", dayAndWhere(first), "last", dayAndWhere(last))
 		}
 
-		out = append(out, types.Text{EN: line})
+		out = append(out, line)
 		if len(out) == 2 {
 			break
 		}
@@ -539,15 +530,44 @@ func spans(record []photobus.Season, ends func(photobus.Season) (first, last pho
 	return out
 }
 
-func dayOf(p photobus.Photo) string { return p.TakenAt.In(types.Garden).Format("2 Jan") }
+// dayOf is the day a photo was taken, to tell two days apart.
+func dayOf(p photobus.Photo) string { return p.TakenAt.In(types.Garden).Format(time.DateOnly) }
 
-func dayAndWhere(p photobus.Photo) string {
+// dayAndWhere is "3 April", and where for a day off the property: "3 April
+// (Pedernales Falls)", "3 April (not taken here)".
+func dayAndWhere(p photobus.Photo) any {
+	day := page.DayMonth(p.TakenAt)
+
 	switch {
 	case p.Elsewhere && p.TakenWhere != "":
-		return dayOf(p) + " (" + p.TakenWhere + ")"
+		return page.Put(cardWords.DayWhere, "day", day, "where", p.TakenWhere)
 	case p.Elsewhere:
-		return dayOf(p) + " (not here)"
+		return page.Put(cardWords.DayWhere, "day", day, "where", cardWords.NotHere)
 	}
 
-	return dayOf(p)
+	return day
+}
+
+// sizeOf is the plant's mature size as the card writes it, or nil for none
+// recorded.
+func sizeOf(sp speciesbus.Species) any {
+	h, w := length(sp.Height), length(sp.Width)
+
+	switch {
+	case h != nil && w != nil:
+		return page.Put(cardWords.TallWide, "height", h, "width", w)
+	case h != nil:
+		return page.Put(cardWords.Tall, "height", h)
+	}
+
+	return nil
+}
+
+func length(s speciesbus.Size) any {
+	n, feet := s.Amount()
+	if n == "" {
+		return nil
+	}
+
+	return page.Length(n, feet)
 }

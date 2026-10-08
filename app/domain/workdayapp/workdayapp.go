@@ -79,7 +79,7 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 
 type row struct {
 	ID          string
-	Date, Hours types.Text
+	Date, Hours page.Phrase
 	Title       types.Text
 }
 
@@ -360,7 +360,7 @@ func viewOf(d workdaybus.Day, l types.Lang) formView {
 	}
 }
 
-func heading(d workdaybus.Day) string { return "Edit " + page.Date(d.Starts).EN }
+func heading(d workdaybus.Day) string { return "Edit " + page.Date(d.Starts).In(types.English) }
 
 func (a app) fail(w http.ResponseWriter, r *http.Request, what string, err error) {
 	a.cfg.Log.ErrorContext(r.Context(), what, "request_id", web.RequestIDFrom(r.Context()), "error", err)

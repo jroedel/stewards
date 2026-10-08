@@ -162,7 +162,7 @@ func run() error {
 		return err
 	}
 
-	translations.ReadFrom(places, species, listings, workdays)
+	translations.ReadFrom(places, species, listings, workdays, muxer.Words())
 
 	nursery := nurserybus.NewBusiness(nurserydb.NewStore(db), nil)
 	inbox := inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, inboxbus.Deps{Photos: photos, Listings: listings, Stock: nursery}, nil)

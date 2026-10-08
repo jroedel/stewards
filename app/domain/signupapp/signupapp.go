@@ -104,8 +104,8 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 	mux.Handle("POST "+stewardPath+"/{id}/remove", guard(http.HandlerFunc(a.remove)))
 }
 
-// The copy a newcomer reads. Spanish comes when the screens' own words are
-// translated, as on the home page.
+// The copy a newcomer reads, in English; Claude translates it through the
+// translation memory, and say looks it up (page/words.go).
 type wording struct {
 	Eyebrow types.Text
 
@@ -118,6 +118,11 @@ type wording struct {
 	LeaveTitle, LeaveLead, LeaveButton, OffTitle, OffLead types.Text
 
 	SeeDays types.Text
+}
+
+// Words is this app's copy, for the catalog the translation memory lists.
+var Words = page.Catalog{
+	{Where: "signing up for emails about stewardship days, and stopping them: read by a newcomer", Words: words},
 }
 
 var words = wording{
@@ -296,7 +301,7 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 
 		v.Rows = append(v.Rows, stewardRow{
 			ID: s.ID.String(), Email: s.Email.String(), Lang: lang,
-			Since: page.Date(s.CreatedAt).EN,
+			Since: page.Date(s.CreatedAt).In(types.English),
 		})
 		all = append(all, s.Email.String())
 	}

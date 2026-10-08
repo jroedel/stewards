@@ -118,6 +118,53 @@ func TestTheCardIsInThePhonesLanguage(t *testing.T) {
 	}
 }
 
+// The card's own words wait for Claude beside the stewards', each saying
+// where it is read; translated, they are on the Spanish card at once, and a
+// saint's name takes its Spanish form.
+func TestTheCardsOwnWordsWaitForClaude(t *testing.T) {
+	s := serve(t)
+	s.pilot()
+	s.post("/steward/places", url.Values{"slug": {"st-francis"}, "name": {"St. Francis garden"}, "trail_anchor": {"francis"}})
+
+	waiting, err := s.memory.Waiting(t.Context(), 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := map[string]string{}
+	for _, p := range waiting.Pending {
+		found[p.Source] = strings.Join(p.Where, "; ")
+	}
+
+	for text, where := range map[string]string{
+		"Conditions":       "the place card, which a volunteer reads standing in the garden (Conditions)",
+		"{count} to plant": "(ToPlant)",
+		"St. Francis":      "(Stations[francis])",
+		"October":          "dates, times and sizes",
+	} {
+		if !strings.Contains(found[text], where) {
+			t.Errorf("%q waits as %q, want it to say %q", text, found[text], where)
+		}
+	}
+
+	s.translate("Conditions", "Condiciones", "St. Francis", "San Francisco", "Protect", "Proteger")
+
+	body := s.getAs("/places/rain-garden", "es").Body.String()
+	for _, want := range []string{"<h2>Condiciones</h2>", `<span lang="en">Not sure what something is? Leave it.</span>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the Spanish card does not contain %q", want)
+		}
+	}
+
+	if body := s.getAs("/places/st-francis", "es").Body.String(); !strings.Contains(body, `<span class="station-name">San Francisco</span>`) {
+		t.Error("the station's name is not in Spanish")
+	}
+
+	if body := s.getAs("/places/rain-garden", "en").Body.String(); !strings.Contains(body, "<h2>Conditions</h2>") {
+		t.Error("the English card lost its heading")
+	}
+}
+
 func TestAStationsSpaceLinksToItsPrayer(t *testing.T) {
 	s := serve(t)
 

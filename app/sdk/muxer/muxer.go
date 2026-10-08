@@ -101,6 +101,20 @@ const maxBody = 64 << 10
 const maxUpload = photobus.MaxBytes + 1<<20
 
 // New builds the handler.
+// Words is every app's own words, the ones written in the code rather than
+// by a steward, for the translation memory to list as waiting: main hands it
+// to translationbus beside the domains. An app that says something to a
+// volunteer through say has its copy here, or Claude never sees it to
+// translate and the page shows it in English.
+func Words() page.Catalog {
+	var out page.Catalog
+	for _, c := range []page.Catalog{homeapp.Words, placeapp.Words, speciesapp.Words, signupapp.Words, {page.CalendarWords}} {
+		out = append(out, c...)
+	}
+
+	return out
+}
+
 func New(cfg Config) (http.Handler, error) {
 	if cfg.Log == nil || cfg.DB == nil || cfg.Places == nil || cfg.Species == nil || cfg.Listings == nil || cfg.Photos == nil || cfg.Users == nil || cfg.Workdays == nil {
 		return nil, errors.New("the muxer needs a logger, a database, and the place, species, listing, photo, steward and work-day rules")
@@ -111,6 +125,12 @@ func New(cfg Config) (http.Handler, error) {
 	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, inboxapp.Templates, nurseryapp.Templates, stewardapp.Templates, oauthapp.Templates, workdayapp.Templates, signupapp.Templates, translationapp.Templates)
 	if err != nil {
 		return nil, err
+	}
+
+	// The screens' own words are looked up in the same memory as the
+	// stewards' (see Words).
+	if cfg.Translations != nil {
+		render.Translate(cfg.Translations)
 	}
 
 	mux := http.NewServeMux()

@@ -17,7 +17,7 @@
 {{if .Bands}}
 <h2>{{say $l .Copy.Inside}}</h2>
 <ul class="rows">
-{{range .Bands}}<li><a class="row" href="/places/{{.Slug}}"><div><div class="row-name">{{say $l .Name}}</div>{{if .Purpose.Written}}<div class="row-note">{{say $l .Purpose}}</div>{{end}}{{if .Summary.Written}}<div class="row-summary">{{say $l .Summary}}</div>{{end}}</div><span class="row-go" aria-hidden="true">›</span></a></li>
+{{range .Bands}}<li><a class="row" href="/places/{{.Slug}}"><div><div class="row-name">{{say $l .Name}}</div>{{if .Purpose.Written}}<div class="row-note">{{say $l .Purpose}}</div>{{end}}{{if .Summary.Items}}<div class="row-summary">{{say $l .Summary}}</div>{{end}}</div><span class="row-go" aria-hidden="true">›</span></a></li>
 {{end}}</ul>
 {{end}}
 
@@ -29,7 +29,7 @@
 {{range $line := .Planned}}<li><a class="row{{if .Thumb}} row-photo{{end}}" href="/plants/{{.Slug}}">{{with .Thumb}}<img class="row-thumb" src="/photos/{{.}}/small.jpg" width="64" height="64" alt="" loading="lazy">{{end}}<div>
   <div class="row-name">{{say $l .Name}}</div>
   {{if .Scientific}}<div class="row-note"><i>{{.Scientific}}</i></div>{{end}}
-  {{if .Size.Written}}<div class="row-note">{{say $l .Size}}</div>{{end}}
+  {{with .Size}}<div class="row-note">{{say $l .}}</div>{{end}}
   {{if .Note.Written}}<div class="row-summary">{{say $l .Note}}</div>{{end}}
 </div><span class="row-go" aria-hidden="true">›</span></a>
 {{with $.Data.Adds}}<form class="planted" method="post" action="{{.Planned.PostURL}}" lang="en">
@@ -47,10 +47,10 @@
 <div class="card calendar-card">
 <p class="help">{{say $l .Copy.FlowersHelp}}</p>
 <table class="calendar">
-  <thead><tr><th scope="col"><span class="sr-only">Plant</span></th>{{range $.Data.Months}}<th scope="col" aria-hidden="true">{{.}}</th>{{end}}</tr></thead>
+  <thead><tr><th scope="col"><span class="sr-only">{{say $l $.Data.Copy.Plant}}</span></th>{{range $.Data.Months}}<th scope="col" aria-hidden="true">{{initial $l .}}</th>{{end}}</tr></thead>
   <tbody>
   {{range .Calendar}}<tr>
-    <th scope="row">{{say $l .Name}}<span class="sr-only">: {{.BloomWords}}</span></th>
+    <th scope="row">{{say $l .Name}}<span class="sr-only">: {{say $l .BloomWords}}</span></th>
     {{$swatch := .Swatch}}{{range .Bloom}}<td aria-hidden="true">{{if .}}<svg viewBox="0 0 10 10" width="100%" height="18" preserveAspectRatio="none"><rect width="10" height="10" rx="2" fill="{{if $swatch}}{{$swatch}}{{else}}#2B3990{{end}}" stroke="#231F20" stroke-opacity="0.3" stroke-width="0.6"/></svg>{{end}}</td>{{end}}
   </tr>
   {{end}}</tbody>

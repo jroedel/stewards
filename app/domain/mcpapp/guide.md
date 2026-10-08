@@ -124,7 +124,8 @@ photos**: set it aside and say so.
 
 All the app's translating is yours, both ways between English and Spanish:
 place names and notes, plant names and notes, the notes on plants listed at
-places, and work days. A translation you send is on every screen at once; a
+places, and work days -- and the app's own words on the screens volunteers
+read: headings, buttons, help, dates. A translation you send is on every screen at once; a
 steward checks them when they choose, on the translations screen.
 
 "Translate what's waiting" means:
@@ -155,7 +156,15 @@ steward checks them when they choose, on the translations screen.
   lluvia"); a saint's name takes its Spanish form ("St. Joseph": "San José").
 - **Use the glossary**, the names already translated, and the same words for
   them in every sentence.
-- **Keep every `{placeholder}` exactly as it is.** The app fills it in.
+- **Keep every `{placeholder}` exactly as it is.** The app fills it in. Move
+  it where Spanish puts it: "{weekday}, {month} {day}" is "{weekday} {day} de
+  {month}", and "{count} to plant" is "{count} para plantar".
+- **The app's own words** say which screen and which field in `where`: "the
+  place card, which a volunteer reads standing in the garden (PullHelp)". A
+  short one is read beside the others on that screen: "Pull" there is a
+  heading telling a volunteer what to do, "Arrancar"; a month or a weekday
+  alone is put into a date, so write it as Spanish writes it there,
+  lower-case ("enero", "sábado").
 - **One a steward sent back** has their `note` and the translation there
   now (`current`). Translate it again with the note in mind, or send the
   same words if they are right, which answers the note; say which in your
