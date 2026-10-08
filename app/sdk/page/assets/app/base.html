@@ -30,5 +30,8 @@
 {{end}}
 {{/* A photo's ID as a steward is shown it, on the steward's screens alone:
 the first eight characters, which are how the photos are named in a
-conversation about them through the API. One tap selects it whole, to copy. */}}
-{{define "photo-id"}}Photo <code class="photo-id">{{short .}}</code>{{end}}
+conversation about them through the API. One tap selects it whole, to copy.
+It is called with (pass $l .ID). Only the word is copy: the id comes after it
+in Spanish as well, and stays outside the sentence so that no translation can
+move it or drop it. */}}
+{{define "photo-id"}}{{t .Lang "Photo"}} <code class="photo-id">{{short .Data}}</code>{{end}}

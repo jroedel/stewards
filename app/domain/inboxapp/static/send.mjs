@@ -18,7 +18,10 @@
 // No build step and no library: modules served by inboxapp as they are here,
 // and written for the browsers on the stewards' phones. send_browser_test.mjs
 // drives this page in a real browser against a real server.
+//
+// What it says is in the page's language, from the page (words.mjs).
 import { shrink } from "./shrink.mjs";
+import { sayer } from "./words.mjs";
 
 // Photos shared from the phone's photos app arrive in the file input by way
 // of share.mjs, which every steward's page loads (ShareScript), before
@@ -39,6 +42,7 @@ import { shrink } from "./shrink.mjs";
   const result = document.getElementById("sent");
   const max = Number(form.dataset.max) || 30;
   const label = button.textContent;
+  const t = sayer(document);
 
   // How long to wait before trying a photo again, each time it fails for
   // want of a signal or a server: about five minutes in all, and then it
@@ -89,7 +93,7 @@ import { shrink } from "./shrink.mjs";
     clear(result);
 
     if (chosen.length > max) {
-      say(result, "problem", `That is ${chosen.length} photos. Send up to ${max} at a time.`);
+      say(result, "problem", t("tooMany", { count: chosen.length, max }));
       return;
     }
 
@@ -108,7 +112,7 @@ import { shrink } from "./shrink.mjs";
     let stop = null;
 
     for (let i = 0; i < files.length; i++) {
-      progress(i, files.length, `Sending ${i + 1} of ${files.length}…`);
+      progress(i, files.length, t("sending", { n: i + 1, count: files.length }));
 
       const answer = await send(fields, files[i], i, files.length);
 
@@ -129,7 +133,7 @@ import { shrink } from "./shrink.mjs";
     if (!stop && refused.length === 0) {
       // All of them: the inbox says how many, as it does after a batch
       // sent without this script.
-      progress(files.length, files.length, "Sent. Opening the inbox…");
+      progress(files.length, files.length, t("opening"));
       window.removeEventListener("beforeunload", stay);
       window.location.assign(`${form.dataset.done}?done=sent&n=${kept}&d=${already}`);
       return;
@@ -142,7 +146,7 @@ import { shrink } from "./shrink.mjs";
     }
 
     if (refused.length > 0) {
-      const box = say(result, "problem", `${refused.length} not kept:`);
+      const box = say(result, "problem", t("countNot", { count: refused.length }));
       const list = document.createElement("ul");
       for (const r of refused) {
         const item = document.createElement("li");
@@ -201,15 +205,11 @@ import { shrink } from "./shrink.mjs";
       }
 
       if (attempt >= waits.length) {
-        return {
-          stop: `The connection is gone. Press Send again when you have a signal: ` +
-            `the photos already sent are in the inbox, and only the rest will be sent.`,
-        };
+        return { stop: t("gone") };
       }
 
-      progress(i, n, attempt < 3
-        ? `The signal dropped on ${i + 1} of ${n}. Trying again…`
-        : `The signal keeps dropping on ${i + 1} of ${n}. Still trying; keep this page open…`);
+      const at = { n: i + 1, count: n };
+      progress(i, n, attempt < 3 ? t("dropped", at) : t("dropping", at));
       await pause(waits[attempt]);
     }
   }
@@ -239,20 +239,17 @@ import { shrink } from "./shrink.mjs";
       // The session ran out while sending. A write without one is a bare
       // 403 (mid.Require); a redirect to the sign-in page is here in case
       // that ever changes.
-      return {
-        stop: `Your sign-in has run out. Sign in again in a new tab, then come back and press Send: ` +
-          `the photos already sent will not be added twice.`,
-      };
+      return { stop: t("signedOut") };
     }
 
     if (!json) {
       if (res.status === 413) {
-        return { photo: "Too large to send. Send it as the camera saved it, not a video." };
+        return { photo: t("tooLarge") };
       }
       if (res.status >= 500) {
         return null; // the proxy in front of the app, busy or restarting
       }
-      return { stop: `The server would not take it (${res.status}). Open this page again and send once more.` };
+      return { stop: t("refused", { status: res.status }) };
     }
 
     const body = await res.json();
@@ -264,14 +261,14 @@ import { shrink } from "./shrink.mjs";
       return null;
     }
 
-    const problem = (body.error && body.error.problem) || "It could not be kept.";
+    const problem = (body.error && body.error.problem) || t("notKept");
     if (body.error && body.error.field === "photo") {
       return { photo: problem };
     }
 
     // Not about one photo -- the place, the note -- so the same for every
     // one after it.
-    return { stop: `${problem} Nothing more was sent; fix it and press Send again.` };
+    return { stop: t("stopped", { problem }) };
   }
 
   function lock(on) {
@@ -282,7 +279,7 @@ import { shrink } from "./shrink.mjs";
       el.disabled = on;
     }
 
-    button.textContent = on ? "Sending…" : label;
+    button.textContent = on ? t("sendingOn") : label;
     status.hidden = !on;
 
     if (on) {
@@ -340,17 +337,17 @@ import { shrink } from "./shrink.mjs";
   function sentWords(kept, already) {
     let s;
     if (kept === 0) {
-      s = "No new photos.";
+      s = t("noNew");
     } else if (kept === 1) {
-      s = "1 photo is in the inbox.";
+      s = t("oneIn");
     } else {
-      s = `${kept} photos are in the inbox.`;
+      s = t("manyIn", { count: kept });
     }
 
     if (already === 1) {
-      s += " 1 was there already.";
+      s += " " + t("oneAlready");
     } else if (already > 1) {
-      s += ` ${already} were there already.`;
+      s += " " + t("manyAlready", { count: already });
     }
 
     return s;

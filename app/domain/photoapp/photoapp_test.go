@@ -660,7 +660,7 @@ func TestAPhotosDayAndFlowerAreSaidOnItsScreen(t *testing.T) {
 
 	// And the plant's flowering record has it, first and last, not checked.
 	list := s.get(s.photosPath(), true).Body.String()
-	if !strings.Contains(list, "Flowering and fruiting") || strings.Count(list, `/edit">20 Sep</a>`) != 3 || !strings.Contains(list, "not checked") {
+	if !strings.Contains(list, "Flowering and fruiting") || strings.Count(list, `/edit">20 September</a>`) != 3 || !strings.Contains(list, "not checked") {
 		t.Error("the flowering record does not show the photo's day")
 	}
 

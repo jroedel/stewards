@@ -18,6 +18,7 @@ type calendarWords struct {
 	Weekdays [7]types.Text // Sunday first, as time.Weekday counts
 
 	Date, FullDate, MonthYear, DayMonth, DayMonthYear, Run types.Text
+	Weekday                                                types.Text
 
 	SameHalf map[string]types.Text // by "am" or "pm"
 	Clock    map[string]types.Text
@@ -42,6 +43,7 @@ var calendar = calendarWords{
 
 	DayMonthYear: types.Text{EN: "{day} {month} {year}"},
 	FullDate:     types.Text{EN: "{weekday} {day} {month} {year}"},
+	Weekday:      types.Text{EN: "{weekday} {day} {month}"},
 	Run:          types.Text{EN: "{from} to {to}"},
 
 	SameHalf: map[string]types.Text{"am": {EN: "{from}–{to} am"}, "pm": {EN: "{from}–{to} pm"}},
@@ -115,6 +117,14 @@ func FullDate(t time.Time) Phrase {
 	return Put(calendar.FullDate, "weekday", calendar.Weekdays[t.Weekday()], "day", t.Day(), "month", Month(t.Month()), "year", strconv.Itoa(t.Year()))
 }
 
+// Weekday is "Monday 2 January": a day this year on a steward's screens,
+// such as a day's photos in the inbox, in the garden's time zone.
+func Weekday(t time.Time) Phrase {
+	t = t.In(types.Garden)
+
+	return Put(calendar.Weekday, "weekday", calendar.Weekdays[t.Weekday()], "day", t.Day(), "month", Month(t.Month()))
+}
+
 // DayMonthYear is "2 January 2027", a day on a steward's screens, in the
 // garden's time zone, so that "used today" means today in Texas.
 func DayMonthYear(t time.Time) Phrase {
@@ -170,6 +180,10 @@ func Hours(starts, ends time.Time) Phrase {
 
 	return Put(calendar.Across, "from", clock(s), "to", clock(e))
 }
+
+// Time is a time of day alone, "3:04 pm" or "noon", in the garden's time
+// zone: when a photo was taken.
+func Time(t time.Time) any { return clock(t.In(types.Garden)) }
 
 func clock(t time.Time) any {
 	if noon(t) {

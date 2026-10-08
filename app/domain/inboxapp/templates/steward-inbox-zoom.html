@@ -1,17 +1,15 @@
-{{define "title"}}A photo, closer · Garden stewards{{end}}
-{{define "content"}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow"><a href="/steward/inbox/{{.ID}}">Sort this photo</a></p>
-<h1>Closer</h1>
+{{define "title"}}{{plain .Lang "A photo, closer"}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow"><a href="/steward/inbox/{{.ID}}">{{t $l "Sort this photo"}}</a></p>
+<h1>{{t $l "Closer"}}</h1>
 
 <figure class="zoom">
   <div class="zoom-frame">
     <img src="/steward/inbox/{{.ID}}/large.jpg" width="{{.LargeW}}" height="{{.LargeH}}" alt="">
-    <img class="zoom-full" src="/steward/inbox/{{.ID}}/{{.Full}}" width="{{.LargeW}}" height="{{.LargeH}}" alt="The photo being sorted, at full size">
+    <img class="zoom-full" src="/steward/inbox/{{.ID}}/{{.Full}}" width="{{.LargeW}}" height="{{.LargeH}}" alt="{{plain $l "The photo being sorted, at full size"}}">
   </div>
 </figure>
-<p class="help">Pinch to zoom in.</p>
-<a class="onward" href="/steward/inbox/{{.ID}}/{{.Full}}"><span>Open the photo by itself</span><span aria-hidden="true">›</span></a>
-<a class="onward" href="/steward/inbox/{{.ID}}"><span>Back to sorting it</span><span aria-hidden="true">›</span></a>
-</div>
+<p class="help">{{t $l "Pinch to zoom in."}}</p>
+<a class="onward" href="/steward/inbox/{{.ID}}/{{.Full}}"><span>{{t $l "Open the photo by itself"}}</span><span aria-hidden="true">›</span></a>
+<a class="onward" href="/steward/inbox/{{.ID}}"><span>{{t $l "Back to sorting it"}}</span><span aria-hidden="true">›</span></a>
 {{end}}{{end}}

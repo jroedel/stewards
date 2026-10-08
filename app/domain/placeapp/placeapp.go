@@ -260,13 +260,15 @@ type option struct {
 
 // plantOption is a plant as a list of plants offers it: its common name with
 // its scientific one, so that either finds it in the list's search box, and
-// its Spanish name to be found by as well, which is not shown (the page
-// package's find.mjs, data-also).
+// its name in the other language to be found by as well, which is not shown
+// (the page package's find.mjs, data-also). Both names go in, since the
+// list may be shown in either language and the one it is shown in already
+// finds it.
 func plantOption(sp speciesbus.Species, selected bool) option {
 	o := option{Value: sp.ID.String(), Label: sp.Common, After: sp.Scientific, Selected: selected, name: sp.Common.In(types.English)}
 
-	if sp.Common.ES != sp.Common.EN {
-		o.Also = sp.Common.ES
+	if sp.Common.EN != "" && sp.Common.ES != "" && sp.Common.ES != sp.Common.EN {
+		o.Also = sp.Common.EN + " " + sp.Common.ES
 	}
 
 	return o

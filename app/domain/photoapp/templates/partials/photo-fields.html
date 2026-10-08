@@ -1,68 +1,67 @@
 {{/* What a steward says about a photo: the fields both the add form and the
-edit form ask for. */}}
-{{define "photo-problem"}}{{if .}}<p class="field-problem">{{.}}</p>{{end}}{{end}}
-
-{{define "photo-fields"}}{{$p := .Problems}}{{with .Fields}}
-  <label for="kind">What it shows</label>
-  {{template "photo-problem" (index $p "kind")}}
-  <select id="kind" name="kind" required>{{range .Kinds}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+edit form ask for. Called with (pass $l .), so that the language is beside
+the page's data. */}}
+{{define "photo-fields"}}{{$l := .Lang}}{{$p := .Data.Problems}}{{$name := .Data.Name}}{{with .Data.Fields}}
+  <label for="kind">{{t $l "What it shows"}}</label>
+  {{with index $p "kind"}}<p class="field-problem">{{say $l .}}</p>{{end}}
+  <select id="kind" name="kind" required>{{range .Kinds}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{words $l .Label}}</option>{{end}}</select>
 
   <fieldset>
-    <legend>Whose photo</legend>
-    {{template "photo-problem" (index $p "source")}}
-    <label class="check"><input type="radio" name="source" value="ours"{{if .Ours}} checked{{end}}> Ours: a steward took it</label>
-    <label class="check"><input type="radio" name="source" value="borrowed"{{if not .Ours}} checked{{end}}> Borrowed, under an open licence</label>
+    <legend>{{t $l "Whose photo"}}</legend>
+    {{with index $p "source"}}<p class="field-problem">{{say $l .}}</p>{{end}}
+    <label class="check"><input type="radio" name="source" value="ours"{{if .Ours}} checked{{end}}> {{t $l "Ours: a steward took it"}}</label>
+    <label class="check"><input type="radio" name="source" value="borrowed"{{if not .Ours}} checked{{end}}> {{t $l "Borrowed, under an open licence"}}</label>
 
-    <label for="credit">Credit <span class="optional">optional for ours</span></label>
-    <p class="help" id="credit-help">For a borrowed photo, the author's name as its page gives it. For one of ours, leave it empty unless the photographer wants to be named; the card then credits the garden stewards.</p>
-    {{template "photo-problem" (index $p "credit")}}
+    <label for="credit">{{t $l "Credit"}} <span class="optional">{{t $l "optional for ours"}}</span></label>
+    <p class="help" id="credit-help">{{t $l "For a borrowed photo, the author's name as its page gives it. For one of ours, leave it empty unless the photographer wants to be named; the card then credits the garden stewards."}}</p>
+    {{with index $p "credit"}}<p class="field-problem">{{say $l .}}</p>{{end}}
     <input id="credit" name="credit" type="text" value="{{.Credit}}" maxlength="200" aria-describedby="credit-help">
 
-    <label for="source_url">Where it came from <span class="optional">borrowed only</span></label>
-    {{template "photo-problem" (index $p "source_url")}}
+    <label for="source_url">{{t $l "Where it came from"}} <span class="optional">{{t $l "borrowed only"}}</span></label>
+    {{with index $p "source_url"}}<p class="field-problem">{{say $l .}}</p>{{end}}
     <input id="source_url" name="source_url" type="url" value="{{.SourceURL}}" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://commons.wikimedia.org/wiki/File:…">
 
-    <label for="license">Licence <span class="optional">borrowed only</span></label>
-    {{template "photo-problem" (index $p "license")}}
+    <label for="license">{{t $l "Licence"}} <span class="optional">{{t $l "borrowed only"}}</span></label>
+    {{with index $p "license"}}<p class="field-problem">{{say $l .}}</p>{{end}}
     <input id="license" name="license" type="text" value="{{.License}}" maxlength="100" placeholder="CC BY-SA 4.0">
   </fieldset>
 
-  <label class="check"><input type="checkbox" name="in_flower" value="yes"{{if .InFlower}} checked{{end}}> In flower</label>
-  <label class="check"><input type="checkbox" name="in_fruit" value="yes"{{if .InFruit}} checked{{end}}> In fruit or seed</label>
-  <p class="help">Tick what the plant is doing, whatever the photo shows; a flower or a fruit photo always counts. The plant's first and last days in flower and in fruit each year are kept from these.</p>
+  <label class="check"><input type="checkbox" name="in_flower" value="yes"{{if .InFlower}} checked{{end}}> {{t $l "In flower"}}</label>
+  <label class="check"><input type="checkbox" name="in_fruit" value="yes"{{if .InFruit}} checked{{end}}> {{t $l "In fruit or seed"}}</label>
+  <p class="help">{{t $l "Tick what the plant is doing, whatever the photo shows; a flower or a fruit photo always counts. The plant's first and last days in flower and in fruit each year are kept from these."}}</p>
 
   <fieldset>
-    <legend>When and where</legend>
-    <label for="taken_on">Day taken <span class="optional">optional</span></label>
-    <p class="help" id="taken-on-help">For the flowering record. Set it and the month and year below follow it.</p>
-    {{template "photo-problem" (index $p "taken_on")}}
+    <legend>{{t $l "When and where"}}</legend>
+    <label for="taken_on">{{t $l "Day taken"}} <span class="optional">{{t $l "optional"}}</span></label>
+    <p class="help" id="taken-on-help">{{t $l "For the flowering record. Set it and the month and year below follow it."}}</p>
+    {{with index $p "taken_on"}}<p class="field-problem">{{say $l .}}</p>{{end}}
     <input id="taken_on" name="taken_on" type="date" value="{{.TakenOn}}" aria-describedby="taken-on-help">
     <div class="pair">
       <div>
-        <label for="taken_month">Month</label>
-        {{template "photo-problem" (index $p "taken_month")}}
-        <select id="taken_month" name="taken_month">{{range .Months}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+        <label for="taken_month">{{t $l "Month"}}</label>
+        {{with index $p "taken_month"}}<p class="field-problem">{{say $l .}}</p>{{end}}
+        <select id="taken_month" name="taken_month">{{range .Months}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{words $l .Label}}</option>{{end}}</select>
       </div>
       <div>
-        <label for="taken_year">Year</label>
-        {{template "photo-problem" (index $p "taken_year")}}
+        <label for="taken_year">{{t $l "Year"}}</label>
+        {{with index $p "taken_year"}}<p class="field-problem">{{say $l .}}</p>{{end}}
         <input id="taken_year" name="taken_year" type="text" inputmode="numeric" value="{{.TakenYear}}" maxlength="4" placeholder="2027">
       </div>
     </div>
-    <p class="help">Leave the day, month and year empty and the date the camera recorded is used, when it recorded one.</p>
+    <p class="help">{{t $l "Leave the day, month and year empty and the date the camera recorded is used, when it recorded one."}}</p>
 
-    <label for="place">Where it was taken <span class="optional">optional</span></label>
-    {{template "photo-problem" (index $p "place")}}
-    <select id="place" name="place">{{range .Places}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+    <label for="place">{{t $l "Where it was taken"}} <span class="optional">{{t $l "optional"}}</span></label>
+    {{with index $p "place"}}<p class="field-problem">{{say $l .}}</p>{{end}}
+    <select id="place" name="place">{{range .Places}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{words $l .Label}}</option>{{end}}</select>
     <div class="field-group for-taken-elsewhere">
-      <label for="taken_where">Name of the place <span class="optional">optional</span></label>
-      <p class="help" id="taken-where-help">A park, a trail, a friend's garden. The card names it, so nobody takes the photo for one of this garden's plants.</p>
-      {{template "photo-problem" (index $p "taken_where")}}
-      <input id="taken_where" name="taken_where" type="text" value="{{.TakenWhere}}" maxlength="100" placeholder="Pedernales Falls State Park" aria-describedby="taken-where-help">
+      <label for="taken_where">{{t $l "Name of the place"}} <span class="optional">{{t $l "optional"}}</span></label>
+      <p class="help" id="taken-where-help">{{t $l "A park, a trail, a friend's garden. The card names it, so nobody takes the photo for one of this garden's plants."}}</p>
+      {{with index $p "taken_where"}}<p class="field-problem">{{say $l .}}</p>{{end}}
+      <input id="taken_where" name="taken_where" type="text" value="{{.TakenWhere}}" maxlength="100" placeholder="{{plain $l "Pedernales Falls State Park"}}" aria-describedby="taken-where-help">
     </div>
   </fieldset>
 
-  {{template "photo-problem" (index $p "checked")}}
-  <label class="check"><input type="checkbox" name="checked" value="yes"{{if .Checked}} checked{{end}}> Checked: it shows {{$.Name}}</label>
-  <p class="help">Compare it with the sources on the plant's page first. Volunteers see a photo only once this is ticked: two "frostweed" photos once turned out to be wingstem.</p>
+  {{with index $p "checked"}}<p class="field-problem">{{say $l .}}</p>{{end}}
+  <label class="check"><input type="checkbox" name="checked" value="yes"{{if .Checked}} checked{{end}}> {{t $l "Checked: it shows {plant}" "plant" $name}}</label>
+  <p class="help">{{t $l "Compare it with the sources on the plant's page first. Volunteers see a photo only once this is ticked: two \"frostweed\" photos once turned out to be wingstem."}}</p>
 {{end}}{{end}}

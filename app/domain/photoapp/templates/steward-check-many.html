@@ -1,49 +1,47 @@
-{{define "title"}}Check many photos · Garden stewards{{end}}
-{{define "content"}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow"><a href="/steward/check">Photos to check</a></p>
-<h1>Check many photos</h1>
+{{define "title"}}{{plain .Lang "Check many photos"}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow"><a href="/steward/check">{{t $l "Photos to check"}}</a></p>
+<h1>{{t $l "Check many photos"}}</h1>
 
-{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
-{{with .Problem}}<p class="problem" role="alert">{{.}}</p>{{end}}
+{{with .Done}}<p class="done" role="status">{{say $l .}}</p>{{end}}
+{{with .Problem}}<p class="problem" role="alert">{{say $l .}}</p>{{end}}
 
 {{if .Plants}}
-<p class="lead">{{.Count}} {{if eq .Count 1}}photo{{else}}photos{{end}} not checked yet. {{if .Ticked}}Every photo with a blue frame and a tick will be checked. Tap any that does not show its plant to leave it out: it fades.{{else}}Tap each photo that shows its plant: it gets a blue frame and a tick.{{end}} Then press the button. Volunteers see a photo once it is checked.</p>
+<p class="lead">{{if eq .Count 1}}{{t $l "1 photo not checked yet."}}{{else}}{{t $l "{count} photos not checked yet." "count" .Count}}{{end}} {{if .Ticked}}{{t $l "Every photo with a blue frame and a tick will be checked. Tap any that does not show its plant to leave it out: it fades."}}{{else}}{{t $l "Tap each photo that shows its plant: it gets a blue frame and a tick."}}{{end}} {{t $l "Then press the button. Volunteers see a photo once it is checked."}}</p>
 {{else if .Listed}}
-<div class="card empty"><p>None of these photos is waiting to be checked.</p></div>
+<div class="card empty"><p>{{t $l "None of these photos is waiting to be checked."}}</p></div>
 {{else}}
-<div class="card empty"><p>Nothing to check.</p></div>
+<div class="card empty"><p>{{t $l "Nothing to check."}}</p></div>
 {{end}}
-{{if .Left}}<p class="help">{{.Left}} of the photos in the list {{if eq .Left 1}}is{{else}}are{{end}} not here: checked already, removed, or named by a short id two photos share.</p>{{end}}
-{{if .Over}}<p class="help">The list was longer than one page takes. The last {{.Over}} are left for another time.</p>{{end}}
+{{if .Left}}<p class="help">{{if eq .Left 1}}{{t $l "1 of the photos in the list is not here: checked already, removed, or named by a short id two photos share."}}{{else}}{{t $l "{count} of the photos in the list are not here: checked already, removed, or named by a short id two photos share." "count" .Left}}{{end}}</p>{{end}}
+{{if .Over}}<p class="help">{{t $l "The list was longer than one page takes. The last {count} are left for another time." "count" .Over}}</p>{{end}}
 
 {{if .Plants}}
 <form class="together" method="post" action="/steward/check/many">
   {{with .IDs}}<input type="hidden" name="ids" value="{{.}}">{{end}}
   {{range .Plants}}
   <section class="card photo-kind">
-    <h2>{{.Name}}</h2>
+    <h2>{{say $l .Name}}</h2>
     {{with .Scientific}}<p class="row-note"><i>{{.}}</i></p>{{end}}
-    {{if .Sources}}<p class="row-note">Sources: {{range $i, $s := .Sources}}{{if $i}}, {{end}}{{if .URL}}<a href="{{.URL}}" rel="noopener" target="_blank">{{.Label}}</a>{{else}}{{.Label}}{{end}}{{end}}</p>{{end}}
+    {{if .Sources}}<p class="row-note">{{t $l "Sources:"}} {{range $i, $s := .Sources}}{{if $i}}, {{end}}{{if .URL}}<a href="{{.URL}}" rel="noopener" target="_blank">{{.Label}}</a>{{else}}{{.Label}}{{end}}{{end}}</p>{{end}}
     <ul class="photo-list">
     {{range .Photos}}<li>
       <label class="pick-one many-pick">
         <input type="checkbox" name="id" value="{{.ID}}"{{if .Ticked}} checked{{end}}>
         <img src="/photos/{{.ID}}/small.jpg" width="{{.Width}}" height="{{.Height}}" alt="" loading="lazy">
         <span class="pick-badge" aria-hidden="true"></span>
-        <span class="sr-only">Check {{template "photo-id" .ID}}</span>
+        <span class="sr-only">{{t $l "Check photo {id}" "id" (short .ID)}}</span>
       </label>
       <div class="photo-about">
-        <p class="row-tags"><span class="tag">{{.Kind}}</span>{{if .InFlower}}<span class="tag tag-sun">In flower</span>{{end}}{{if .InFruit}}<span class="tag tag-sun">In fruit or seed</span>{{end}}</p>
-        <p class="row-note">{{.Caption}}{{with .Source}} · <a href="{{.}}" rel="noopener" target="_blank">its source</a>{{end}}</p>
-        <p class="row-note"><a href="/steward/check?at={{.ID}}">{{template "photo-id" .ID}} in the queue</a></p>
+        <p class="row-tags"><span class="tag">{{say $l .Kind}}</span>{{if .InFlower}}<span class="tag tag-sun">{{t $l "In flower"}}</span>{{end}}{{if .InFruit}}<span class="tag tag-sun">{{t $l "In fruit or seed"}}</span>{{end}}</p>
+        <p class="row-note">{{say $l .Caption}}{{with .Source}} · <a href="{{.}}" rel="noopener" target="_blank">{{t $l "its source"}}</a>{{end}}</p>
+        <p class="row-note"><a href="/steward/check?at={{.ID}}">{{t $l "Photo {id} in the queue" "id" (code (short .ID))}}</a></p>
       </div>
     </li>
     {{end}}</ul>
   </section>
   {{end}}
-  <div class="together-bar"><button class="button button-block" type="submit">Check the ticked photos</button></div>
+  <div class="together-bar"><button class="button button-block" type="submit">{{t $l "Check the ticked photos"}}</button></div>
 </form>
 {{end}}
-</div>
 {{end}}{{end}}

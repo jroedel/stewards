@@ -149,7 +149,7 @@ func TestTheChangeSheetRefilesAPhoto(t *testing.T) {
 		`popovertarget="change"`, `id="change"`, ` popover role="dialog"`,
 		`action="/steward/check/`+first+`/change"`,
 		`<input type="radio" name="species" value="`+s.penstemon+`" checked><span>Brazos penstemon</span>`,
-		`data-find-with="species"`, `data-also="Monacillo"`, "Turk&#39;s cap (Malvaviscus arboreus)",
+		`data-find-with="species"`, `data-also="Turk&#39;s cap Monacillo"`, "Turk&#39;s cap (Malvaviscus arboreus)",
 		`name="kind" value="leaf" required checked`,
 		`name="checked" value="yes">Save and check it`, `name="checked" value="no">Save without checking`,
 		"/static/js/find.")
@@ -186,7 +186,7 @@ func TestTheChangeSheetRefilesAPhoto(t *testing.T) {
 		t.Errorf("after the sheet: %+v", p)
 	}
 
-	contains(t, "the queue after the sheet", s.get(want, true).Body.String(), "Changed and checked: Turk&#39;s cap, flower close-up.", ">Uncheck</button>", "This is the last one.")
+	contains(t, "the queue after the sheet", s.get(want, true).Body.String(), "Changed and checked: Turk's cap, flower close-up.", ">Uncheck</button>", "This is the last one.")
 
 	// The sheet's buttons now start with the plant just worked on.
 	page = s.get("/steward/check", true).Body.String()
