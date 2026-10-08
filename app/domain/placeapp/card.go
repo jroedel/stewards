@@ -63,9 +63,68 @@ type cardWording struct {
 	Stations map[string]types.Text
 }
 
-// Words is the card's copy, for the catalog the translation memory lists.
+// Words is this app's copy held in Go, for the catalog the translation
+// memory lists.
 var Words = page.Catalog{
 	{Where: "the place card, which a volunteer reads standing in the garden", Words: cardWords},
+	{Where: "the stewards' screens for places and what is listed at them", Words: stewardWords},
+}
+
+// The words the stewards' screens say from Go, in English; the rest are in
+// the templates, through t.
+type stewardWording struct {
+	Added, Saved, Removed, Mapped, Unmapped, SavedShort, TakenOff types.Text
+
+	AddAPlace, Edit, Confirm, TapTheMap, ChooseParent, SortNumber types.Text
+	StandsAlone, NotAStation, ChoosePlant, ChooseAPlant           types.Text
+
+	// The card's "+ Add" forms, a steward's alone.
+	AddPlanned, AddPlannedHelp, AddProtect, AddProtectHelp types.Text
+	AddPull, AddPullHelp, AddCareful, AddCarefulHelp       types.Text
+
+	Actions map[listingbus.Action]types.Text
+}
+
+var stewardWords = stewardWording{
+	Added:      types.Text{EN: "Place added."},
+	Saved:      types.Text{EN: "Changes saved."},
+	Removed:    types.Text{EN: "Place removed."},
+	Mapped:     types.Text{EN: "Its spot on the map is saved."},
+	Unmapped:   types.Text{EN: "It is off the map."},
+	SavedShort: types.Text{EN: "Saved."},
+	TakenOff:   types.Text{EN: "Taken off this place's list."},
+
+	AddAPlace:    types.Text{EN: "Add a place"},
+	Edit:         types.Text{EN: "Edit {name}"},
+	Confirm:      types.Text{EN: "Tick the box to confirm, then press Remove again."},
+	TapTheMap:    types.Text{EN: "Tap the map where the place is. The spot is saved as soon as you tap."},
+	ChooseParent: types.Text{EN: "Choose the place this is inside from the list."},
+	SortNumber:   types.Text{EN: "Write the order as a whole number, such as 10. Lower comes first."},
+	StandsAlone:  types.Text{EN: "Nothing: it stands on its own"},
+	NotAStation:  types.Text{EN: "Not a station"},
+	ChoosePlant:  types.Text{EN: "Choose the plant from the list."},
+	ChooseAPlant: types.Text{EN: "Choose a plant"},
+
+	AddPlanned:     types.Text{EN: "Add to To plant"},
+	AddPlannedHelp: types.Text{EN: "Not in the ground yet, or more are going in: it goes on To plant and Protect until a steward marks it growing. Say how many in the note."},
+	AddProtect:     types.Text{EN: "Add to Protect"},
+	AddProtectHelp: types.Text{EN: "Found growing here, and to be left alone."},
+	AddPull:        types.Text{EN: "Add to Pull"},
+	AddPullHelp:    types.Text{EN: "Volunteers see it under Pull straight away, so list only what you are sure of."},
+	AddCareful:     types.Text{EN: "Add to Careful"},
+	AddCarefulHelp: types.Text{EN: "It stays or goes as the note says, and volunteers handle it with gloves on."},
+
+	Actions: actionWords(),
+}
+
+// actionWords is each action as listingbus words it, as copy.
+func actionWords() map[listingbus.Action]types.Text {
+	out := map[listingbus.Action]types.Text{}
+	for _, act := range listingbus.Actions {
+		out[act] = types.Text{EN: act.Label()}
+	}
+
+	return out
 }
 
 var cardWords = cardWording{
@@ -185,8 +244,8 @@ type cardView struct {
 // under its list, which still works.
 type cardAdd struct {
 	ID      string // the popover's id
-	Title   string
-	Help    string
+	Title   types.Text
+	Help    types.Text
 	Action  listingbus.Action
 	Planned bool
 	PostURL string
@@ -230,23 +289,23 @@ func addsFor(p placebus.Place, species map[types.ID]speciesbus.Species, listed [
 		}
 	}
 
-	byName := func(x, y option) int { return cmp.Compare(strings.ToLower(x.Label), strings.ToLower(y.Label)) }
+	byName := func(x, y option) int { return cmp.Compare(strings.ToLower(x.name), strings.ToLower(y.name)) }
 	slices.SortFunc(opts, byName)
 	slices.SortFunc(growing, byName)
 
 	post := "/steward/places/" + p.ID.String() + "/plants"
-	add := func(id, title, help string, act listingbus.Action, planned bool) cardAdd {
+	add := func(id string, title, help types.Text, act listingbus.Action, planned bool) cardAdd {
 		return cardAdd{ID: id, Title: title, Help: help, Action: act, Planned: planned, PostURL: post, Species: opts}
 	}
 
-	toPlant := add("add-planned", "Add to To plant", "Not in the ground yet, or more are going in: it goes on To plant and Protect until a steward marks it growing. Say how many in the note.", listingbus.Protect, true)
+	toPlant := add("add-planned", stewardWords.AddPlanned, stewardWords.AddPlannedHelp, listingbus.Protect, true)
 	toPlant.Growing = growing
 
 	return &cardAdds{
 		Planned: toPlant,
-		Protect: add("add-protect", "Add to Protect", "Found growing here, and to be left alone.", listingbus.Protect, false),
-		Pull:    add("add-pull", "Add to Pull", "Volunteers see it under Pull straight away, so list only what you are sure of.", listingbus.Pull, false),
-		Careful: add("add-careful", "Add to Careful", "It stays or goes as the note says, and volunteers handle it with gloves on.", listingbus.Careful, false),
+		Protect: add("add-protect", stewardWords.AddProtect, stewardWords.AddProtectHelp, listingbus.Protect, false),
+		Pull:    add("add-pull", stewardWords.AddPull, stewardWords.AddPullHelp, listingbus.Pull, false),
+		Careful: add("add-careful", stewardWords.AddCareful, stewardWords.AddCarefulHelp, listingbus.Careful, false),
 		None:    len(opts) == 0 && len(growing) == 0,
 	}
 }

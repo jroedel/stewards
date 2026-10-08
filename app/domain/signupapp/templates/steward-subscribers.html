@@ -1,33 +1,31 @@
-{{define "title"}}Email list · Garden stewards{{end}}
-{{define "content"}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow"><a href="/steward">Places</a></p>
-<h1>Email list</h1>
-<p class="lead">People who signed up on the home page to hear about stewardship days.</p>
+{{define "title"}}{{plain .Lang "Email list"}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow"><a href="/steward">{{t $l "Places"}}</a></p>
+<h1>{{t $l "Email list"}}</h1>
+<p class="lead">{{t $l "People who signed up on the home page to hear about stewardship days."}}</p>
 
-{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+{{if .Removed}}<p class="done" role="status">{{t $l "Removed from the list."}}</p>{{end}}
 
 {{if .Rows}}
 <div class="card form">
-  <label for="bcc">Every address, to write to them all</label>
-  <p class="help" id="bcc-help">Copy these into the <strong>Bcc</strong> line of an email, never To or Cc, which would show everyone's address to everyone. Say in the email that they can reply to be taken off the list, and remove them here when they do.</p>
+  <label for="bcc">{{t $l "Every address, to write to them all"}}</label>
+  <p class="help" id="bcc-help">{{t $l "Copy these into the Bcc line of an email, never To or Cc, which would show everyone's address to everyone. Say in the email that they can reply to be taken off the list, and remove them here when they do."}}</p>
   <textarea id="bcc" rows="3" readonly aria-describedby="bcc-help">{{.All}}</textarea>
 </div>
 
-<h2>{{len .Rows}} on the list</h2>
+<h2>{{t $l "{count} on the list" "count" (len .Rows)}}</h2>
 <ul class="rows">
 {{range .Rows}}<li class="row">
   <div class="row-main-static">
     <div class="row-name">{{.Email}}</div>
-    <div class="row-note">Since {{.Since}} · {{.Lang}}</div>
+    <div class="row-note">{{t $l "Since {date}" "date" .Since}} · {{say $l .Lang}}</div>
   </div>
   <form method="post" action="/steward/subscribers/{{.ID}}/remove">
-    <button class="button button-quiet button-small" type="submit">Remove</button>
+    <button class="button button-quiet button-small" type="submit">{{t $l "Remove"}}</button>
   </form>
 </li>
 {{end}}</ul>
 {{else}}
-<div class="card empty"><p>Nobody has signed up yet. The form is at the top of the home page.</p></div>
+<div class="card empty"><p>{{t $l "Nobody has signed up yet. The form is at the top of the home page."}}</p></div>
 {{end}}
-</div>
 {{end}}{{end}}

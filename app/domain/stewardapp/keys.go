@@ -3,7 +3,6 @@ package stewardapp
 import (
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
@@ -31,7 +30,7 @@ func mountKeys(mux *http.ServeMux, a app, guard web.Middleware) {
 
 type keyRow struct {
 	ID, Name                   string
-	Created, Expires, LastUsed string
+	Created, Expires, LastUsed any
 }
 
 type keysView struct {
@@ -39,16 +38,16 @@ type keysView struct {
 	NewKey  string // shown once
 	Index   string // the API's index, to say where to start
 	Name    string
-	Problem string
-	Done    string
+	Problem any
+	Revoked bool
 	Max     int
 }
 
+var keyWords = struct{ Never types.Text }{Never: types.Text{EN: "never"}}
+
 func (a app) keys(w http.ResponseWriter, r *http.Request) {
 	v := keysView{}
-	if r.URL.Query().Get("done") == "revoked" {
-		v.Done = "Key revoked. Anything still using it is refused from now on."
-	}
+	v.Revoked = r.URL.Query().Get("done") == "revoked"
 
 	a.showKeys(w, r, http.StatusOK, v)
 }
@@ -68,7 +67,7 @@ func (a app) makeKey(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case isInvalid:
-		a.showKeys(w, r, http.StatusUnprocessableEntity, keysView{Name: r.PostFormValue("name"), Problem: page.Sentence(invalid.Problem)})
+		a.showKeys(w, r, http.StatusUnprocessableEntity, keysView{Name: r.PostFormValue("name"), Problem: types.Text{EN: page.Sentence(invalid.Problem)}})
 
 		return
 	case err != nil:
@@ -112,9 +111,9 @@ func (a app) showKeys(w http.ResponseWriter, r *http.Request, status int, v keys
 	}
 
 	for _, k := range keys {
-		row := keyRow{ID: k.ID.String(), Name: k.Name, Created: day(k.CreatedAt), Expires: day(k.ExpiresAt), LastUsed: "never"}
+		row := keyRow{ID: k.ID.String(), Name: k.Name, Created: page.DayMonthYear(k.CreatedAt), Expires: page.DayMonthYear(k.ExpiresAt), LastUsed: keyWords.Never}
 		if !k.LastUsedAt.IsZero() {
-			row.LastUsed = day(k.LastUsedAt)
+			row.LastUsed = page.DayMonthYear(k.LastUsedAt)
 		}
 
 		v.Keys = append(v.Keys, row)
@@ -124,10 +123,4 @@ func (a app) showKeys(w http.ResponseWriter, r *http.Request, status int, v keys
 	v.Max = userbus.MaxAPIKeys
 
 	a.cfg.Render.Render(w, r, status, "steward-keys", v)
-}
-
-// day is a date as a steward reads it, in the garden's own time zone so that
-// "used today" means today in Texas.
-func day(t time.Time) string {
-	return t.In(types.Garden).Format("2 January 2006")
 }

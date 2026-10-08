@@ -2,7 +2,7 @@
 {{define "masthead"}}<a class="back" href="/plants/{{.Data.Slug}}{{if .Data.Weeding}}?view=weeding{{end}}"><span>‹ {{say .Lang .Data.Name}}</span></a>{{end}}
 {{define "content"}}{{$l := .Lang}}{{with .Data}}
 <h1>{{say $l .Name}}</h1>
-{{if .NotChecked}}<p class="row-tags" lang="en"><span class="tag tag-open">Not checked: volunteers don't see it</span></p>{{end}}
+{{if .NotChecked}}<p class="row-tags"><span class="tag tag-open">{{t $l "Not checked: volunteers don't see it"}}</span></p>{{end}}
 
 {{with .Figure}}
 <figure class="zoom">
@@ -20,5 +20,5 @@
 <p class="help">{{say $l $.Data.Copy.Pinch}}</p>
 <a class="onward" href="/photos/{{.ID}}/{{$.Data.Full}}"><span>{{say $l $.Data.Copy.ByItself}}</span><span aria-hidden="true">›</span></a>
 {{end}}
-{{with .EditURL}}<a class="onward" href="{{.}}" lang="en"><span>Edit or check this photo</span><span aria-hidden="true">›</span></a>{{end}}
+{{with .EditURL}}<a class="onward" href="{{.}}"><span>{{t $l "Edit or check this photo"}}</span><span aria-hidden="true">›</span></a>{{end}}
 {{end}}{{end}}

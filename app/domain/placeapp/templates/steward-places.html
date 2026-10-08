@@ -1,40 +1,38 @@
-{{define "title"}}Places · Garden stewards{{end}}
+{{define "title"}}{{plain .Lang "Places"}} · {{plain .Lang "Garden stewards"}}{{end}}
 {{define "content"}}{{$l := .Lang}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow">Garden stewards</p>
-<h1>Places</h1>
-<p class="lead">Every place volunteers can choose, with the smaller places inside it.</p>
+<p class="eyebrow">{{t $l "Garden stewards"}}</p>
+<h1>{{t $l "Places"}}</h1>
+<p class="lead">{{t $l "Every place volunteers can choose, with the smaller places inside it."}}</p>
 
-{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+{{with .Done}}<p class="done" role="status">{{say $l .}}</p>{{end}}
 
-{{if .Inbox}}<a class="onward" href="/steward/inbox"><span>Photo inbox <span class="quiet">{{if .Waiting}}{{.Waiting}} to sort{{else}}nothing waiting{{end}}</span></span><span aria-hidden="true">›</span></a>{{end}}
-<a class="onward" href="/steward/check"><span>Photos to check <span class="quiet">{{if .ToCheck}}{{.ToCheck}} waiting{{else}}nothing waiting{{end}}</span></span><span aria-hidden="true">›</span></a>
-{{if .Inbox}}<a class="button button-block" href="/steward/inbox/new">Send photos</a>{{end}}
-{{if .Translations}}<a class="onward" href="/steward/translations"><span>Translations <span class="quiet">{{with .TranslationCount}}{{if .ToCheck}}{{.ToCheck}} to check{{else}}all checked{{end}}{{if .Waiting}} · {{.Waiting}} waiting for Claude{{end}}{{end}}</span></span><span aria-hidden="true">›</span></a>{{end}}
-{{if .Nursery}}<a class="onward" href="/steward/nursery"><span>Nursery stock <span class="quiet">what the nurseries had, for planning a bed</span></span><span aria-hidden="true">›</span></a>{{end}}
+{{if .Inbox}}<a class="onward" href="/steward/inbox"><span>{{t $l "Photo inbox"}} <span class="quiet">{{if .Waiting}}{{t $l "{count} to sort" "count" .Waiting}}{{else}}{{t $l "nothing waiting"}}{{end}}</span></span><span aria-hidden="true">›</span></a>{{end}}
+<a class="onward" href="/steward/check"><span>{{t $l "Photos to check"}} <span class="quiet">{{if .ToCheck}}{{t $l "{count} waiting" "count" .ToCheck}}{{else}}{{t $l "nothing waiting"}}{{end}}</span></span><span aria-hidden="true">›</span></a>
+{{if .Inbox}}<a class="button button-block" href="/steward/inbox/new">{{t $l "Send photos"}}</a>{{end}}
+{{if .Translations}}<a class="onward" href="/steward/translations"><span>{{t $l "Translations"}} <span class="quiet">{{with .TranslationCount}}{{if .ToCheck}}{{t $l "{count} to check" "count" .ToCheck}}{{else}}{{t $l "all checked"}}{{end}}{{if .Waiting}} · {{t $l "{count} waiting for Claude" "count" .Waiting}}{{end}}{{end}}</span></span><span aria-hidden="true">›</span></a>{{end}}
+{{if .Nursery}}<a class="onward" href="/steward/nursery"><span>{{t $l "Nursery stock"}} <span class="quiet">{{t $l "what the nurseries had, for planning a bed"}}</span></span><span aria-hidden="true">›</span></a>{{end}}
 
 {{if .Places}}
 <ul class="rows">
 {{range .Places}}<li class="row row-stack">
-  <a class="row-main" href="/steward/places/{{.ID}}/edit"><span class="row-name">{{say $l .Name}}</span><span class="row-note">/places/{{.Slug}}</span><span class="row-go" aria-hidden="true">Edit ›</span></a>
+  <a class="row-main" href="/steward/places/{{.ID}}/edit"><span class="row-name">{{say $l .Name}}</span><span class="row-note">/places/{{.Slug}}</span><span class="row-go" aria-hidden="true">{{t $l "Edit"}} ›</span></a>
   {{if .Bands}}<ul class="bands">
-  {{range .Bands}}<li><a class="band" href="/steward/places/{{.ID}}/edit"><span>{{say $l .Name}}</span><span class="row-go" aria-hidden="true">Edit ›</span></a></li>
+  {{range .Bands}}<li><a class="band" href="/steward/places/{{.ID}}/edit"><span>{{say $l .Name}}</span><span class="row-go" aria-hidden="true">{{t $l "Edit"}} ›</span></a></li>
   {{end}}</ul>{{end}}
-  <a class="band band-add" href="/steward/places/new?parent={{.ID}}">+ Add a smaller place inside {{say $l .Name}}</a>
+  <a class="band band-add" href="/steward/places/new?parent={{.ID}}">+ {{t $l "Add a smaller place inside {place}" "place" .Name}}</a>
 </li>
 {{end}}</ul>
 {{else}}
-<div class="card empty"><p>No places yet. Start with the rain garden.</p></div>
+<div class="card empty"><p>{{t $l "No places yet. Start with the rain garden."}}</p></div>
 {{end}}
 
-<a class="button button-block" href="/steward/places/new">Add a place</a>
+<a class="button button-block" href="/steward/places/new">{{t $l "Add a place"}}</a>
 
-<a class="onward" href="/steward/days"><span>Stewardship days <span class="quiet">on the home page, for anyone to come and help</span></span><span aria-hidden="true">›</span></a>
-<a class="onward" href="/steward/subscribers"><span>Email list <span class="quiet">who asked to hear about the days</span></span><span aria-hidden="true">›</span></a>
+<a class="onward" href="/steward/days"><span>{{t $l "Stewardship days"}} <span class="quiet">{{t $l "on the home page, for anyone to come and help"}}</span></span><span aria-hidden="true">›</span></a>
+<a class="onward" href="/steward/subscribers"><span>{{t $l "Email list"}} <span class="quiet">{{t $l "who asked to hear about the days"}}</span></span><span aria-hidden="true">›</span></a>
 
-<a class="onward" href="/steward/species"><span>Plants <span class="quiet">one record per species</span></span><span aria-hidden="true">›</span></a>
+<a class="onward" href="/steward/species"><span>{{t $l "Plants"}} <span class="quiet">{{t $l "one record per species"}}</span></span><span aria-hidden="true">›</span></a>
 
-<a class="onward" href="/steward/stewards"><span>Stewards <span class="quiet">who can sign in</span></span><span aria-hidden="true">›</span></a>
-<a class="onward" href="/steward/keys"><span>API keys <span class="quiet">for a program to add plants and photos</span></span><span aria-hidden="true">›</span></a>
-</div>
+<a class="onward" href="/steward/stewards"><span>{{t $l "Stewards"}} <span class="quiet">{{t $l "who can sign in"}}</span></span><span aria-hidden="true">›</span></a>
+<a class="onward" href="/steward/keys"><span>{{t $l "API keys"}} <span class="quiet">{{t $l "for a program to add plants and photos"}}</span></span><span aria-hidden="true">›</span></a>
 {{end}}{{end}}

@@ -1,30 +1,28 @@
-{{define "title"}}Plants · Garden stewards{{end}}
-{{define "content"}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow"><a href="/steward">Places</a></p>
-<h1>Plants</h1>
-<p class="lead">One record per species. Where each one grows, and whether to pull or protect it there, comes next.</p>
+{{define "title"}}{{plain .Lang "Plants"}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow"><a href="/steward">{{t $l "Places"}}</a></p>
+<h1>{{t $l "Plants"}}</h1>
+<p class="lead">{{t $l "One record per species. Where each one grows, and whether to pull or protect it there, comes next."}}</p>
 
-{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+{{with .Done}}<p class="done" role="status">{{say $l .}}</p>{{end}}
 
 {{if .Species}}
 <ul class="rows">
 {{range .Species}}<li><a class="row{{if .Thumb}} row-photo{{end}}" href="/steward/species/{{.ID}}/edit">
   {{with .Thumb}}<img class="row-thumb" src="/photos/{{.}}/small.jpg" width="64" height="64" alt="" loading="lazy">{{end}}
   <div>
-    <div class="row-name">{{.Common}}{{range .Swatches}} {{template "swatch" .}}{{end}}</div>
+    <div class="row-name">{{say $l .Common}}{{range .Swatches}} {{template "swatch" .}}{{end}}</div>
     {{if .Scientific}}<div class="row-note"><i>{{.Scientific}}</i></div>{{end}}
-    <div class="row-tags"><span class="tag">{{.Status}}</span>{{if .Confirmed}}<span class="tag tag-ok">ID confirmed</span>{{else}}<span class="tag tag-open">Not yet confirmed</span>{{end}}{{with .Bloom}}<span class="tag">Blooms {{.}}</span>{{end}}</div>
+    <div class="row-tags">{{if .Status.Written}}<span class="tag">{{say $l .Status}}</span>{{end}}{{if .Confirmed}}<span class="tag tag-ok">{{t $l "ID confirmed"}}</span>{{else}}<span class="tag tag-open">{{t $l "Not yet confirmed"}}</span>{{end}}{{if .Bloom.Items}}<span class="tag">{{t $l "Blooms {months}" "months" .Bloom}}</span>{{end}}</div>
   </div>
-  <span class="row-go" aria-hidden="true">Edit ›</span>
+  <span class="row-go" aria-hidden="true">{{t $l "Edit"}} ›</span>
 </a></li>
 {{end}}</ul>
 {{else}}
-<div class="card empty"><p>No plants yet. Start with what is going into the rain garden.</p></div>
+<div class="card empty"><p>{{t $l "No plants yet. Start with what is going into the rain garden."}}</p></div>
 {{end}}
 
-<a class="button button-block" href="/steward/species/new">Add a plant</a>
-</div>
+<a class="button button-block" href="/steward/species/new">{{t $l "Add a plant"}}</a>
 {{end}}{{end}}
 
 {{/* A colour dot. An SVG fill rather than a style attribute, which the page's

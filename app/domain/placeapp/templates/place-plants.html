@@ -1,54 +1,52 @@
-{{define "title"}}Plants at {{.Data.PlaceName}} · Garden stewards{{end}}
-{{define "content"}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow"><a href="/steward/places/{{.PlaceID}}/edit">{{.PlaceName}}</a></p>
-<h1>Plants here</h1>
-<p class="lead">What is still to plant at {{.PlaceName}}, and what a volunteer should protect, pull or be careful with. Volunteers see this on <a href="/places/{{.Slug}}">its card</a>.</p>
+{{define "title"}}{{plain .Lang "Plants at {place}" "place" .Data.PlaceName}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow"><a href="/steward/places/{{.PlaceID}}/edit">{{say $l .PlaceName}}</a></p>
+<h1>{{t $l "Plants here"}}</h1>
+<p class="lead">{{t $l "What is still to plant at {place}, and what a volunteer should protect, pull or be careful with. Volunteers see this on {card}." "place" .PlaceName "card" (link (print "/places/" .Slug) (t $l "its card"))}}</p>
 
-{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
-{{with .Problem}}<p class="problem" role="alert">{{.}} Nothing was saved yet.</p>{{end}}
+{{with .Done}}<p class="done" role="status">{{say $l .}}</p>{{end}}
+{{with .Problem}}<p class="problem" role="alert">{{say $l .}} {{t $l "Nothing was saved yet."}}</p>{{end}}
 
 {{if .Rows}}
 <ul class="rows">
 {{range .Rows}}<li class="card listing">
   <form class="form" method="post" action="/steward/places/{{$.Data.PlaceID}}/plants">
     <input type="hidden" name="species" value="{{.SpeciesID}}">
-    <p class="row-name">{{.Name}}{{with .Scientific}} <span class="row-note"><i>{{.}}</i></span>{{end}}</p>
-    <label for="action-{{.SpeciesID}}">What to do with it here</label>
-    <select id="action-{{.SpeciesID}}" name="action">{{range .Actions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
-    <label class="check"><input type="checkbox" name="planned" value="yes"{{if .Planned}} checked{{end}}> To plant: not in the ground yet, or more are going in</label>
-    <label for="note-{{.SpeciesID}}">Note <span class="optional">optional</span></label>
+    <p class="row-name">{{say $l .Name}}{{with .Scientific}} <span class="row-note"><i>{{.}}</i></span>{{end}}</p>
+    <label for="action-{{.SpeciesID}}">{{t $l "What to do with it here"}}</label>
+    <select id="action-{{.SpeciesID}}" name="action">{{range .Actions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{words $l .Label}}</option>{{end}}</select>
+    <label class="check"><input type="checkbox" name="planned" value="yes"{{if .Planned}} checked{{end}}> {{t $l "To plant: not in the ground yet, or more are going in"}}</label>
+    <label for="note-{{.SpeciesID}}">{{t $l "Note"}} <span class="optional">{{t $l "optional"}}</span></label>
     <input id="note-{{.SpeciesID}}" name="note" type="text" value="{{.Note.Value}}" lang="{{.Note.Lang}}" maxlength="500">
-    <button class="button button-quiet" type="submit">Save</button>
+    <button class="button button-quiet" type="submit">{{t $l "Save"}}</button>
   </form>
   <form method="post" action="/steward/places/{{$.Data.PlaceID}}/plants/{{.SpeciesID}}/remove">
-    <button class="linkish" type="submit">Take {{.Name}} off this list</button>
+    <button class="linkish" type="submit">{{t $l "Take {plant} off this list" "plant" .Name}}</button>
   </form>
 </li>
 {{end}}</ul>
 {{else}}
-<div class="card empty"><p>Nothing listed here yet.</p></div>
+<div class="card empty"><p>{{t $l "Nothing listed here yet."}}</p></div>
 {{end}}
 
-<h2>List a plant here</h2>
+<h2>{{t $l "List a plant here"}}</h2>
 {{if .NoSpecies}}
-<div class="card"><p>There are no plants to choose from yet. <a href="/steward/species/new">Add a plant</a> first, then come back.</p></div>
+<div class="card"><p>{{t $l "There are no plants to choose from yet. {add} first, then come back." "add" (link "/steward/species/new" (t $l "Add a plant"))}}</p></div>
 {{else if .AllListed}}
-<div class="card"><p>Every plant is already listed here. <a href="/steward/species/new">Add another plant</a> to list it.</p></div>
+<div class="card"><p>{{t $l "Every plant is already listed here. {add} to list it." "add" (link "/steward/species/new" (t $l "Add another plant"))}}</p></div>
 {{else}}
 <form class="card form" method="post" action="/steward/places/{{.PlaceID}}/plants">
-  <label for="species">Plant</label>
-  <select id="species" name="species" required data-find="Type part of its name">{{range .Add.Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
-  <label for="action">What to do with it here</label>
-  <select id="action" name="action">{{range .Add.Actions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
-  <label class="check"><input type="checkbox" name="planned" value="yes"{{if .Add.Planned}} checked{{end}}> To plant: not in the ground yet, or more are going in</label>
-  <p class="help">A plant to plant goes on the card's "To plant" list and is always protected. Untick it once it is in the ground; it stays under Protect and on the flowering calendar.</p>
-  <label for="note">Note <span class="optional">optional</span></label>
-  <p class="help" id="note-help">What to know about it here: "six around the pipe outlets", "pull before it seeds".</p>
+  <label for="species">{{t $l "Plant"}}</label>
+  <select id="species" name="species" required data-find="{{plain $l "Type part of its name"}}">{{range .Add.Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}{{if .Selected}} selected{{end}}>{{words $l .Label}}{{with .After}} ({{.}}){{end}}</option>{{end}}</select>
+  <label for="action">{{t $l "What to do with it here"}}</label>
+  <select id="action" name="action">{{range .Add.Actions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{words $l .Label}}</option>{{end}}</select>
+  <label class="check"><input type="checkbox" name="planned" value="yes"{{if .Add.Planned}} checked{{end}}> {{t $l "To plant: not in the ground yet, or more are going in"}}</label>
+  <p class="help">{{t $l "A plant to plant goes on the card's “To plant” list and is always protected. Untick it once it is in the ground; it stays under Protect and on the flowering calendar."}}</p>
+  <label for="note">{{t $l "Note"}} <span class="optional">{{t $l "optional"}}</span></label>
+  <p class="help" id="note-help">{{t $l "What to know about it here: “six around the pipe outlets”, “pull before it seeds”."}}</p>
   <input id="note" name="note" type="text" value="{{.Add.Note.Value}}" lang="{{.Add.Note.Lang}}" aria-describedby="note-help" maxlength="500">
-  <button class="button" type="submit">List it here</button>
+  <button class="button" type="submit">{{t $l "List it here"}}</button>
 </form>
 <script type="module" src="{{$.Script "find.mjs"}}"></script>
 {{end}}
-</div>
 {{end}}{{end}}

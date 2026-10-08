@@ -93,7 +93,7 @@ func serveAt(t *testing.T, baseURL string) *site {
 
 	listings := listingbus.NewBusiness(listingdb.NewStore(db), memory, nil)
 	workdays := workdaybus.NewBusiness(workdaydb.NewStore(db), memory, nil)
-	memory.ReadFrom(s.places, s.species, listings, workdays, muxer.Words())
+	memory.ReadFrom(s.places, s.species, listings, workdays)
 
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -149,6 +150,19 @@ func (s *site) do(method, path string, form url.Values) *httptest.ResponseRecord
 	return w
 }
 
+// waiting is the count of what waits for Claude as the page says it: the
+// skinny bed's name, and the screens' own words, which the muxer lists.
+func (s *site) waiting() string {
+	s.t.Helper()
+
+	c, err := s.memory.Counts(s.t.Context())
+	if err != nil {
+		s.t.Fatal(err)
+	}
+
+	return "· " + strconv.Itoa(c.Waiting) + " waiting for Claude"
+}
+
 func contains(t *testing.T, page string, wants ...string) {
 	t.Helper()
 
@@ -171,7 +185,7 @@ func TestAStewardChecksATranslation(t *testing.T) {
 	list := s.do(http.MethodGet, "/steward/translations", nil).Body.String()
 	sun := translationbus.Key("Full sun, dry by July")
 	contains(t, list,
-		"3 not checked yet", "1 waiting for Claude",
+		"3 not checked yet", s.waiting(),
 		`<p class="translation-text" lang="en">Full sun, dry by July</p>`,
 		`<p class="translation-text" lang="es">Pleno sol, seco en julio</p>`,
 		"Spanish, by Claude", "Rain garden: its conditions, for a planter",
@@ -247,12 +261,14 @@ func TestAStewardSendsATranslationBack(t *testing.T) {
 	}
 
 	waiting, err := s.memory.Waiting(t.Context(), 10)
-	if err != nil || waiting.Remaining != 2 || waiting.Pending[0].Note != "Dry from July on, not by July" {
+	// The one sent back leads, before the place's name and the screens' own
+	// words.
+	if err != nil || waiting.Pending[0].Note != "Dry from July on, not by July" || waiting.Pending[1].Source != "Skinny bed" {
 		t.Errorf("waiting: %+v, %v", waiting, err)
 	}
 
 	contains(t, s.do(http.MethodGet, "/steward/translations?done=back", nil).Body.String(),
-		"Sent back.", `<span class="tag tag-sun">Sent back</span>`, "Your note: “Dry from July on, not by July”", "2 waiting for Claude")
+		"Sent back.", `<span class="tag tag-sun">Sent back</span>`, "Your note: “Dry from July on, not by July”", s.waiting())
 
 	if w := s.do(http.MethodPost, "/steward/translations/not-a-key/check", url.Values{}); w.Code != http.StatusNotFound {
 		t.Errorf("a key that is not one: %d", w.Code)

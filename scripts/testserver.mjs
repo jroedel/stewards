@@ -6,7 +6,7 @@
 // script and the header policy it runs under, the zoom pages' pictures as the
 // server makes them -- rather than each starting its own the same way.
 import { execFileSync, spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -102,8 +102,13 @@ export async function translate({ base, cookie }, pairs) {
   if (!key) throw new Error(`no key was made: ${keys.status}`);
 
   const api = { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
-  const { pending } = await (await fetch(`${base}/api/v1/translations/pending?limit=200`, { headers: api, signal })).json();
-  const translations = pending.filter((p) => pairs[p.text]).map((p) => ({ key: p.key, from: "en", text: pairs[p.text] }));
+  // The key is worked out here, as translationbus.Key does, rather than
+  // looked up in the pending list: that list gives 200 at most, and with
+  // every screen's words waiting on a fresh database, which 200 a test's
+  // words fall among is luck. An original misspelt here has no translation
+  // waiting, and the PUT refuses it.
+  const key16 = (text) => createHash("sha256").update(text).digest("hex").slice(0, 16);
+  const translations = Object.entries(pairs).map(([en, es]) => ({ key: key16(en), from: "en", text: es }));
 
   const put = await fetch(`${base}/api/v1/translations`, { method: "PUT", headers: api, signal, body: JSON.stringify({ translations }) });
   const { results } = await put.json();

@@ -124,8 +124,11 @@ photos**: set it aside and say so.
 
 All the app's translating is yours, both ways between English and Spanish:
 place names and notes, plant names and notes, the notes on plants listed at
-places, and work days -- and the app's own words on the screens volunteers
-read: headings, buttons, help, dates. A translation you send is on every screen at once; a
+places, and work days -- and the app's own words: headings, buttons, help and
+dates on the volunteers' screens and the stewards' own, and the emails it
+sends. A sentence's `{placeholders}` (`{date}`, `{count}`) are filled in on
+the screen: keep each one as it is, moved to wherever Spanish puts it. A
+translation you send is on every screen at once; a
 steward checks them when they choose, on the translations screen.
 
 "Translate what's waiting" means:

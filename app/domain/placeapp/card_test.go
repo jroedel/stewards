@@ -126,7 +126,7 @@ func TestTheCardsOwnWordsWaitForClaude(t *testing.T) {
 	s.pilot()
 	s.post("/steward/places", url.Values{"slug": {"st-francis"}, "name": {"St. Francis garden"}, "trail_anchor": {"francis"}})
 
-	waiting, err := s.memory.Waiting(t.Context(), 200)
+	waiting, err := s.memory.Waiting(t.Context(), 1000)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,52 +1,48 @@
-{{define "title"}}{{.Data.Heading}} · Garden stewards{{end}}
-{{define "content"}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow"><a href="/steward/days">Stewardship days</a></p>
-<h1>{{.Heading}}</h1>
+{{define "title"}}{{words .Lang .Data.Heading}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow"><a href="/steward/days">{{t $l "Stewardship days"}}</a></p>
+<h1>{{say $l .Heading}}</h1>
 
-{{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below and press Save again.</p>{{end}}
-<p class="help">Write in English or in Spanish, whichever you think in. Claude translates it into the other.</p>
+{{if .Problems}}<p class="problem" role="alert">{{t $l "Nothing was saved yet. Fix what is marked below and press Save again."}}</p>{{end}}
+<p class="help">{{t $l "Write in English or in Spanish, whichever you think in. Claude translates it into the other."}}</p>
 
 <form class="card form" method="post" action="{{if .ID}}/steward/days/{{.ID}}{{else}}/steward/days{{end}}">
-  <label for="date">Date</label>
-  {{template "field-problem" (index .Problems "date")}}
+  <label for="date">{{t $l "Date"}}</label>
+  {{with index .Problems "date"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   <input id="date" name="date" type="date" value="{{.Date}}" required>
 
   <div class="pair">
     <div>
-      <label for="starts">Starts</label>
+      <label for="starts">{{t $l "Starts"}}</label>
       <input id="starts" name="starts" type="time" value="{{.Starts}}" step="900" required>
     </div>
     <div>
-      <label for="ends">Ends</label>
+      <label for="ends">{{t $l "Ends"}}</label>
       <input id="ends" name="ends" type="time" value="{{.Ends}}" step="900" required>
     </div>
   </div>
-  {{template "field-problem" (index .Problems "ends")}}
-  <p class="help">Austin time.</p>
+  {{with index .Problems "ends"}}<p class="field-problem">{{say $l .}}</p>{{end}}
+  <p class="help">{{t $l "Austin time."}}</p>
 
-  <label for="title">What you will work on</label>
-  <p class="help" id="title-help">A few words, for the list on the home page: "Planting the rain garden", "Weeding the skinny bed".</p>
-  {{template "field-problem" (index .Problems "title")}}
+  <label for="title">{{t $l "What you will work on"}}</label>
+  <p class="help" id="title-help">{{t $l "A few words, for the list on the home page: “Planting the rain garden”, “Weeding the skinny bed”."}}</p>
+  {{with index .Problems "title"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   <input id="title" name="title" type="text" value="{{.Title.Value}}" lang="{{.Title.Lang}}" aria-describedby="title-help" required maxlength="80">
 
-  <label for="details">Details <span class="optional">optional</span></label>
-  <p class="help" id="details-help">Anything a newcomer would want to know: where to meet, what to wear, what the work is like.</p>
-  {{template "field-problem" (index .Problems "details")}}
+  <label for="details">{{t $l "Details"}} <span class="optional">{{t $l "optional"}}</span></label>
+  <p class="help" id="details-help">{{t $l "Anything a newcomer would want to know: where to meet, what to wear, what the work is like."}}</p>
+  {{with index .Problems "details"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   <textarea id="details" name="details" rows="4" lang="{{.Details.Lang}}" aria-describedby="details-help" maxlength="1000">{{.Details.Value}}</textarea>
 
-  <button class="button" type="submit">Save</button>
+  <button class="button" type="submit">{{t $l "Save"}}</button>
 </form>
 
 {{if .ID}}
 <form class="card form danger" method="post" action="/steward/days/{{.ID}}/delete">
-  <h2>Remove this day</h2>
-  {{with .DeleteProblem}}<p class="problem" role="alert">{{.}}</p>{{end}}
-  <label class="check"><input type="checkbox" name="confirm" value="yes"> Yes, take it off the calendar</label>
-  <button class="button button-quiet" type="submit">Remove</button>
+  <h2>{{t $l "Remove this day"}}</h2>
+  {{with .DeleteProblem}}<p class="problem" role="alert">{{say $l .}}</p>{{end}}
+  <label class="check"><input type="checkbox" name="confirm" value="yes"> {{t $l "Yes, take it off the calendar"}}</label>
+  <button class="button button-quiet" type="submit">{{t $l "Remove"}}</button>
 </form>
 {{end}}
-</div>
 {{end}}{{end}}
-
-{{define "field-problem"}}{{if .}}<p class="field-problem">{{.}}</p>{{end}}{{end}}

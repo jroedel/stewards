@@ -17,7 +17,7 @@ type calendarWords struct {
 	Months   [12]types.Text
 	Weekdays [7]types.Text // Sunday first, as time.Weekday counts
 
-	Date, MonthYear, DayMonth, Run types.Text
+	Date, FullDate, MonthYear, DayMonth, DayMonthYear, Run types.Text
 
 	SameHalf map[string]types.Text // by "am" or "pm"
 	Clock    map[string]types.Text
@@ -39,7 +39,10 @@ var calendar = calendarWords{
 	Date:      types.Text{EN: "{weekday}, {month} {day}"},
 	MonthYear: types.Text{EN: "{month} {year}"},
 	DayMonth:  types.Text{EN: "{day} {month}"},
-	Run:       types.Text{EN: "{from} to {to}"},
+
+	DayMonthYear: types.Text{EN: "{day} {month} {year}"},
+	FullDate:     types.Text{EN: "{weekday} {day} {month} {year}"},
+	Run:          types.Text{EN: "{from} to {to}"},
 
 	SameHalf: map[string]types.Text{"am": {EN: "{from}–{to} am"}, "pm": {EN: "{from}–{to} pm"}},
 	Clock:    map[string]types.Text{"am": {EN: "{time} am"}, "pm": {EN: "{time} pm"}},
@@ -102,6 +105,22 @@ func DayMonth(t time.Time) Phrase {
 	t = t.In(types.Garden)
 
 	return Put(calendar.DayMonth, "day", t.Day(), "month", Month(t.Month()))
+}
+
+// FullDate is "Saturday 3 October 2026": a day long past or far off, on a
+// steward's screens, in the garden's time zone.
+func FullDate(t time.Time) Phrase {
+	t = t.In(types.Garden)
+
+	return Put(calendar.FullDate, "weekday", calendar.Weekdays[t.Weekday()], "day", t.Day(), "month", Month(t.Month()), "year", strconv.Itoa(t.Year()))
+}
+
+// DayMonthYear is "2 January 2027", a day on a steward's screens, in the
+// garden's time zone, so that "used today" means today in Texas.
+func DayMonthYear(t time.Time) Phrase {
+	t = t.In(types.Garden)
+
+	return Put(calendar.DayMonthYear, "day", t.Day(), "month", Month(t.Month()), "year", strconv.Itoa(t.Year()))
 }
 
 // Run is "March to May": the months of a set, a run at a time, as a

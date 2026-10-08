@@ -73,6 +73,7 @@ type cardWording struct {
 // Words is the card's copy, for the catalog the translation memory lists.
 var Words = page.Catalog{
 	{Where: "the plant card, which a volunteer reads standing in the garden to tell what a plant is", Words: cardWords},
+	{Where: "the stewards' screens for plants", Words: stewardWords},
 }
 
 // The card's own words, in English; Claude translates them through the

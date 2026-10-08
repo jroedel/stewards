@@ -86,8 +86,8 @@ type row struct {
 	// language it is in, for lang= and for the label above it.
 	Source, Translated    string
 	SourceLang, TransLang types.Lang
-	SourceName, TransName string
-	By                    string
+	SourceName, TransName types.Text
+	By                    types.Text
 	Checked               bool
 	Note                  string
 
@@ -101,7 +101,8 @@ type row struct {
 
 	// After a refusal: which form to open, what was typed in it, and what
 	// is wrong.
-	Open, Typed, Problem string
+	Open, Typed string
+	Problem     types.Text
 }
 
 type listView struct {
@@ -110,9 +111,34 @@ type listView struct {
 	More    int // how many more there are than are shown
 	Next    int // how many to ask for to see them
 	Counts  translationbus.Counts
-	Done    string
+	Done    types.Text
 	Pending []string // the keys of the shown rows still to check
 }
+
+// The words this app says from Go, in English; Claude translates them
+// through the translation memory, and say looks them up (page/words.go).
+// The rest are in the template, through t.
+type wording struct {
+	Checked, AllChecked, Saved, SentBack types.Text
+
+	// Who made a translation, after its language: "Spanish, by Claude".
+	ByClaude, BySteward, Given types.Text
+}
+
+var words = wording{
+	Checked:    types.Text{EN: "Checked."},
+	AllChecked: types.Text{EN: "All of those are checked."},
+	Saved:      types.Text{EN: "Your translation is saved, and on the screens now."},
+	SentBack:   types.Text{EN: "Sent back. Claude sees your note the next time it translates what is waiting; the translation stays until then."},
+
+	ByClaude:  types.Text{EN: "by Claude"},
+	BySteward: types.Text{EN: "by a steward"},
+	Given:     types.Text{EN: "written with the original"},
+}
+
+// Words is this app's copy held in Go, for the catalog the translation
+// memory lists.
+var Words = page.Catalog{{Where: "the stewards' screen for checking translations", Words: words}}
 
 func (a app) list(w http.ResponseWriter, r *http.Request) {
 	a.render(w, r, http.StatusOK, nil)
@@ -188,13 +214,13 @@ func (a app) render(w http.ResponseWriter, r *http.Request, status int, failed *
 	// A fixed sentence chosen by a word, never the query echoed.
 	switch q.Get("done") {
 	case "checked":
-		v.Done = "Checked."
+		v.Done = words.Checked
 	case "all":
-		v.Done = "All of those are checked."
+		v.Done = words.AllChecked
 	case "saved":
-		v.Done = "Your translation is saved, and on the screens now."
+		v.Done = words.Saved
 	case "back":
-		v.Done = "Sent back. Claude sees your note the next time it translates what is waiting; the translation stays until then."
+		v.Done = words.SentBack
 	}
 
 	a.cfg.Render.Render(w, r, status, "steward-translations", v)
@@ -210,28 +236,20 @@ func rowOf(t translationbus.Listed) row {
 		Key: t.Key, Where: t.Where,
 		Source: t.Source, Translated: t.Translated,
 		SourceLang: t.From, TransLang: other,
-		SourceName: language(t.From), TransName: language(other),
+		SourceName: page.Language(t.From), TransName: page.Language(other),
 		By: byWords(t.By), Checked: t.Checked, Note: t.Note,
 	}
 }
 
-func language(l types.Lang) string {
-	if l == types.Spanish {
-		return "Spanish"
-	}
-
-	return "English"
-}
-
-func byWords(o translationbus.Origin) string {
+func byWords(o translationbus.Origin) types.Text {
 	switch o {
 	case translationbus.ByClaude:
-		return "by Claude"
+		return words.ByClaude
 	case translationbus.BySteward:
-		return "by a steward"
+		return words.BySteward
 	}
 
-	return "written with the original"
+	return words.Given
 }
 
 // ------------------------------------------------------------------ the buttons
@@ -344,7 +362,7 @@ func (a app) refused(w http.ResponseWriter, r *http.Request, err error, failed r
 	case err == nil:
 		return false
 	case isInvalid:
-		failed.Problem = page.Sentence(invalid.Problem)
+		failed.Problem = types.Text{EN: page.Sentence(invalid.Problem)}
 		a.render(w, r, http.StatusUnprocessableEntity, &failed)
 	case errors.Is(err, translationbus.ErrNotFound):
 		http.Redirect(w, r, back(r, ""), http.StatusSeeOther)

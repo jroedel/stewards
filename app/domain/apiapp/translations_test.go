@@ -33,6 +33,9 @@ func (s *site) translate(body any) *http.Response {
 func TestClaudeTranslatesWhatIsWaiting(t *testing.T) {
 	s := serve(t)
 
+	// The screens' own words wait from the start; the plant's come first.
+	before := decode[pendingAnswer](t, s.api(http.MethodGet, "/api/v1/translations/pending", s.key, nil, "")).Remaining
+
 	plant := winecup()
 	plant["note"] = map[string]string{"en": "Cut back after it seeds."}
 
@@ -47,7 +50,7 @@ func TestClaudeTranslatesWhatIsWaiting(t *testing.T) {
 	w := s.api(http.MethodGet, "/api/v1/translations/pending", s.key, nil, "")
 	got := decode[pendingAnswer](t, w)
 
-	if w.Code != http.StatusOK || got.Remaining != 2 || len(got.Pending) != 2 {
+	if w.Code != http.StatusOK || got.Remaining != before+2 || len(got.Pending) < 2 {
 		t.Fatalf("pending: %d %s", w.Code, w.Body.String())
 	}
 
@@ -91,7 +94,7 @@ func TestClaudeTranslatesWhatIsWaiting(t *testing.T) {
 	}
 
 	got = decode[pendingAnswer](t, s.api(http.MethodGet, "/api/v1/translations/pending", s.key, nil, ""))
-	if got.Remaining != 0 || len(got.Pending) != 0 || len(got.Glossary) != 1 || got.Glossary[0].ES != "Copa de vino" {
+	if got.Remaining != before || len(got.Glossary) != 1 || got.Glossary[0].ES != "Copa de vino" {
 		t.Errorf("after: %+v", got)
 	}
 

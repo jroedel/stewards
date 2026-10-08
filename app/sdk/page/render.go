@@ -72,6 +72,11 @@ type Renderer struct {
 	// words is the translation memory the screens' own words are looked up
 	// in, or nil: see Translate.
 	words Translations
+
+	// layout is the files the layout was parsed from, which every page is
+	// a copy of: the words in them are listed once, not once a page
+	// (Originals).
+	layout map[string]bool
 }
 
 type asset struct {
@@ -147,6 +152,13 @@ func NewRenderer(log *slog.Logger, own ...fs.FS) (*Renderer, error) {
 	}
 
 	pages := map[string]*template.Template{}
+
+	rn.layout = map[string]bool{}
+	for _, tmpl := range base.Templates() {
+		if tmpl.Tree != nil {
+			rn.layout[tmpl.Tree.ParseName] = true
+		}
+	}
 
 	for _, fsys := range own {
 		names, err := fs.Glob(fsys, "templates/*.html")

@@ -14,8 +14,15 @@ import (
 func (rn *Renderer) funcs() template.FuncMap {
 	return template.FuncMap{
 		"say":      rn.say,
+		"t":        rn.t,
+		"plain":    rn.tPlain,
+		"link":     link,
+		"strong":   strong,
+		"code":     code,
+		"pass":     pass,
 		"words":    rn.plain,
 		"initial":  rn.initial,
+		"abbr":     rn.abbr,
 		"sentence": Sentence,
 		"short":    Short,
 	}

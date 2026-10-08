@@ -1,30 +1,28 @@
-{{define "title"}}First sign-in · Garden stewards{{end}}
-{{define "signin-link"}}<a href="/places">Back to the places list</a>{{end}}
+{{define "title"}}{{plain .Lang "First sign-in"}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "signin-link"}}<a href="/places">{{t .Lang "Back to the places list"}}</a>{{end}}
 {{define "content"}}{{$l := .Lang}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow">Garden stewards</p>
+<p class="eyebrow">{{t $l "Garden stewards"}}</p>
 {{if .Spent}}
-<h1>Already set up</h1>
-<p class="lead">The one-time secret has been used, and it cannot be used again, even if a new one is written into the server's configuration.</p>
+<h1>{{t $l "Already set up"}}</h1>
+<p class="lead">{{t $l "The one-time secret has been used, and it cannot be used again, even if a new one is written into the server's configuration."}}</p>
 
 <div class="card">
-  <p>If you are a steward, <a href="/sign-in">ask for a sign-in link</a>. If no link arrives, another steward can check the address you were added with.</p>
+  <p>{{t $l "If you are a steward, {ask}. If no link arrives, another steward can check the address you were added with." "ask" (link "/sign-in" (t $l "ask for a sign-in link"))}}</p>
 </div>
 {{else}}
-<h1>First sign-in</h1>
-<p class="lead">This uses the one-time secret from the server's configuration and sends no email, so the first steward can get in before mail is working. It works once.</p>
+<h1>{{t $l "First sign-in"}}</h1>
+<p class="lead">{{t $l "This uses the one-time secret from the server's configuration and sends no email, so the first steward can get in before mail is working. It works once."}}</p>
 
 {{if .Problem.Written}}<p class="problem" role="alert">{{say $l .Problem}}</p>{{end}}
 
 <form class="card form" method="post" action="/sign-in/first">
-  <label for="email">Your email address</label>
-  <p class="help" id="email-help">An account is made for it if there isn't one.</p>
+  <label for="email">{{t $l "Your email address"}}</label>
+  <p class="help" id="email-help">{{t $l "An account is made for it if there isn't one."}}</p>
   <input id="email" name="email" type="email" value="{{.Email}}" aria-describedby="email-help"
          required autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false">
-  <label for="secret">The one-time secret</label>
+  <label for="secret">{{t $l "The one-time secret"}}</label>
   <input id="secret" name="secret" type="password" required autocomplete="off">
-  <button class="button" type="submit">Sign in</button>
+  <button class="button" type="submit">{{t $l "Sign in"}}</button>
 </form>
 {{end}}
-</div>
 {{end}}{{end}}

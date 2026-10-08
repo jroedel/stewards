@@ -101,14 +101,14 @@ const maxBody = 64 << 10
 const maxUpload = photobus.MaxBytes + 1<<20
 
 // New builds the handler.
-// Words is every app's own words, the ones written in the code rather than
-// by a steward, for the translation memory to list as waiting: main hands it
-// to translationbus beside the domains. An app that says something to a
-// volunteer through say has its copy here, or Claude never sees it to
-// translate and the page shows it in English.
-func Words() page.Catalog {
+// words is every app's own words held in Go, the ones written in the code
+// rather than by a steward, for the translation memory to list as waiting.
+// An app that says something through say has its copy here, or Claude never
+// sees it to translate and the page shows it in English. Words in a
+// template, through t, are found by the renderer instead.
+func words() page.Catalog {
 	var out page.Catalog
-	for _, c := range []page.Catalog{homeapp.Words, placeapp.Words, speciesapp.Words, signupapp.Words, {page.CalendarWords}} {
+	for _, c := range []page.Catalog{homeapp.Words, placeapp.Words, speciesapp.Words, signupapp.Words, authapp.Words, oauthapp.Words, stewardapp.Words, workdayapp.Words, translationapp.Words, nurseryapp.Words, {page.CalendarWords, page.LanguageWords}} {
 		out = append(out, c...)
 	}
 
@@ -128,9 +128,11 @@ func New(cfg Config) (http.Handler, error) {
 	}
 
 	// The screens' own words are looked up in the same memory as the
-	// stewards' (see Words).
+	// stewards', and listed in it as waiting: the apps' copy (see words) and
+	// every {{t}} in the templates, which the renderer finds itself.
 	if cfg.Translations != nil {
 		render.Translate(cfg.Translations)
+		cfg.Translations.ReadFrom(words(), render)
 	}
 
 	mux := http.NewServeMux()

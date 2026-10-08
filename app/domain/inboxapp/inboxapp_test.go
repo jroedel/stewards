@@ -1154,7 +1154,7 @@ func TestTheNurseriesAreARegister(t *testing.T) {
 
 	// One added by mistake goes, once the box is ticked.
 	w = s.post("/steward/nurseries", url.Values{"name": {"Barton Springs Nursery"}, "website": {"javascript:alert(1)"}})
-	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "Write the website&#39;s address") {
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "Write the website's address") {
 		t.Errorf("a script for a website: %d", w.Code)
 	}
 
