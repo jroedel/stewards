@@ -16,6 +16,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
@@ -70,6 +71,39 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 	mountKeys(mux, a, guard)
 }
 
+// The words this app says from Go, in English; Claude translates them
+// through the translation memory, and say looks them up (page/words.go).
+// The rest are in the templates, through t.
+type wording struct {
+	Sent, Added, Off, On, NotAnEmail, Taken types.Text
+
+	// The note a new steward is sent, in plain text.
+	MailSubject, MailText types.Text
+}
+
+var words = wording{
+	Sent:       types.Text{EN: "Added. We emailed them to say so, with the address of the sign-in page."},
+	Added:      types.Text{EN: "Added. Tell them to sign in at {address} with that address."},
+	Off:        types.Text{EN: "Turned off. They are signed out everywhere and cannot sign in."},
+	On:         types.Text{EN: "Turned back on. They can ask for a sign-in link again."},
+	NotAnEmail: types.Text{EN: "That does not look like an email address. Check it for a typo."},
+	Taken:      types.Text{EN: "A steward already has that address."},
+
+	MailSubject: types.Text{EN: "You are now a garden steward"},
+	MailText: types.Text{EN: "You have been added as one of the garden stewards for the Schoenstatt Fathers' Trail of the Saints.\n\n" +
+		"To sign in, open this page and give this address, {address}:\n\n{link}\n\n" +
+		"We will email you a link. There is no password.\n\n" +
+		"If you were not expecting this, you can ignore it; nothing happens unless you sign in.\n\n" +
+		"-- The garden stewards\n"},
+}
+
+// Words is this app's copy held in Go, for the catalog the translation
+// memory lists.
+var Words = page.Catalog{
+	{Where: "the stewards' list of stewards, and the API keys screen; Mail is the note a new steward is emailed", Words: words},
+	{Where: "the API keys screen, for a steward", Words: keyWords},
+}
+
 type row struct {
 	ID, Email, Name string
 	Enabled, You    bool
@@ -81,10 +115,10 @@ type view struct {
 
 	// What was just typed into the add form, and what was wrong with it.
 	Email, Name string
-	Problems    map[string]string
+	Problems    map[string]any
 
 	// Done says what just happened. Problem is a refusal about a row.
-	Done, Problem string
+	Done, Problem any
 }
 
 func (a app) list(w http.ResponseWriter, r *http.Request) {
@@ -93,13 +127,13 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 	// A fixed sentence chosen by a word, never the query echoed.
 	switch r.URL.Query().Get("done") {
 	case "sent":
-		v.Done = "Added. We emailed them to say so, with the address of the sign-in page."
+		v.Done = words.Sent
 	case "added":
-		v.Done = "Added. Tell them to sign in at " + a.cfg.BaseURL + "/sign-in with that address."
+		v.Done = page.Put(words.Added, "address", a.cfg.BaseURL+"/sign-in")
 	case "off":
-		v.Done = "Turned off. They are signed out everywhere and cannot sign in."
+		v.Done = words.Off
 	case "on":
-		v.Done = "Turned back on. They can ask for a sign-in link again."
+		v.Done = words.On
 	}
 
 	a.show(w, r, http.StatusOK, v)
@@ -114,11 +148,11 @@ func (a app) add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v := view{Email: r.PostFormValue("email"), Name: r.PostFormValue("name"), Problems: map[string]string{}}
+	v := view{Email: r.PostFormValue("email"), Name: r.PostFormValue("name"), Problems: map[string]any{}}
 
 	email, err := types.ParseEmail(v.Email)
 	if err != nil {
-		v.Problems["email"] = "That does not look like an email address. Check it for a typo."
+		v.Problems["email"] = words.NotAnEmail
 		a.show(w, r, http.StatusUnprocessableEntity, v)
 
 		return
@@ -130,12 +164,12 @@ func (a app) add(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case errors.Is(err, userbus.ErrEmailTaken):
-		v.Problems["email"] = "A steward already has that address."
+		v.Problems["email"] = words.Taken
 		a.show(w, r, http.StatusUnprocessableEntity, v)
 
 		return
 	case isInvalid:
-		v.Problems[invalid.Field] = page.Sentence(invalid.Problem)
+		v.Problems[invalid.Field] = types.Text{EN: page.Sentence(invalid.Problem)}
 		a.show(w, r, http.StatusUnprocessableEntity, v)
 
 		return
@@ -163,19 +197,15 @@ func (a app) tell(r *http.Request, u userbus.User) bool {
 		return false
 	}
 
-	signIn := a.cfg.BaseURL + "/sign-in"
-
-	text := "You have been added as one of the garden stewards for the Schoenstatt Fathers' Trail of the Saints.\r\n\r\n" +
-		"To sign in, open this page and give this address, " + u.Email.String() + ":\r\n\r\n" +
-		signIn + "\r\n\r\n" +
-		"We will email you a link. There is no password.\r\n\r\n" +
-		"If you were not expecting this, you can ignore it; nothing happens unless you sign in.\r\n\r\n" +
-		"-- The garden stewards\r\n"
+	// In the language of the steward adding them: who they know is the
+	// best guess at the language they read.
+	l := mid.LangFrom(r.Context())
+	text := a.cfg.Render.Plain(l, page.Put(words.MailText, "address", u.Email.String(), "link", a.cfg.BaseURL+"/sign-in"))
 
 	if err := a.cfg.Mail.Send(r.Context(), mail.Message{
 		To:      u.Email.String(),
-		Subject: "You are now a garden steward",
-		Text:    text,
+		Subject: a.cfg.Render.Plain(l, words.MailSubject),
+		Text:    strings.ReplaceAll(text, "\n", "\r\n"),
 	}); err != nil {
 		a.cfg.Log.Error("a new steward could not be told", "request_id", web.RequestIDFrom(r.Context()), "user_id", u.ID.String(), "error", err)
 
@@ -213,7 +243,7 @@ func (a app) access(w http.ResponseWriter, r *http.Request) {
 
 		return
 	case isInvalid:
-		a.show(w, r, http.StatusUnprocessableEntity, view{Problem: page.Sentence(invalid.Problem)})
+		a.show(w, r, http.StatusUnprocessableEntity, view{Problem: types.Text{EN: page.Sentence(invalid.Problem)}})
 
 		return
 	case err != nil:

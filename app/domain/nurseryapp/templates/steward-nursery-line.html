@@ -1,46 +1,44 @@
-{{define "title"}}Correct nursery stock · Garden stewards{{end}}
-{{define "content"}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow"><a href="/steward/nursery">Nursery stock</a></p>
-<h1>Correct a line</h1>
+{{define "title"}}{{plain .Lang "Correct nursery stock"}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow"><a href="/steward/nursery">{{t $l "Nursery stock"}}</a></p>
+<h1>{{t $l "Correct a line"}}</h1>
 
-{{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below and press Save.</p>{{end}}
+{{if .Problems}}<p class="problem" role="alert">{{t $l "Nothing was saved yet. Fix what is marked below and press Save."}}</p>{{end}}
 
 {{with .InboxID}}<div class="card"><a class="photo-large" href="/steward/inbox/{{.}}/large.jpg"><img src="/steward/inbox/{{.}}/large.jpg" alt=""></a></div>{{end}}
 
 <form class="card form" method="post" action="/steward/nursery/lines/{{.ID}}">
-  <label for="name_on_tag">Name on the tag</label>
-  {{with index .Problems "name_on_tag"}}<p class="field-problem">{{.}}</p>{{end}}
+  <label for="name_on_tag">{{t $l "Name on the tag"}}</label>
+  {{with index .Problems "name_on_tag"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   <input id="name_on_tag" name="name_on_tag" type="text" value="{{.NameOnTag}}" maxlength="100" autocomplete="off">
 
-  <label for="species">Which of our plants it is <span class="optional">optional</span></label>
-  <p class="help" id="species-help">Only if you are sure. A tag can be wrong.</p>
-  {{with index .Problems "species"}}<p class="field-problem">{{.}}</p>{{end}}
-  <select id="species" name="species" aria-describedby="species-help" data-find="Type part of its name">{{range .Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+  <label for="species">{{t $l "Which of our plants it is"}} <span class="optional">{{t $l "optional"}}</span></label>
+  <p class="help" id="species-help">{{t $l "Only if you are sure. A tag can be wrong."}}</p>
+  {{with index .Problems "species"}}<p class="field-problem">{{say $l .}}</p>{{end}}
+  <select id="species" name="species" aria-describedby="species-help" data-find="{{plain $l "Type part of its name"}}">{{range .Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}{{if .Selected}} selected{{end}}>{{words $l .Label}}{{with .Scientific}} ({{.}}){{end}}</option>{{end}}</select>
 
   <div class="pair">
     <div>
-      <label for="pot_size">Pot size</label>
-      {{with index .Problems "pot_size"}}<p class="field-problem">{{.}}</p>{{end}}
+      <label for="pot_size">{{t $l "Pot size"}}</label>
+      {{with index .Problems "pot_size"}}<p class="field-problem">{{say $l .}}</p>{{end}}
       <input id="pot_size" name="pot_size" type="text" value="{{.PotSize}}" maxlength="40">
     </div>
     <div>
-      <label for="price">Price</label>
-      {{with index .Problems "price"}}<p class="field-problem">{{.}}</p>{{end}}
+      <label for="price">{{t $l "Price"}}</label>
+      {{with index .Problems "price"}}<p class="field-problem">{{say $l .}}</p>{{end}}
       <input id="price" name="price" type="text" value="{{.Price}}" inputmode="decimal">
     </div>
   </div>
 
-  <label for="count">How many there were</label>
-  {{with index .Problems "count"}}<p class="field-problem">{{.}}</p>{{end}}
+  <label for="count">{{t $l "How many there were"}}</label>
+  {{with index .Problems "count"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   <input id="count" name="count" type="text" value="{{.Count}}" inputmode="numeric">
 
-  <label for="note">A note</label>
-  {{with index .Problems "note"}}<p class="field-problem">{{.}}</p>{{end}}
+  <label for="note">{{t $l "A note"}}</label>
+  {{with index .Problems "note"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   <input id="note" name="note" type="text" value="{{.Note}}" maxlength="300">
 
-  <button class="button" type="submit">Save</button>
+  <button class="button" type="submit">{{t $l "Save"}}</button>
 </form>
-</div>
 <script type="module" src="{{$.Script "find.mjs"}}"></script>
 {{end}}{{end}}

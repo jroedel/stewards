@@ -1,16 +1,15 @@
-{{define "title"}}Connect Claude · Garden stewards{{end}}
+{{define "title"}}{{plain .Lang "Connect Claude"}} · {{plain .Lang "Garden stewards"}}{{end}}
 {{define "content"}}{{$l := .Lang}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow">Garden stewards</p>
+<p class="eyebrow">{{t $l "Garden stewards"}}</p>
 {{if .Host}}
-<h1>Let {{.Name}} work as you?</h1>
-<p class="lead"><strong>{{.Host}}</strong> is asking to add and change plants, photos, places and what grows where, and to sort your photo inbox, as you ({{.Email}}).</p>
+<h1>{{t $l "Let {program} work as you?" "program" .Name}}</h1>
+<p class="lead">{{t $l "{host} is asking to add and change plants, photos, places and what grows where, and to sort your photo inbox, as you ({address})." "host" (strong .Host) "address" .Email}}</p>
 
 {{if .Problem.Written}}<p class="problem" role="alert">{{say $l .Problem}}</p>{{end}}
 
 <div class="card">
-  <p>It cannot confirm a plant, check a photo, or delete anything. What it sends waits on these screens for a steward to look at — except a plant it marks to pull, which is on the place card at once.</p>
-  <p>It gets a key that lasts 90 days. You can end it at any time on the <a href="/steward/keys">API keys</a> screen, where it is listed as “{{.KeyName}}”.</p>
+  <p>{{t $l "It cannot confirm a plant, check a photo, or delete anything. What it sends waits on these screens for a steward to look at — except a plant it marks to pull, which is on the place card at once."}}</p>
+  <p>{{t $l "It gets a key that lasts 90 days. You can end it at any time on the {keys} screen, where it is listed as “{name}”." "keys" (link "/steward/keys" (t $l "API keys")) "name" .KeyName}}</p>
 </div>
 
 <form class="card form" method="post" action="/oauth/authorize">
@@ -20,14 +19,13 @@
   <input type="hidden" name="code_challenge" value="{{.Request.Challenge}}">
   <input type="hidden" name="code_challenge_method" value="{{.Request.Method}}">
   <input type="hidden" name="response_type" value="{{.Request.ResponseType}}">
-  <button class="button" type="submit" name="answer" value="allow">Allow</button>
-  <button class="button button-quiet" type="submit" name="answer" value="deny">No</button>
-  <p class="help">Either button takes you back to {{.BackTo}}.</p>
+  <button class="button" type="submit" name="answer" value="allow">{{t $l "Allow"}}</button>
+  <button class="button button-quiet" type="submit" name="answer" value="deny">{{t $l "No"}}</button>
+  <p class="help">{{t $l "Either button takes you back to {place}." "place" .BackTo}}</p>
 </form>
 {{else}}
-<h1>Connect Claude</h1>
+<h1>{{t $l "Connect Claude"}}</h1>
 <p class="problem" role="alert">{{say $l .Problem}}</p>
-<a class="onward" href="/steward"><span>Go to the stewards' pages</span><span aria-hidden="true">›</span></a>
+<a class="onward" href="/steward"><span>{{t $l "Go to the stewards' pages"}}</span><span aria-hidden="true">›</span></a>
 {{end}}
-</div>
 {{end}}{{end}}

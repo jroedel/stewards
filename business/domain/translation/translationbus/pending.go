@@ -39,11 +39,11 @@ type Origins interface {
 	Originals(ctx context.Context) ([]Source, error)
 }
 
-// ReadFrom says where the originals are. main calls it once, after making
-// the domains -- which are made with this memory, so they cannot be handed
-// to NewBusiness -- and before serving.
+// ReadFrom adds to where the originals are: main, for the domains -- which
+// are made with this memory, so they cannot be handed to NewBusiness -- and
+// the muxer, for the screens' own words. Called before serving, never after.
 func (b *Business) ReadFrom(origins ...Origins) {
-	b.origins = origins
+	b.origins = append(b.origins, origins...)
 }
 
 // in is one original in use: its words, the language they are stored as,

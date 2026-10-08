@@ -1,6 +1,6 @@
-{{define "title"}}Not found · Garden stewards{{end}}
+{{define "title"}}{{plain .Lang "Not found"}} · {{plain .Lang "Garden stewards"}}{{end}}
 {{define "content"}}{{$l := .Lang}}{{with .Data}}
-<h1><span lang="en">We can't find that plant</span></h1>
-<p class="lead"><span lang="en">The address may have a typo. Choose the place you are standing in, and the plant from its card.</span></p>
+<h1>{{t $l "We can't find that plant"}}</h1>
+<p class="lead">{{t $l "The address may have a typo. Choose the place you are standing in, and the plant from its card."}}</p>
 <a class="onward" href="/places"><span>{{say $l .Back}}</span><span aria-hidden="true">›</span></a>
 {{end}}{{end}}

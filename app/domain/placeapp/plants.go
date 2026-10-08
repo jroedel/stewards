@@ -21,10 +21,11 @@ import (
 // screens; this only says what they are to this place.
 
 type plantRow struct {
-	SpeciesID, Name, Scientific string
-	Actions                     []option
-	Planned                     bool
-	Note                        page.Box
+	SpeciesID, Scientific string
+	Name                  types.Text
+	Actions               []option
+	Planned               bool
+	Note                  page.Box
 }
 
 type addView struct {
@@ -35,11 +36,12 @@ type addView struct {
 }
 
 type plantsView struct {
-	PlaceID, PlaceName, Slug string
-	Rows                     []plantRow
-	Add                      addView
-	NoSpecies, AllListed     bool
-	Done, Problem            string
+	PlaceID, Slug        string
+	PlaceName            types.Text
+	Rows                 []plantRow
+	Add                  addView
+	NoSpecies, AllListed bool
+	Done, Problem        any
 }
 
 func (a app) plants(w http.ResponseWriter, r *http.Request) {
@@ -52,9 +54,9 @@ func (a app) plants(w http.ResponseWriter, r *http.Request) {
 
 	switch r.URL.Query().Get("done") {
 	case "saved":
-		v.Done = "Saved."
+		v.Done = stewardWords.SavedShort
 	case "removed":
-		v.Done = "Taken off this place's list."
+		v.Done = stewardWords.TakenOff
 	}
 
 	a.showPlants(w, r, http.StatusOK, p, v, listingbus.Fields{Action: listingbus.Protect}, "")
@@ -83,7 +85,7 @@ func (a app) setPlant(w http.ResponseWriter, r *http.Request) {
 
 	speciesID, err := types.ParseID(r.PostFormValue("species"))
 	if err != nil {
-		a.showPlants(w, r, http.StatusUnprocessableEntity, p, plantsView{Problem: "Choose the plant from the list."}, f, "")
+		a.showPlants(w, r, http.StatusUnprocessableEntity, p, plantsView{Problem: stewardWords.ChoosePlant}, f, "")
 
 		return
 	}
@@ -117,7 +119,7 @@ func (a app) setPlant(w http.ResponseWriter, r *http.Request) {
 	case err == nil:
 		http.Redirect(w, r, "/steward/places/"+p.ID.String()+"/plants?done=saved", http.StatusSeeOther)
 	case isInvalid:
-		a.showPlants(w, r, http.StatusUnprocessableEntity, p, plantsView{Problem: page.Sentence(invalid.Problem)}, f, speciesID.String())
+		a.showPlants(w, r, http.StatusUnprocessableEntity, p, plantsView{Problem: types.Text{EN: page.Sentence(invalid.Problem)}}, f, speciesID.String())
 	default:
 		a.fail(w, r, "listing a plant at a place", err)
 	}
@@ -168,7 +170,7 @@ func (a app) showPlants(w http.ResponseWriter, r *http.Request, status int, p pl
 	}
 
 	lang := mid.LangFrom(r.Context())
-	v.PlaceID, v.PlaceName, v.Slug = p.ID.String(), p.Name.In(types.English), p.Slug
+	v.PlaceID, v.PlaceName, v.Slug = p.ID.String(), p.Name, p.Slug
 	v.NoSpecies = len(all) == 0
 
 	here := map[types.ID]bool{}
@@ -178,17 +180,17 @@ func (a app) showPlants(w http.ResponseWriter, r *http.Request, status int, p pl
 		here[l.SpeciesID] = true
 
 		v.Rows = append(v.Rows, plantRow{
-			SpeciesID: l.SpeciesID.String(), Name: sp.Common.In(types.English), Scientific: sp.Scientific,
+			SpeciesID: l.SpeciesID.String(), Name: sp.Common, Scientific: sp.Scientific,
 			Actions: actionOptions(l.Action), Planned: l.Planned, Note: page.BoxOf(l.Note, lang),
 		})
 	}
 
 	slices.SortFunc(v.Rows, func(x, y plantRow) int {
-		return cmp.Compare(strings.ToLower(x.Name), strings.ToLower(y.Name))
+		return cmp.Compare(strings.ToLower(x.Name.In(types.English)), strings.ToLower(y.Name.In(types.English)))
 	})
 
 	v.Add = addView{Actions: actionOptions(f.Action), Planned: f.Planned, Note: page.BoxOf(f.Note, lang)}
-	v.Add.Species = []option{{Value: "", Label: "Choose a plant", Selected: chosen == ""}}
+	v.Add.Species = []option{{Value: "", Label: stewardWords.ChooseAPlant, Selected: chosen == ""}}
 
 	for _, sp := range all {
 		if !here[sp.ID] {
@@ -221,7 +223,7 @@ func cardAnchor(p placebus.Place, f listingbus.Fields) string {
 func actionOptions(chosen listingbus.Action) []option {
 	var out []option
 	for _, act := range listingbus.Actions {
-		out = append(out, option{Value: string(act), Label: act.Label(), Selected: act == chosen})
+		out = append(out, option{Value: string(act), Label: stewardWords.Actions[act], Selected: act == chosen})
 	}
 
 	return out

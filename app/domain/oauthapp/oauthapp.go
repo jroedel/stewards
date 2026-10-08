@@ -222,14 +222,20 @@ func (a app) back(w http.ResponseWriter, r *http.Request, req request, params ur
 
 // ------------------------------------------------------------------ the page
 
-// The words on these pages. English only for now, as for sign-in: Spanish
-// comes when the screens' own words are translated.
+// The words this page says from Go, in English; Claude translates them
+// through the translation memory, and say looks them up (page/words.go).
 var (
 	sayNotClaude        = types.Text{EN: "Only Claude can connect to the garden stewards' app this way. If you did not start this, close the page: nothing has happened."}
 	sayCannotReadClient = types.Text{EN: "We could not check who is asking to connect. Go back to Claude and try connecting again in a minute."}
 	sayBadRedirect      = types.Text{EN: "This connection asked to send you somewhere the program does not list as its own, so we stopped it. Go back to Claude and try connecting again."}
 	sayCannotRead       = types.Text{EN: "We could not read that. Go back to Claude and try connecting again."}
 )
+
+// Words is this app's copy held in Go, for the catalog the translation
+// memory lists.
+var Words = page.Catalog{
+	{Where: "the page where a steward lets Claude connect to the app: a problem shown on it", Words: []types.Text{sayNotClaude, sayCannotReadClient, sayBadRedirect, sayCannotRead}},
+}
 
 type connectView struct {
 	Request request

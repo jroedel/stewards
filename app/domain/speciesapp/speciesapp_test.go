@@ -195,7 +195,7 @@ func TestAStewardAddsAPlant(t *testing.T) {
 	}
 
 	list := s.get("/steward/species?done=added").Body.String()
-	for _, want := range []string{"Plant added.", "Brazos penstemon", "<i>Penstemon tenuis</i>", "ID confirmed", "Blooms Mar–May", `fill="#b0418f"`} {
+	for _, want := range []string{"Plant added.", "Brazos penstemon", "<i>Penstemon tenuis</i>", "ID confirmed", "Blooms March to May", `fill="#b0418f"`} {
 		if !strings.Contains(list, want) {
 			t.Errorf("the list does not show %q", want)
 		}

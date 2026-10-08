@@ -1,72 +1,70 @@
-{{define "title"}}Translations · Garden stewards{{end}}
-{{define "content"}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow"><a href="/steward">Garden stewards</a></p>
-<h1>Translations</h1>
-<p class="lead">Claude translates what people write here, both ways between English and Spanish. Each translation is on the screens as soon as it is made. Read them here when you have time, and tap Looks right for each one that says what the original says.</p>
-<p class="help">{{.Counts.ToCheck}} not checked yet · {{if .Counts.Waiting}}{{.Counts.Waiting}} waiting for Claude: ask Claude to translate what is waiting{{else}}nothing waiting for Claude{{end}}</p>
+{{define "title"}}{{plain .Lang "Translations"}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow"><a href="/steward">{{t $l "Garden stewards"}}</a></p>
+<h1>{{t $l "Translations"}}</h1>
+<p class="lead">{{t $l "Claude translates what people write here, both ways between English and Spanish. Each translation is on the screens as soon as it is made. Read them here when you have time, and tap Looks right for each one that says what the original says."}}</p>
+<p class="help">{{t $l "{count} not checked yet" "count" .Counts.ToCheck}} · {{if .Counts.Waiting}}{{t $l "{count} waiting for Claude: ask Claude to translate what is waiting" "count" .Counts.Waiting}}{{else}}{{t $l "nothing waiting for Claude"}}{{end}}</p>
 
-{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+{{if .Done.Written}}<p class="done" role="status">{{say $l .Done}}</p>{{end}}
 
-<nav class="views" aria-label="Show">
-  <a href="/steward/translations"{{if eq .Show "check"}} aria-current="page"{{end}}>To check</a>
-  <a href="/steward/translations?show=all"{{if eq .Show "all"}} aria-current="page"{{end}}>All</a>
+<nav class="views" aria-label="{{plain $l "Show"}}">
+  <a href="/steward/translations"{{if eq .Show "check"}} aria-current="page"{{end}}>{{t $l "To check"}}</a>
+  <a href="/steward/translations?show=all"{{if eq .Show "all"}} aria-current="page"{{end}}>{{t $l "All"}}</a>
 </nav>
 
 {{if .Rows}}
 <ul class="translations">
 {{range .Rows}}<li class="card translation" id="t-{{.Key}}">
-  {{if .Where}}<p class="row-note">{{range $i, $w := .Where}}{{if $i}} · {{end}}{{$w}}{{end}}</p>{{end}}
-  <p class="translation-label">{{.SourceName}}, as written</p>
+  {{if .Where}}<p class="row-note" lang="en">{{range $i, $w := .Where}}{{if $i}} · {{end}}{{$w}}{{end}}</p>{{end}}
+  <p class="translation-label">{{t $l "{language}, as written" "language" .SourceName}}</p>
   <p class="translation-text" lang="{{.SourceLang}}">{{.Source}}</p>
-  <p class="translation-label">{{.TransName}}, {{.By}}</p>
+  <p class="translation-label">{{say $l .TransName}}, {{say $l .By}}</p>
   <p class="translation-text" lang="{{.TransLang}}">{{.Translated}}</p>
-  <p class="row-tags">{{if .Checked}}<span class="tag tag-ok">Checked</span>{{end}}{{if .Note}}<span class="tag tag-sun">Sent back</span>{{end}}</p>
-  {{with .Note}}<p class="row-note">Your note: “{{.}}” Waiting for Claude; the translation stays until then.</p>{{end}}
-  {{with .Problem}}<p class="field-problem" role="alert">{{.}}</p>{{end}}
+  <p class="row-tags">{{if .Checked}}<span class="tag tag-ok">{{t $l "Checked"}}</span>{{end}}{{if .Note}}<span class="tag tag-sun">{{t $l "Sent back"}}</span>{{end}}</p>
+  {{with .Note}}<p class="row-note">{{t $l "Your note: “{note}” Waiting for Claude; the translation stays until then." "note" .}}</p>{{end}}
+  {{if .Problem.Written}}<p class="field-problem" role="alert">{{say $l .Problem}}</p>{{end}}
 
   {{if not .Checked}}<form method="post" action="/steward/translations/{{.Key}}/check">
     {{template "translation-return" .}}
-    <button class="button button-quiet button-block" type="submit">Looks right</button>
+    <button class="button button-quiet button-block" type="submit">{{t $l "Looks right"}}</button>
   </form>{{end}}
 
   <details class="translation-more"{{if eq .Open "change"}} open{{end}}>
-    <summary>Change it</summary>
+    <summary>{{t $l "Change it"}}</summary>
     <form class="form" method="post" action="/steward/translations/{{.Key}}">
       {{template "translation-return" .}}
-      <label for="text-{{.Key}}">{{.TransName}}</label>
+      <label for="text-{{.Key}}">{{say $l .TransName}}</label>
       <textarea id="text-{{.Key}}" name="text" rows="3" lang="{{.TransLang}}">{{if eq .Open "change"}}{{.Typed}}{{else}}{{.Translated}}{{end}}</textarea>
-      <p class="help">Saving it checks it. It is on the screens at once.</p>
-      <button class="button button-quiet" type="submit">Save and check</button>
+      <p class="help">{{t $l "Saving it checks it. It is on the screens at once."}}</p>
+      <button class="button button-quiet" type="submit">{{t $l "Save and check"}}</button>
     </form>
   </details>
 
   <details class="translation-more"{{if eq .Open "back"}} open{{end}}>
-    <summary>Send back to Claude</summary>
+    <summary>{{t $l "Send back to Claude"}}</summary>
     <form class="form" method="post" action="/steward/translations/{{.Key}}/back">
       {{template "translation-return" .}}
-      <label for="note-{{.Key}}">What is wrong with it?</label>
+      <label for="note-{{.Key}}">{{t $l "What is wrong with it?"}}</label>
       <textarea id="note-{{.Key}}" name="note" rows="2" maxlength="500">{{if eq .Open "back"}}{{.Typed}}{{end}}</textarea>
-      <p class="help">Claude sees your note the next time it translates what is waiting. The translation stays until then.</p>
-      <button class="button button-quiet" type="submit">Send back</button>
+      <p class="help">{{t $l "Claude sees your note the next time it translates what is waiting. The translation stays until then."}}</p>
+      <button class="button button-quiet" type="submit">{{t $l "Send back"}}</button>
     </form>
   </details>
 </li>
 {{end}}</ul>
 
-{{if .More}}<a class="onward" href="/steward/translations?{{if eq .Show "all"}}show=all&amp;{{end}}n={{.Next}}"><span>Show more <span class="quiet">{{.More}} more</span></span><span aria-hidden="true">›</span></a>{{end}}
+{{if .More}}<a class="onward" href="/steward/translations?{{if eq .Show "all"}}show=all&amp;{{end}}n={{.Next}}"><span>{{t $l "Show more"}} <span class="quiet">{{t $l "{count} more" "count" .More}}</span></span><span aria-hidden="true">›</span></a>{{end}}
 
 {{if gt (len .Pending) 1}}<form class="card-gap" method="post" action="/steward/translations/check">
   <input type="hidden" name="show" value="{{.Show}}">
   {{range .Pending}}<input type="hidden" name="key" value="{{.}}">{{end}}
-  <button class="button button-quiet button-block" type="submit">All {{len .Pending}} above look right</button>
+  <button class="button button-quiet button-block" type="submit">{{t $l "All {count} above look right" "count" (len .Pending)}}</button>
 </form>{{end}}
 {{else if eq .Show "check"}}
-<div class="card empty"><p>Nothing to check. Every translation has been read.</p></div>
+<div class="card empty"><p>{{t $l "Nothing to check. Every translation has been read."}}</p></div>
 {{else}}
-<div class="card empty"><p>No translations yet. Ask Claude to translate what is waiting.</p></div>
+<div class="card empty"><p>{{t $l "No translations yet. Ask Claude to translate what is waiting."}}</p></div>
 {{end}}
-</div>
 {{end}}{{end}}
 
 {{define "translation-return"}}<input type="hidden" name="show" value="{{.Show}}">{{with .Next}}<input type="hidden" name="next" value="{{.}}">{{end}}{{with .N}}<input type="hidden" name="n" value="{{.}}">{{end}}{{end}}

@@ -166,7 +166,7 @@ func TestANewcomerSignsUpAndLeaves(t *testing.T) {
 		t.Fatalf("signing up: %d %s", w.Code, w.Header().Get("Location"))
 	}
 
-	if page := s.do(http.MethodGet, "/subscribe/sent", nil, false).Body.String(); !strings.Contains(page, "You&#39;re on the list") {
+	if page := s.do(http.MethodGet, "/subscribe/sent", nil, false).Body.String(); !strings.Contains(page, "You're on the list") {
 		t.Errorf("the page after the form:\n%s", page)
 	}
 
@@ -252,7 +252,7 @@ func TestTheFormTellsAStrangerNothing(t *testing.T) {
 
 	// A typo is the one thing said differently, and it is about the typing.
 	w := s.do(http.MethodPost, "/subscribe", url.Values{"email": {"walker.example.org"}}, false)
-	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "doesn&#39;t look like an email address") || !strings.Contains(w.Body.String(), `value="walker.example.org"`) {
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "doesn't look like an email address") || !strings.Contains(w.Body.String(), `value="walker.example.org"`) {
 		t.Errorf("a typo: %d\n%s", w.Code, w.Body)
 	}
 }

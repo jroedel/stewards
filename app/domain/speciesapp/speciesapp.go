@@ -106,9 +106,11 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 // ------------------------------------------------------------------ the list
 
 type listRow struct {
-	ID, Slug, Common, Scientific, Status, Bloom string
-	Confirmed                                   bool
-	Swatches                                    []string
+	ID, Slug, Scientific string
+	Common, Status       types.Text
+	Bloom                page.List
+	Confirmed            bool
+	Swatches             []string
 
 	// Thumb is the id of the photo shown beside the plant (photobus.Lead),
 	// or empty when it has none.
@@ -117,7 +119,24 @@ type listRow struct {
 
 type listView struct {
 	Species []listRow
-	Done    string
+	Done    any
+}
+
+// The words the stewards' screens for plants say from Go, in English; the
+// rest are in the templates, through t.
+type stewardWording struct {
+	Added, Saved, Removed, AddAPlant, Edit, Confirm, WholeInches, NotSet types.Text
+}
+
+var stewardWords = stewardWording{
+	Added:       types.Text{EN: "Plant added."},
+	Saved:       types.Text{EN: "Changes saved."},
+	Removed:     types.Text{EN: "Plant removed."},
+	AddAPlant:   types.Text{EN: "Add a plant"},
+	Edit:        types.Text{EN: "Edit {name}"},
+	Confirm:     types.Text{EN: "Tick the box to confirm, then press Remove again."},
+	WholeInches: types.Text{EN: "Write sizes as whole inches, such as 18. A foot is 12."},
+	NotSet:      types.Text{EN: "Not set yet"},
 }
 
 func (a app) list(w http.ResponseWriter, r *http.Request) {
@@ -138,8 +157,8 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 	v := listView{}
 	for _, sp := range all {
 		row := listRow{
-			ID: sp.ID.String(), Slug: sp.Slug, Common: sp.Common.In(types.English), Scientific: sp.Scientific,
-			Status: sp.Status.Label(), Bloom: sp.Bloom.String(), Confirmed: sp.Confirmed, Swatches: sp.Swatches,
+			ID: sp.ID.String(), Slug: sp.Slug, Common: sp.Common, Scientific: sp.Scientific,
+			Status: cardWords.Statuses[sp.Status], Bloom: page.Run(sp.Bloom), Confirmed: sp.Confirmed, Swatches: sp.Swatches,
 		}
 
 		if p, ok := photobus.Lead(photos[sp.ID]); ok {
@@ -152,11 +171,11 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 	// A fixed sentence chosen by a word, never the query echoed.
 	switch r.URL.Query().Get("done") {
 	case "added":
-		v.Done = "Plant added."
+		v.Done = stewardWords.Added
 	case "saved":
-		v.Done = "Changes saved."
+		v.Done = stewardWords.Saved
 	case "removed":
-		v.Done = "Plant removed."
+		v.Done = stewardWords.Removed
 	}
 
 	a.render.Render(w, r, http.StatusOK, "steward-species", v)
@@ -165,13 +184,15 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------ the form
 
 type option struct {
-	Value, Label string
-	Selected     bool
+	Value    string
+	Label    types.Text
+	Selected bool
 }
 
 type month struct {
-	Number, Short, Long string
-	On                  bool
+	Number string
+	Month  types.Text // shown by its first letters, and in full to a screen reader
+	On     bool
 }
 
 type source struct {
@@ -181,7 +202,9 @@ type source struct {
 
 // formView holds every value as typed, so a refusal gives back what was sent.
 type formView struct {
-	ID, Title, Slug, Name string
+	ID, Slug string
+	Title    any
+	Name     types.Text
 
 	Common               page.Box
 	Scientific           string
@@ -196,8 +219,8 @@ type formView struct {
 	Note                 page.Box
 	Sources              []source
 
-	Problems      map[string]string
-	DeleteProblem string
+	Problems      map[string]any
+	DeleteProblem any
 }
 
 // spareSources is how many empty source rows the form offers beyond those
@@ -205,7 +228,7 @@ type formView struct {
 const spareSources = 2
 
 func (a app) newForm(w http.ResponseWriter, r *http.Request) {
-	a.render.Render(w, r, http.StatusOK, "species-form", fill(formView{Title: "Add a plant"}, speciesbus.Fields{}))
+	a.render.Render(w, r, http.StatusOK, "species-form", fill(formView{Title: stewardWords.AddAPlant}, speciesbus.Fields{}))
 }
 
 func (a app) editForm(w http.ResponseWriter, r *http.Request) {
@@ -223,7 +246,7 @@ func (a app) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v.Title = "Add a plant"
+	v.Title = stewardWords.AddAPlant
 
 	if len(v.Problems) == 0 {
 		if _, err := a.species.Create(r.Context(), f); err != nil {
@@ -251,7 +274,7 @@ func (a app) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v.ID, v.Slug, v.Name, v.Title = sp.ID.String(), sp.Slug, sp.Common.In(types.English), "Edit "+sp.Common.In(types.English)
+	v.ID, v.Slug, v.Name, v.Title = sp.ID.String(), sp.Slug, sp.Common, page.Put(stewardWords.Edit, "name", sp.Common)
 
 	if len(v.Problems) == 0 {
 		if _, err := a.species.Update(r.Context(), sp.ID, f); err != nil {
@@ -282,7 +305,7 @@ func (a app) remove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	v := viewOf(sp, mid.LangFrom(r.Context()))
-	v.DeleteProblem = "Tick the box to confirm, then press Remove again."
+	v.DeleteProblem = stewardWords.Confirm
 
 	if r.PostFormValue("confirm") == "yes" {
 		err := a.species.Delete(r.Context(), sp.ID)
@@ -351,7 +374,7 @@ func read(w http.ResponseWriter, r *http.Request) (speciesbus.Fields, formView, 
 		HeightMin: get("height_min"), HeightMax: get("height_max"),
 		WidthMin: get("width_min"), WidthMax: get("width_max"),
 		Note:     page.Typed(get("note"), l),
-		Problems: map[string]string{},
+		Problems: map[string]any{},
 	}
 
 	f := speciesbus.Fields{
@@ -389,7 +412,7 @@ func read(w http.ResponseWriter, r *http.Request) (speciesbus.Fields, formView, 
 
 		n, err := strconv.Atoi(raw)
 		if err != nil {
-			v.Problems[field] = "Write sizes as whole inches, such as 18. A foot is 12."
+			v.Problems[field] = stewardWords.WholeInches
 		}
 
 		return n
@@ -420,35 +443,35 @@ func (a app) refuse(w http.ResponseWriter, r *http.Request, v formView, f specie
 		return
 	}
 
-	v.Problems[invalid.Field] = page.Sentence(invalid.Problem)
+	v.Problems[invalid.Field] = types.Text{EN: page.Sentence(invalid.Problem)}
 	a.render.Render(w, r, http.StatusUnprocessableEntity, "species-form", fill(v, f))
 }
 
 // fill sets the choices -- status, months, light, water -- from f, and pads
 // the source rows with spares.
 func fill(v formView, f speciesbus.Fields) formView {
-	v.Statuses = []option{{Value: "", Label: "Not set yet", Selected: f.Status == ""}}
+	v.Statuses = []option{{Value: "", Label: stewardWords.NotSet, Selected: f.Status == ""}}
 	for _, s := range speciesbus.Statuses {
-		v.Statuses = append(v.Statuses, option{Value: string(s), Label: s.Label(), Selected: f.Status == s})
+		v.Statuses = append(v.Statuses, option{Value: string(s), Label: cardWords.Statuses[s], Selected: f.Status == s})
 	}
 
 	v.Months = nil
 	for m := time.January; m <= time.December; m++ {
 		v.Months = append(v.Months, month{
-			Number: strconv.Itoa(int(m)), Short: m.String()[:3], Long: m.String(), On: f.Bloom.Has(m),
+			Number: strconv.Itoa(int(m)), Month: page.Month(m), On: f.Bloom.Has(m),
 		})
 	}
 
 	v.Light = []option{
-		{Value: strconv.Itoa(int(speciesbus.FullSun)), Label: "Full sun", Selected: f.Light&speciesbus.FullSun != 0},
-		{Value: strconv.Itoa(int(speciesbus.PartShade)), Label: "Part shade", Selected: f.Light&speciesbus.PartShade != 0},
-		{Value: strconv.Itoa(int(speciesbus.Shade)), Label: "Shade", Selected: f.Light&speciesbus.Shade != 0},
+		{Value: strconv.Itoa(int(speciesbus.FullSun)), Label: cardWords.Lights[speciesbus.FullSun], Selected: f.Light&speciesbus.FullSun != 0},
+		{Value: strconv.Itoa(int(speciesbus.PartShade)), Label: cardWords.Lights[speciesbus.PartShade], Selected: f.Light&speciesbus.PartShade != 0},
+		{Value: strconv.Itoa(int(speciesbus.Shade)), Label: cardWords.Lights[speciesbus.Shade], Selected: f.Light&speciesbus.Shade != 0},
 	}
 
 	v.Water = []option{
-		{Value: strconv.Itoa(int(speciesbus.Dry)), Label: "Dry", Selected: f.Water&speciesbus.Dry != 0},
-		{Value: strconv.Itoa(int(speciesbus.Moist)), Label: "Moist", Selected: f.Water&speciesbus.Moist != 0},
-		{Value: strconv.Itoa(int(speciesbus.Wet)), Label: "Wet", Selected: f.Water&speciesbus.Wet != 0},
+		{Value: strconv.Itoa(int(speciesbus.Dry)), Label: cardWords.Waters[speciesbus.Dry], Selected: f.Water&speciesbus.Dry != 0},
+		{Value: strconv.Itoa(int(speciesbus.Moist)), Label: cardWords.Waters[speciesbus.Moist], Selected: f.Water&speciesbus.Moist != 0},
+		{Value: strconv.Itoa(int(speciesbus.Wet)), Label: cardWords.Waters[speciesbus.Wet], Selected: f.Water&speciesbus.Wet != 0},
 	}
 
 	// Drop rows typed blank before padding, so a refused form does not grow
@@ -483,7 +506,7 @@ func viewOf(sp speciesbus.Species, l types.Lang) formView {
 	}
 
 	v := formView{
-		ID: sp.ID.String(), Title: "Edit " + sp.Common.In(types.English), Slug: sp.Slug, Name: sp.Common.In(types.English),
+		ID: sp.ID.String(), Title: page.Put(stewardWords.Edit, "name", sp.Common), Slug: sp.Slug, Name: sp.Common,
 		Common: page.BoxOf(sp.Common, l), Scientific: sp.Scientific,
 		Confirmed: sp.Confirmed,
 		Flower:    page.BoxOf(sp.FlowerColor, l), Swatches: strings.Join(sp.Swatches, " "),

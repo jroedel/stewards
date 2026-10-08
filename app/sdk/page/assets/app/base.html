@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{block "title" .}}Garden stewards{{end}}</title>
+<title>{{block "title" .}}{{plain .Lang "Garden stewards"}}{{end}}</title>
 <link rel="stylesheet" href="{{.Stylesheet}}">
 <link rel="icon" type="image/png" href="/static/img/isotype-512.png">
 {{with .Manifest}}<link rel="manifest" href="{{.}}">{{end}}
@@ -11,8 +11,8 @@
 </head>
 <body>
 <header class="masthead">
-{{block "masthead" .}}<a class="logo" href="/"><img src="/static/img/logo-horizontal.svg" alt="Schoenstatt Fathers" width="150" height="50"></a>{{end}}
-<nav class="langs" aria-label="Language">
+{{block "masthead" .}}<a class="logo" href="/"><img src="/static/img/logo-horizontal.svg" alt="{{plain .Lang "Schoenstatt Fathers"}}" width="150" height="50"></a>{{end}}
+<nav class="langs" aria-label="{{plain .Lang "Language"}}">
 {{if eq .Lang "en"}}<span class="lang is-on" aria-current="true">EN</span><a class="lang" href="{{.OtherURL}}" hreflang="es" lang="es">ES</a>
 {{else}}<a class="lang" href="{{.OtherURL}}" hreflang="en" lang="en">EN</a><span class="lang is-on" aria-current="true">ES</span>{{end}}
 </nav>
@@ -20,10 +20,10 @@
 <main>
 {{block "content" .}}{{end}}
 </main>
-<footer class="foot" lang="en">
-{{if .Steward}}<p class="foot-who">Signed in as {{.Steward}}</p>
-<div class="foot-links"><a href="/steward">Steward pages</a><form method="post" action="/sign-out"><button class="linkish" type="submit">Sign out</button></form></div>
-{{else}}{{/* A page that is itself about signing in replaces this; see authapp. It must replace it with something: html/template ignores a definition with an empty body. */}}{{block "signin-link" .}}<a href="/sign-in">Garden stewards: sign in</a>{{end}}
+<footer class="foot">
+{{if .Steward}}<p class="foot-who">{{t .Lang "Signed in as {address}" "address" .Steward}}</p>
+<div class="foot-links"><a href="/steward">{{t .Lang "Steward pages"}}</a><form method="post" action="/sign-out"><button class="linkish" type="submit">{{t .Lang "Sign out"}}</button></form></div>
+{{else}}{{/* A page that is itself about signing in replaces this; see authapp. It must replace it with something: html/template ignores a definition with an empty body. */}}{{block "signin-link" .}}<a href="/sign-in">{{t .Lang "Garden stewards: sign in"}}</a>{{end}}
 {{end}}</footer>
 </body>
 </html>

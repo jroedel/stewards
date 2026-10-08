@@ -120,9 +120,11 @@ type wording struct {
 	SeeDays types.Text
 }
 
-// Words is this app's copy, for the catalog the translation memory lists.
+// Words is this app's copy held in Go, for the catalog the translation
+// memory lists.
 var Words = page.Catalog{
 	{Where: "signing up for emails about stewardship days, and stopping them: read by a newcomer", Words: words},
+	{Where: "the email a newcomer is sent on signing up for stewardship days, in plain text", Words: []types.Text{welcomeSubject, welcomeText}},
 }
 
 var words = wording{
@@ -198,7 +200,7 @@ func (a app) request(w http.ResponseWriter, r *http.Request) {
 	// logged for a steward to see, and not shown, since signing up again
 	// would only find them on the list already and send nothing.
 	if req.Outcome == subscriberbus.Added {
-		if err := a.cfg.Mail.Send(r.Context(), welcome(req.Subscriber.Email, a.cfg.BaseURL, a.leaveURL(req.Subscriber.Unsubscribe))); err != nil {
+		if err := a.cfg.Mail.Send(r.Context(), a.welcome(lang, req.Subscriber.Email, a.leaveURL(req.Subscriber.Unsubscribe))); err != nil {
 			a.cfg.Log.ErrorContext(r.Context(), "a welcome could not be sent", "request_id", web.RequestIDFrom(r.Context()),
 				"subscriber_id", req.Subscriber.ID.String(), "error", err)
 		}
@@ -257,28 +259,40 @@ func (a app) leaveURL(token string) string {
 // it was not wanted, and the link off the list is in it from the first day.
 // The emails a steward writes by hand carry no such link, which is another
 // reason this one must.
-func welcome(to types.Email, base, leave string) mail.Message {
+//
+// It is in the language of the page the address was given on, which is the
+// language the list keeps for it.
+func (a app) welcome(l types.Lang, to types.Email, leave string) mail.Message {
+	text := a.cfg.Render.Plain(l, page.Put(welcomeText, "days", a.cfg.BaseURL+"/", "leave", leave))
+
 	return mail.Message{
 		To:      to.String(),
-		Subject: "Thank you for signing up for stewardship days",
-		Text: "Thank you for signing up to receive notifications about future stewardship days on the Schoenstatt Fathers' Trail of the Saints.\r\n\r\n" +
-			"You don't need any experience or special skills.\r\n\r\n" +
-			"The days already scheduled are here:\r\n" + base + "/\r\n\r\n" +
-			"If you did not sign up for this, or want to stop these emails at any time, unsubscribe here:\r\n" + leave + "\r\n\r\n" +
-			"-- The garden stewards\r\n",
+		Subject: a.cfg.Render.Plain(l, welcomeSubject),
+		Text:    strings.ReplaceAll(text, "\n", "\r\n"),
 	}
 }
+
+var (
+	welcomeSubject = types.Text{EN: "Thank you for signing up for stewardship days"}
+	welcomeText    = types.Text{EN: "Thank you for signing up to receive notifications about future stewardship days on the Schoenstatt Fathers' Trail of the Saints.\n\n" +
+		"You don't need any experience or special skills.\n\n" +
+		"The days already scheduled are here:\n{days}\n\n" +
+		"If you did not sign up for this, or want to stop these emails at any time, unsubscribe here:\n{leave}\n\n" +
+		"-- The garden stewards\n"}
+)
 
 // ------------------------------------------------------------------ the stewards' list
 
 type stewardRow struct {
-	ID, Email, Since, Lang string
+	ID, Email string
+	Since     page.Phrase
+	Lang      types.Text
 }
 
 type stewardView struct {
-	Rows []stewardRow
-	All  string // every address, for the Bcc line
-	Done string
+	Rows    []stewardRow
+	All     string // every address, for the Bcc line
+	Removed bool
 }
 
 func (a app) list(w http.ResponseWriter, r *http.Request) {
@@ -294,23 +308,16 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 	var all []string
 
 	for _, s := range on {
-		lang := "English"
-		if s.Lang == types.Spanish {
-			lang = "Spanish"
-		}
-
 		v.Rows = append(v.Rows, stewardRow{
-			ID: s.ID.String(), Email: s.Email.String(), Lang: lang,
-			Since: page.Date(s.CreatedAt).In(types.English),
+			ID: s.ID.String(), Email: s.Email.String(), Lang: page.Language(s.Lang),
+			Since: page.Date(s.CreatedAt),
 		})
 		all = append(all, s.Email.String())
 	}
 
 	v.All = strings.Join(all, ", ")
 
-	if r.URL.Query().Get("done") == "removed" {
-		v.Done = "Removed from the list."
-	}
+	v.Removed = r.URL.Query().Get("done") == "removed"
 
 	a.cfg.Render.Render(w, r, http.StatusOK, "steward-subscribers", v)
 }

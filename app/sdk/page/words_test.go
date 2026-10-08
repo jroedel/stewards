@@ -193,3 +193,68 @@ func TestTheCatalogListsEachPieceOfCopy(t *testing.T) {
 		t.Errorf("got\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
 	}
 }
+
+// Words written in a template with t are found by reading the templates:
+// a page's under its name, the layout's once for every page. A title has
+// plain, which has no markup to show there.
+func TestATemplatesOwnWordsAreFoundInIt(t *testing.T) {
+	fsys := fstest.MapFS{
+		"templates/one.html": {Data: []byte(`{{define "title"}}{{plain .Lang "First page"}}{{end}}{{define "content"}}{{$l := .Lang}}{{if true}}<p>{{t $l "Plant {count} here" "count" 3}}</p>{{end}}<p>{{t $l "See the {list}." "list" (link "/places" (t $l "list of places"))}}</p>{{end}}`)},
+		"templates/two.html": {Data: []byte(`{{define "content"}}<p>{{t .Lang "Plant {count} here" "count" 4}}</p>{{end}}`)},
+	}
+
+	rn, err := page.NewRenderer(slog.New(slog.DiscardHandler), fsys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rn.Translate(memory{"Plant {count} here": "Planta {count} aquí", "list of places": "lista de lugares"})
+
+	got, err := rn.Originals(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	count := map[string]int{}
+	for _, s := range got {
+		count[s.Where+": "+s.Text.EN]++
+	}
+
+	for _, want := range []string{
+		"the one page: First page",
+		"the one page: Plant {count} here",
+		"the two page: Plant {count} here",
+		"the one page: See the {list}.",
+		"the one page: list of places",
+		"every page (base): Sign out",
+	} {
+		if count[want] != 1 {
+			t.Errorf("%q listed %d times; all: %v", want, count[want], count)
+		}
+	}
+
+	body := render(t, rn, "one", nil, "es").Body.String()
+
+	for _, want := range []string{
+		"<title>First page</title>",
+		"<p>Planta 3 aquí</p>",
+		`<p><span lang="en">See the <a href="/places">lista de lugares</a>.</span></p>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page has no %s in %s", want, body[:400])
+		}
+	}
+}
+
+func TestALinkInASentenceStaysOnTheSite(t *testing.T) {
+	fsys := fstest.MapFS{"templates/bad.html": {Data: []byte(`{{define "content"}}{{t .Lang "Go {there}" "there" (link "javascript:alert(1)" "x")}}{{end}}`)}}
+
+	rn, err := page.NewRenderer(slog.New(slog.DiscardHandler), fsys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rec := render(t, rn, "bad", nil, "en"); rec.Code != 500 || strings.Contains(rec.Body.String(), "javascript") {
+		t.Errorf("a script link was made: %d", rec.Code)
+	}
+}

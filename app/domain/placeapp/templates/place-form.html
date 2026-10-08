@@ -1,67 +1,66 @@
-{{define "title"}}{{.Data.Title}} · Garden stewards{{end}}
-{{define "content"}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow"><a href="/steward">Places</a></p>
-<h1>{{.Title}}</h1>
+{{define "title"}}{{words .Lang .Data.Title}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow"><a href="/steward">{{t $l "Places"}}</a></p>
+<h1>{{say $l .Title}}</h1>
 
-{{if .ID}}<a class="onward" href="/steward/places/{{.ID}}/plants"><span>Plants here <span class="quiet">protect, pull, planned</span></span><span aria-hidden="true">›</span></a>{{end}}
+{{if .ID}}<a class="onward" href="/steward/places/{{.ID}}/plants"><span>{{t $l "Plants here"}} <span class="quiet">{{t $l "protect, pull, planned"}}</span></span><span aria-hidden="true">›</span></a>{{end}}
 
-{{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below and press Save again.</p>{{end}}
-<p class="help">Write in English or in Spanish, whichever you think in. Claude translates it into the other.</p>
+{{if .Problems}}<p class="problem" role="alert">{{t $l "Nothing was saved yet. Fix what is marked below and press Save again."}}</p>{{end}}
+<p class="help">{{t $l "Write in English or in Spanish, whichever you think in. Claude translates it into the other."}}</p>
 
 <form class="card form" method="post" action="{{if .ID}}/steward/places/{{.ID}}{{else}}/steward/places{{end}}">
-  <label for="name">Name</label>
-  {{template "field-problem" (index .Problems "name")}}
+  <label for="name">{{t $l "Name"}}</label>
+  {{with index .Problems "name"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   <input id="name" name="name" type="text" value="{{.Name.Value}}" lang="{{.Name.Lang}}" required maxlength="60">
 
   {{if .ID}}
-  <p class="help">Its address is <strong>/places/{{.Slug}}</strong>. It cannot change, because it may already be printed on a stake or a guide.</p>
+  <p class="help">{{t $l "Its address is {address}. It cannot change, because it may already be printed on a stake or a guide." "address" (strong (print "/places/" .Slug))}}</p>
   {{else}}
-  <label for="slug">Address</label>
-  <p class="help" id="slug-help">The end of the link to this place, such as <strong>rain-garden</strong>. Lower-case letters, numbers and hyphens. It cannot be changed later, because it gets printed.</p>
-  {{template "field-problem" (index .Problems "slug")}}
+  <label for="slug">{{t $l "Address"}}</label>
+  <p class="help" id="slug-help">{{t $l "The end of the link to this place, such as {example}. Lower-case letters, numbers and hyphens. It cannot be changed later, because it gets printed." "example" (strong "rain-garden")}}</p>
+  {{with index .Problems "slug"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   <input id="slug" name="slug" type="text" value="{{.Slug}}" aria-describedby="slug-help" required maxlength="48"
          autocapitalize="off" autocomplete="off" spellcheck="false">
   {{end}}
 
-  <label for="parent">Inside</label>
-  {{template "field-problem" (index .Problems "parent")}}
+  <label for="parent">{{t $l "Inside"}}</label>
+  {{with index .Problems "parent"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   {{if .CanHaveParent}}
   <select id="parent" name="parent">
-    {{range .Parents}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
+    {{range .Parents}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{words $l .Label}}</option>
     {{end}}
   </select>
-  <p class="help">For a band or a bed within a bigger place, like the inflow band of the rain garden. One level only.</p>
+  <p class="help">{{t $l "For a band or a bed within a bigger place, like the inflow band of the rain garden. One level only."}}</p>
   {{else}}
   <input type="hidden" name="parent" value="">
-  <p class="help">This place has smaller places inside it, so it stands on its own.</p>
+  <p class="help">{{t $l "This place has smaller places inside it, so it stands on its own."}}</p>
   {{end}}
 
-  <label for="purpose">What it is for</label>
+  <label for="purpose">{{t $l "What it is for"}}</label>
   <textarea id="purpose" name="purpose" rows="2" lang="{{.Purpose.Lang}}">{{.Purpose.Value}}</textarea>
 
-  <label for="conditions">Conditions</label>
-  <p class="help" id="conditions-help">Sun, shade, slope, soil, wet or dry: what a planter needs to know.</p>
+  <label for="conditions">{{t $l "Conditions"}}</label>
+  <p class="help" id="conditions-help">{{t $l "Sun, shade, slope, soil, wet or dry: what a planter needs to know."}}</p>
   <textarea id="conditions" name="conditions" rows="3" lang="{{.Conditions.Lang}}" aria-describedby="conditions-help">{{.Conditions.Value}}</textarea>
 
-  <label for="photo_point">Photo point</label>
-  <p class="help" id="photo-point-help">Where to stand and which way to face for this place's photo each season.</p>
+  <label for="photo_point">{{t $l "Photo point"}}</label>
+  <p class="help" id="photo-point-help">{{t $l "Where to stand and which way to face for this place's photo each season."}}</p>
   <textarea id="photo_point" name="photo_point" rows="2" lang="{{.PhotoPoint.Lang}}" aria-describedby="photo-point-help">{{.PhotoPoint.Value}}</textarea>
 
-  <label for="trail_anchor">Trail station</label>
-  {{template "field-problem" (index .Problems "trail_anchor")}}
+  <label for="trail_anchor">{{t $l "Trail station"}}</label>
+  {{with index .Problems "trail_anchor"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   <select id="trail_anchor" name="trail_anchor">
-    {{range .Anchors}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
+    {{range .Anchors}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{words $l .Label}}{{with .After}} ({{.}}){{end}}</option>
     {{end}}
   </select>
-  <p class="help">If this is a station's space, its card links to that station's prayer on the trail page.</p>
+  <p class="help">{{t $l "If this is a station's space, its card links to that station's prayer on the trail page."}}</p>
 
-  <label for="sort">Order in lists</label>
-  {{template "field-problem" (index .Problems "sort")}}
+  <label for="sort">{{t $l "Order in lists"}}</label>
+  {{with index .Problems "sort"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   <input id="sort" name="sort" type="number" inputmode="numeric" step="1" value="{{.Sort}}">
-  <p class="help">Lower numbers come first. Places with the same number go by name.</p>
+  <p class="help">{{t $l "Lower numbers come first. Places with the same number go by name."}}</p>
 
-  <button class="button" type="submit">Save</button>
+  <button class="button" type="submit">{{t $l "Save"}}</button>
 </form>
 
 {{if .OnMap}}{{/* Its own form: a tap on the picture is the whole of what it sends, as
@@ -70,9 +69,9 @@
      lands on the input. pickWidth and pickHeight in placeapp.go, and
      .map-pick in app.css, are the same 280 by 182. */}}
 <form class="card form" method="post" action="/steward/places/{{.ID}}/spot">
-  <h2>Where it is on the map</h2>
-  {{with .SpotProblem}}<p class="problem" role="alert">{{.}}</p>{{end}}
-  <p class="help">{{if .Spot}}The yellow ring is where it is now. Tap the map to move it.{{else}}It is not on the map yet. Tap where it is.{{end}} The white dots on the trail are the stations, and the grey ones are the other places.</p>
+  <h2>{{t $l "Where it is on the map"}}</h2>
+  {{with .SpotProblem}}<p class="problem" role="alert">{{say $l .}}</p>{{end}}
+  <p class="help">{{if .Spot}}{{t $l "The yellow ring is where it is now. Tap the map to move it."}}{{else}}{{t $l "It is not on the map yet. Tap where it is."}}{{end}} {{t $l "The white dots on the trail are the stations, and the grey ones are the other places."}}</p>
   <div class="map-pick-box">
     <div class="map-pick">
       <svg viewBox="0 0 800 520" width="280" height="182" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
@@ -80,23 +79,20 @@
         {{range .Others}}<circle cx="{{.X}}" cy="{{.Y}}" r="16" fill="#6A6A6A" stroke="#FFFFFF" stroke-width="4"/>{{end}}
         {{with .Spot}}<circle cx="{{.X}}" cy="{{.Y}}" r="26" fill="none" stroke="#FFCB00" stroke-width="10"/><circle cx="{{.X}}" cy="{{.Y}}" r="26" fill="none" stroke="#1E2A73" stroke-width="3"/>{{end}}
       </svg>
-      <input type="image" name="at" alt="Put {{.PlaceName}} where you tap on the map" width="280" height="182"
+      <input type="image" name="at" alt="{{plain $l "Put {place} where you tap on the map" "place" .PlaceName}}" width="280" height="182"
              src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
     </div>
   </div>
-  {{if .Spot}}<button class="button button-quiet" type="submit" name="off" value="yes">Take it off the map</button>{{end}}
+  {{if .Spot}}<button class="button button-quiet" type="submit" name="off" value="yes">{{t $l "Take it off the map"}}</button>{{end}}
 </form>
 {{end}}
 
 {{if .ID}}
 <form class="card form danger" method="post" action="/steward/places/{{.ID}}/delete">
-  <h2>Remove this place</h2>
-  {{with .DeleteProblem}}<p class="problem" role="alert">{{.}}</p>{{end}}
-  <label class="check"><input type="checkbox" name="confirm" value="yes"> Yes, remove {{.PlaceName}}</label>
-  <button class="button button-quiet" type="submit">Remove</button>
+  <h2>{{t $l "Remove this place"}}</h2>
+  {{with .DeleteProblem}}<p class="problem" role="alert">{{say $l .}}</p>{{end}}
+  <label class="check"><input type="checkbox" name="confirm" value="yes"> {{t $l "Yes, remove {place}" "place" .PlaceName}}</label>
+  <button class="button button-quiet" type="submit">{{t $l "Remove"}}</button>
 </form>
 {{end}}
-</div>
 {{end}}{{end}}
-
-{{define "field-problem"}}{{if .}}<p class="field-problem">{{.}}</p>{{end}}{{end}}

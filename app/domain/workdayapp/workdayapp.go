@@ -85,8 +85,31 @@ type row struct {
 
 type listView struct {
 	Upcoming, Recent []row
-	Done             string
+	Done             any
 }
+
+// The words this app says from Go, in English; Claude translates them
+// through the translation memory, and say looks them up (page/words.go).
+// The rest are in the templates, through t.
+type wording struct {
+	Added, Saved, Removed, AddADay, Edit, Confirm, NoDate, BadStart, BadEnd types.Text
+}
+
+var words = wording{
+	Added:    types.Text{EN: "Day added. It is on the home page now."},
+	Saved:    types.Text{EN: "Changes saved."},
+	Removed:  types.Text{EN: "Day removed from the calendar."},
+	AddADay:  types.Text{EN: "Add a day"},
+	Edit:     types.Text{EN: "Edit {date}"},
+	Confirm:  types.Text{EN: "Tick the box to confirm, then press Remove again."},
+	NoDate:   types.Text{EN: "Choose the date of the day."},
+	BadStart: types.Text{EN: "Write the start time as hours and minutes, such as 08:00."},
+	BadEnd:   types.Text{EN: "Write the end time as hours and minutes, such as 11:30."},
+}
+
+// Words is this app's copy held in Go, for the catalog the translation
+// memory lists.
+var Words = page.Catalog{{Where: "the stewards' screens for stewardship days, the days anyone may come and help", Words: words}}
 
 func (a app) list(w http.ResponseWriter, r *http.Request) {
 	up, err := a.cfg.Days.Upcoming(r.Context())
@@ -108,11 +131,11 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 	// A fixed sentence chosen by a word, never the query echoed.
 	switch r.URL.Query().Get("done") {
 	case "added":
-		v.Done = "Day added. It is on the home page now."
+		v.Done = words.Added
 	case "saved":
-		v.Done = "Changes saved."
+		v.Done = words.Saved
 	case "removed":
-		v.Done = "Day removed from the calendar."
+		v.Done = words.Removed
 	}
 
 	a.cfg.Render.Render(w, r, http.StatusOK, "steward-days", v)
@@ -132,13 +155,14 @@ func rows(days []workdaybus.Day) []row {
 // formView is the form exactly as typed, so a refusal gives back what was
 // sent rather than what was saved.
 type formView struct {
-	ID, Heading string
+	ID      string
+	Heading any
 
 	Date, Starts, Ends string
 	Title, Details     page.Box
 
-	Problems      map[string]string
-	DeleteProblem string
+	Problems      map[string]any
+	DeleteProblem any
 }
 
 // The inputs' own formats: what <input type="date"> and type="time" send.
@@ -150,7 +174,7 @@ const (
 func (a app) newForm(w http.ResponseWriter, r *http.Request) {
 	// A morning, since that is when most work days are; the steward
 	// changes it if not. The date is left for them to choose.
-	a.cfg.Render.Render(w, r, http.StatusOK, "day-form", formView{Heading: "Add a day", Starts: "08:00", Ends: "11:00"})
+	a.cfg.Render.Render(w, r, http.StatusOK, "day-form", formView{Heading: words.AddADay, Starts: "08:00", Ends: "11:00"})
 }
 
 func (a app) editForm(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +192,7 @@ func (a app) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v.Heading = "Add a day"
+	v.Heading = words.AddADay
 
 	if len(v.Problems) == 0 {
 		_, err := a.cfg.Days.Create(r.Context(), f)
@@ -245,7 +269,7 @@ func (a app) remove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	v := viewOf(d, mid.LangFrom(r.Context()))
-	v.DeleteProblem = "Tick the box to confirm, then press Remove again."
+	v.DeleteProblem = words.Confirm
 
 	a.cfg.Render.Render(w, r, http.StatusUnprocessableEntity, "day-form", v)
 }
@@ -292,14 +316,14 @@ func read(w http.ResponseWriter, r *http.Request) (workdaybus.Fields, formView, 
 	v := formView{
 		Date: get("date"), Starts: get("starts"), Ends: get("ends"),
 		Title: page.Typed(get("title"), l), Details: page.Typed(get("details"), l),
-		Problems: map[string]string{},
+		Problems: map[string]any{},
 	}
 
 	f := workdaybus.Fields{Title: v.Title.Text(l), Details: v.Details.Text(l)}
 
 	day, err := time.ParseInLocation(dateLayout, v.Date, types.Garden)
 	if err != nil {
-		v.Problems["date"] = "Choose the date of the day."
+		v.Problems["date"] = words.NoDate
 
 		return f, v, true
 	}
@@ -308,12 +332,12 @@ func read(w http.ResponseWriter, r *http.Request) (workdaybus.Fields, formView, 
 	// missing; a time the browser sent in some other shape is refused here.
 	f.Starts, err = at(day, v.Starts)
 	if err != nil {
-		v.Problems["date"] = "Write the start time as hours and minutes, such as 08:00."
+		v.Problems["date"] = words.BadStart
 	}
 
 	f.Ends, err = at(day, v.Ends)
 	if err != nil {
-		v.Problems["ends"] = "Write the end time as hours and minutes, such as 11:30."
+		v.Problems["ends"] = words.BadEnd
 	}
 
 	return f, v, true
@@ -344,7 +368,7 @@ func (a app) refused(w http.ResponseWriter, r *http.Request, v *formView, err er
 		return false
 	}
 
-	v.Problems[invalid.Field] = page.Sentence(invalid.Problem)
+	v.Problems[invalid.Field] = types.Text{EN: page.Sentence(invalid.Problem)}
 
 	return true
 }
@@ -360,7 +384,7 @@ func viewOf(d workdaybus.Day, l types.Lang) formView {
 	}
 }
 
-func heading(d workdaybus.Day) string { return "Edit " + page.Date(d.Starts).In(types.English) }
+func heading(d workdaybus.Day) page.Phrase { return page.Put(words.Edit, "date", page.Date(d.Starts)) }
 
 func (a app) fail(w http.ResponseWriter, r *http.Request, what string, err error) {
 	a.cfg.Log.ErrorContext(r.Context(), what, "request_id", web.RequestIDFrom(r.Context()), "error", err)

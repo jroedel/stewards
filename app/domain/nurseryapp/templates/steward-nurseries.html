@@ -1,29 +1,27 @@
-{{define "title"}}Nurseries · Garden stewards{{end}}
-{{define "content"}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow"><a href="/steward/nursery">Nursery stock</a></p>
-<h1>Nurseries</h1>
-<p class="lead">Where the stewards buy plants: how to get there, and what to know before going. A nursery is added here, or by writing a new one's name when a nursery photo is sorted. Volunteers never see this.</p>
+{{define "title"}}{{plain .Lang "Nurseries"}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow"><a href="/steward/nursery">{{t $l "Nursery stock"}}</a></p>
+<h1>{{t $l "Nurseries"}}</h1>
+<p class="lead">{{t $l "Where the stewards buy plants: how to get there, and what to know before going. A nursery is added here, or by writing a new one's name when a nursery photo is sorted. Volunteers never see this."}}</p>
 
-{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
+{{with .Done}}<p class="done" role="status">{{say $l .}}</p>{{end}}
 
-<a class="button button-block" href="/steward/nurseries/new">Add a nursery</a>
+<a class="button button-block" href="/steward/nurseries/new">{{t $l "Add a nursery"}}</a>
 
 {{range $n := .Nurseries}}
 <section class="card photo-kind" id="nursery-{{$n.ID}}" aria-labelledby="name-{{$n.ID}}">
   <h2 id="name-{{$n.ID}}">{{$n.Name}}</h2>
   {{with $n.Address}}<p class="row-note">{{.}}</p>{{end}}
   {{if or $n.MapURL $n.Website $n.Tel}}<p class="nursery-links">
-    {{- with $n.MapURL}}<a href="{{.}}" rel="noopener">Open in maps</a>{{end}}
-    {{- with $n.Website}}<a href="{{.}}" rel="noopener">Website</a>{{end}}
-    {{- with $n.Tel}}<a href="{{.}}">Call {{$n.Phone}}</a>{{end -}}
+    {{- with $n.MapURL}}<a href="{{.}}" rel="noopener">{{t $l "Open in maps"}}</a>{{end}}
+    {{- with $n.Website}}<a href="{{.}}" rel="noopener">{{t $l "Website"}}</a>{{end}}
+    {{- with $n.Tel}}<a href="{{.}}">{{t $l "Call {phone}" "phone" $n.Phone}}</a>{{end -}}
   </p>{{else if $n.Phone}}<p class="row-note">{{$n.Phone}}</p>{{end}}
   {{with $n.Note}}<p class="row-note">{{.}}</p>{{end}}
-  <p class="help">{{with $n.LastVisit}}Last visited {{.}} · <a href="/steward/nursery#nursery-{{$n.ID}}">what it had</a>{{else}}Not visited yet.{{end}}</p>
-  <a class="nursery-edit" href="/steward/nurseries/{{$n.ID}}/edit">Change</a>
+  <p class="help">{{with $n.LastVisit}}{{t $l "Last visited {day}" "day" .}} · <a href="/steward/nursery#nursery-{{$n.ID}}">{{t $l "what it had"}}</a>{{else}}{{t $l "Not visited yet."}}{{end}}</p>
+  <a class="nursery-edit" href="/steward/nurseries/{{$n.ID}}/edit">{{t $l "Change"}}</a>
 </section>
 {{else}}
-<div class="card empty"><p>No nurseries yet. Add one, or sort a nursery photo from the inbox and write the nursery's name.</p></div>
+<div class="card empty"><p>{{t $l "No nurseries yet. Add one, or sort a nursery photo from the inbox and write the nursery's name."}}</p></div>
 {{end}}
-</div>
 {{end}}{{end}}

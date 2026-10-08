@@ -102,6 +102,48 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 	}
 }
 
+// ------------------------------------------------------------------ the words
+
+// The words this app says from Go, in English; Claude translates them
+// through the translation memory, and say looks them up (page/words.go).
+// The rest are in the templates, through t.
+type wording struct {
+	There, ChooseFromList, CountNumber, NotMatched types.Text
+
+	Added, Saved, Removed, Confirm, HasVisits types.Text
+
+	Statuses map[speciesbus.Status]types.Text
+}
+
+var words = wording{
+	There:          types.Text{EN: "{count} there"},
+	ChooseFromList: types.Text{EN: "Choose from the list."},
+	CountNumber:    types.Text{EN: "Write how many there were as a number, or leave it empty."},
+	NotMatched:     types.Text{EN: "Not matched yet"},
+
+	Added:     types.Text{EN: "Nursery added."},
+	Saved:     types.Text{EN: "Saved."},
+	Removed:   types.Text{EN: "Nursery removed."},
+	Confirm:   types.Text{EN: "Tick the box to confirm, then press Remove again."},
+	HasVisits: types.Text{EN: "This nursery has visits in the nursery stock, so it stays with them. Change its name or its note instead."},
+
+	Statuses: statusWords(),
+}
+
+// statusWords is each status as speciesbus words it, as copy.
+func statusWords() map[speciesbus.Status]types.Text {
+	out := map[speciesbus.Status]types.Text{}
+	for _, s := range speciesbus.Statuses {
+		out[s] = types.Text{EN: s.Label()}
+	}
+
+	return out
+}
+
+// Words is this app's copy held in Go, for the catalog the translation
+// memory lists.
+var Words = page.Catalog{{Where: "the stewards' screens for nursery stock and the nurseries they buy from", Words: words}}
+
 // ------------------------------------------------------------------ the list
 
 type lineRow struct {
@@ -109,24 +151,24 @@ type lineRow struct {
 	InboxID   string // the photo, while it is kept
 	Name      string // the plant's common name, once matched
 	Slug      string
-	Status    string
+	Status    types.Text
 	Native    bool
 	NameOnTag string
-	Facts     string // pot · price · count
+	Facts     page.List // pot · price · count
 	Note      string
 }
 
 type visitRow struct {
 	NurseryID string // its entry in the register
 	Nursery   string
-	Day       string
+	Day       page.Phrase
 	Lines     []lineRow
 }
 
 type listView struct {
 	Current []visitRow // the latest visit to each nursery
 	Earlier []visitRow
-	Done    string
+	Saved   bool
 }
 
 func (a app) list(w http.ResponseWriter, r *http.Request) {
@@ -144,10 +186,7 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var v listView
-	if r.URL.Query().Get("done") == "saved" {
-		v.Done = "Saved."
-	}
+	v := listView{Saved: r.URL.Query().Get("done") == "saved"}
 
 	cutoff := a.now().Add(-keptFor)
 	seen := map[types.ID]bool{}
@@ -155,7 +194,7 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 	// All is the most recent visit first, so the first of each nursery is
 	// its latest.
 	for _, st := range all {
-		row := visitRow{NurseryID: st.Visit.NurseryID.String(), Nursery: st.Visit.Nursery, Day: lastVisitWords(st.Visit.Day)}
+		row := visitRow{NurseryID: st.Visit.NurseryID.String(), Nursery: st.Visit.Nursery, Day: page.FullDate(st.Visit.Day)}
 		withPhotos := st.Visit.Day.After(cutoff)
 
 		for _, l := range st.Lines {
@@ -182,23 +221,21 @@ func rowOf(l nurserybus.Line, plants map[types.ID]speciesbus.Species, withPhotos
 
 	if sp, ok := plants[l.SpeciesID]; ok {
 		row.Name, row.Slug = sp.Common.In(types.English), sp.Slug
-		row.Status, row.Native = sp.Status.Label(), sp.Status == speciesbus.StatusNative
+		row.Status, row.Native = words.Statuses[sp.Status], sp.Status == speciesbus.StatusNative
 	}
 
-	var facts []string
+	row.Facts = page.List{Sep: " · "}
 	if l.PotSize != "" {
-		facts = append(facts, l.PotSize)
+		row.Facts.Items = append(row.Facts.Items, l.PotSize)
 	}
 
 	if p := nurserybus.PriceWords(l.PriceCents); p != "" {
-		facts = append(facts, p)
+		row.Facts.Items = append(row.Facts.Items, p)
 	}
 
 	if l.Count > 0 {
-		facts = append(facts, strconv.Itoa(l.Count)+" there")
+		row.Facts.Items = append(row.Facts.Items, page.Put(words.There, "count", l.Count))
 	}
-
-	row.Facts = strings.Join(facts, " · ")
 
 	return row
 }
@@ -206,8 +243,10 @@ func rowOf(l nurserybus.Line, plants map[types.ID]speciesbus.Species, withPhotos
 // ------------------------------------------------------------------ one line
 
 type option struct {
-	Value, Label string
-	Selected     bool
+	Value      string
+	Label      any    // a plant's name, or "Not matched yet"
+	Scientific string // shown after it, so either name finds it
+	Selected   bool
 
 	// Also is more to find a plant by in a searchable list, not shown: see
 	// plantOption.
@@ -219,10 +258,7 @@ type option struct {
 // its Spanish name to be found by as well, which is not shown (the page
 // package's find.mjs, data-also).
 func plantOption(sp speciesbus.Species, selected bool) option {
-	o := option{Value: sp.ID.String(), Label: sp.Common.In(types.English), Selected: selected}
-	if sp.Scientific != "" {
-		o.Label += " (" + sp.Scientific + ")"
-	}
+	o := option{Value: sp.ID.String(), Label: sp.Common, Scientific: sp.Scientific, Selected: selected}
 
 	if sp.Common.ES != sp.Common.EN {
 		o.Also = sp.Common.ES
@@ -239,7 +275,7 @@ type editView struct {
 	Price       string
 	Count       string
 	Note        string
-	Problems    map[string]string
+	Problems    map[string]any
 }
 
 func (a app) editForm(w http.ResponseWriter, r *http.Request) {
@@ -250,7 +286,7 @@ func (a app) editForm(w http.ResponseWriter, r *http.Request) {
 
 	v := editView{
 		NameOnTag: l.NameOnTag, PotSize: l.PotSize, Note: l.Note,
-		Price: strings.TrimPrefix(nurserybus.PriceWords(l.PriceCents), "$"), Problems: map[string]string{},
+		Price: strings.TrimPrefix(nurserybus.PriceWords(l.PriceCents), "$"), Problems: map[string]any{},
 	}
 
 	if l.Count > 0 {
@@ -274,7 +310,7 @@ func (a app) update(w http.ResponseWriter, r *http.Request) {
 
 	v := editView{
 		NameOnTag: r.PostFormValue("name_on_tag"), PotSize: r.PostFormValue("pot_size"), Note: r.PostFormValue("note"),
-		Price: r.PostFormValue("price"), Count: r.PostFormValue("count"), Problems: map[string]string{},
+		Price: r.PostFormValue("price"), Count: r.PostFormValue("count"), Problems: map[string]any{},
 	}
 
 	f := nurserybus.Fields{NameOnTag: v.NameOnTag, PotSize: v.PotSize, Note: v.Note}
@@ -282,19 +318,19 @@ func (a app) update(w http.ResponseWriter, r *http.Request) {
 	if raw := r.PostFormValue("species"); raw != "" {
 		id, err := types.ParseID(raw)
 		if err != nil {
-			v.Problems["species"] = "Choose from the list."
+			v.Problems["species"] = words.ChooseFromList
 		}
 		f.SpeciesID = id
 	}
 
 	var err error
 	if f.PriceCents, err = nurserybus.ParsePrice(v.Price); err != nil {
-		v.Problems["price"] = page.Sentence(err.Error())
+		v.Problems["price"] = types.Text{EN: page.Sentence(err.Error())}
 	}
 
 	if c := strings.TrimSpace(v.Count); c != "" {
 		if f.Count, err = strconv.Atoi(c); err != nil {
-			v.Problems["count"] = "Write how many there were as a number, or leave it empty."
+			v.Problems["count"] = words.CountNumber
 		}
 	}
 
@@ -309,7 +345,7 @@ func (a app) update(w http.ResponseWriter, r *http.Request) {
 
 			return
 		case isInvalid:
-			v.Problems[invalid.Field] = page.Sentence(invalid.Problem)
+			v.Problems[invalid.Field] = types.Text{EN: page.Sentence(invalid.Problem)}
 		default:
 			a.fail(w, r, "saving a line of nursery stock", err)
 
@@ -344,7 +380,7 @@ func (a app) showEdit(w http.ResponseWriter, r *http.Request, status int, l nurs
 		}
 	}
 
-	v.Species = []option{{Value: "", Label: "Not matched yet", Selected: chosen.Zero()}}
+	v.Species = []option{{Value: "", Label: words.NotMatched, Selected: chosen.Zero()}}
 	for _, sp := range plants {
 		v.Species = append(v.Species, plantOption(sp, sp.ID == chosen))
 	}

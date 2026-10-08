@@ -32,14 +32,14 @@
   {{with .Size}}<div class="row-note">{{say $l .}}</div>{{end}}
   {{if .Note.Written}}<div class="row-summary">{{say $l .Note}}</div>{{end}}
 </div><span class="row-go" aria-hidden="true">›</span></a>
-{{with $.Data.Adds}}<form class="planted" method="post" action="{{.Planned.PostURL}}" lang="en">
+{{with $.Data.Adds}}<form class="planted" method="post" action="{{.Planned.PostURL}}">
   <input type="hidden" name="species" value="{{$line.SpeciesID}}">
   <input type="hidden" name="action" value="{{$line.Action}}">
   <input type="hidden" name="return" value="card">
-  <button class="add-button" type="submit">Growing ✓ <span class="quiet">take it off To plant</span></button>
+  <button class="add-button" type="submit">{{t $l "Growing ✓"}} <span class="quiet">{{t $l "take it off To plant"}}</span></button>
 </form>{{end}}</li>
 {{end}}</ul>{{end}}
-{{with .Adds}}{{template "card-add" .Planned}}{{end}}
+{{with .Adds}}{{template "card-add" (pass $l .Planned)}}{{end}}
 {{end}}
 
 {{if .Calendar}}
@@ -64,14 +64,14 @@
     <p class="panel-help">{{say $l .Copy.ProtectHelp}}</p>
     {{if .Protect}}<ul>{{range .Protect}}<li><a href="/plants/{{.Slug}}">{{say $l .Name}}</a>{{if .Note.Written}}<span class="panel-note">{{say $l .Note}}</span>{{end}}</li>{{end}}</ul>
     {{else}}<p class="panel-none">{{say $l $.Data.Copy.NothingHere}}</p>{{end}}
-    {{with .Adds}}{{template "card-add" .Protect}}{{end}}
+    {{with .Adds}}{{template "card-add" (pass $l .Protect)}}{{end}}
   </section>
   <section class="panel panel-pull" aria-labelledby="pull-h">
     <h2 id="pull-h"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v14"/><path d="M6 12l6 6 6-6"/></svg>{{say $l .Copy.Pull}}</h2>
     <p class="panel-help">{{say $l .Copy.PullHelp}}</p>
     {{if .Pull}}<ul>{{range .Pull}}<li><a href="/plants/{{.Slug}}">{{say $l .Name}}</a>{{if .Note.Written}}<span class="panel-note">{{say $l .Note}}</span>{{end}}</li>{{end}}</ul>
     {{else}}<p class="panel-none">{{say $l $.Data.Copy.NothingHere}}</p>{{end}}
-    {{with .Adds}}{{template "card-add" .Pull}}{{end}}
+    {{with .Adds}}{{template "card-add" (pass $l .Pull)}}{{end}}
   </section>
 </div>
 
@@ -81,7 +81,7 @@
   <p class="panel-help">{{say $l .Copy.CarefulHelp}}</p>
   {{if .Careful}}<ul>{{range .Careful}}<li><a href="/plants/{{.Slug}}">{{say $l .Name}}</a>{{if .Note.Written}}<span class="panel-note">{{say $l .Note}}</span>{{end}}</li>{{end}}</ul>
   {{else}}<p class="panel-none">{{say $l $.Data.Copy.NothingHere}}</p>{{end}}
-  {{with .Adds}}{{template "card-add" .Careful}}{{end}}
+  {{with .Adds}}{{template "card-add" (pass $l .Careful)}}{{end}}
 </section>
 {{end}}
 
@@ -98,33 +98,33 @@
 <div class="card"><p class="help">{{say $l .Copy.PhotoPointHelp}}</p><p class="prose">{{say $l .PhotoPoint}}</p></div>
 {{end}}
 
-{{with .EditURL}}<a class="onward" href="{{.}}" lang="en"><span>{{say $l $.Data.Copy.Edit}}</span><span aria-hidden="true">›</span></a>{{end}}
+{{with .EditURL}}<a class="onward" href="{{.}}"><span>{{say $l $.Data.Copy.Edit}}</span><span aria-hidden="true">›</span></a>{{end}}
 {{with .Adds}}<script type="module" src="{{$.Script "find.mjs"}}"></script>{{end}}
 {{end}}{{end}}
 
-{{/* A list's "+ Add", for a signed-in steward only: see cardAdd. In English,
-     as the steward screens are; a volunteer never sees it. The plant select
-     leaves out what is already listed here. */}}
-{{define "card-add"}}{{if or .Species .Growing}}<div class="card-add" lang="en">
-<button type="button" class="add-button" popovertarget="{{.ID}}">+ Add</button>
+{{/* A list's "+ Add", for a signed-in steward only: see cardAdd. A
+     volunteer never sees it. The plant select leaves out what is already
+     listed here. */}}
+{{define "card-add"}}{{$l := .Lang}}{{with .Data}}{{if or .Species .Growing}}<div class="card-add">
+<button type="button" class="add-button" popovertarget="{{.ID}}">+ {{t $l "Add"}}</button>
 <div id="{{.ID}}" class="add-popover" popover>
 <form class="form" method="post" action="{{.PostURL}}">
-  <h2>{{.Title}}</h2>
-  <p class="help">{{.Help}}</p>
+  <h2>{{say $l .Title}}</h2>
+  <p class="help">{{say $l .Help}}</p>
   <input type="hidden" name="action" value="{{.Action}}">
   {{if .Planned}}<input type="hidden" name="planned" value="yes">{{end}}
   <input type="hidden" name="return" value="card">
-  <label for="{{.ID}}-species">Plant</label>
-  <select id="{{.ID}}-species" name="species" required data-find="Type part of its name"><option value="">Choose a plant</option>
-    {{if .Growing}}<optgroup label="Not here yet">{{end}}{{range .Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}>{{.Label}}</option>{{end}}{{if .Growing}}</optgroup>
-    <optgroup label="Already growing here: plant more">{{range .Growing}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}>{{.Label}}</option>{{end}}</optgroup>{{end}}
+  <label for="{{.ID}}-species">{{t $l "Plant"}}</label>
+  <select id="{{.ID}}-species" name="species" required data-find="{{plain $l "Type part of its name"}}"><option value="">{{plain $l "Choose a plant"}}</option>
+    {{if .Growing}}<optgroup label="{{plain $l "Not here yet"}}">{{end}}{{range .Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}>{{words $l .Label}}{{with .After}} ({{.}}){{end}}</option>{{end}}{{if .Growing}}</optgroup>
+    <optgroup label="{{plain $l "Already growing here: plant more"}}">{{range .Growing}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}>{{words $l .Label}}{{with .After}} ({{.}}){{end}}</option>{{end}}</optgroup>{{end}}
   </select>
-  <label for="{{.ID}}-note">Note <span class="optional">optional{{if .Growing}}; left empty, a plant already here keeps its note{{end}}</span></label>
+  <label for="{{.ID}}-note">{{t $l "Note"}} <span class="optional">{{if .Growing}}{{t $l "optional; left empty, a plant already here keeps its note"}}{{else}}{{t $l "optional"}}{{end}}</span></label>
   <input id="{{.ID}}-note" name="note" type="text" maxlength="500">
   <div class="add-actions">
-    <button class="button" type="submit">Add</button>
-    <button class="button button-quiet" type="button" popovertarget="{{.ID}}" popovertargetaction="hide">Cancel</button>
+    <button class="button" type="submit">{{t $l "Add"}}</button>
+    <button class="button button-quiet" type="button" popovertarget="{{.ID}}" popovertargetaction="hide">{{t $l "Cancel"}}</button>
   </div>
 </form>
 </div>
-</div>{{end}}{{end}}
+</div>{{end}}{{end}}{{end}}

@@ -1,38 +1,36 @@
-{{define "title"}}Stewards · Garden stewards{{end}}
-{{define "content"}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow"><a href="/steward">Places</a></p>
-<h1>Stewards</h1>
-<p class="lead">The people who can sign in and edit places. Volunteers don't need an account.</p>
+{{define "title"}}{{plain .Lang "Stewards"}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow"><a href="/steward">{{t $l "Places"}}</a></p>
+<h1>{{t $l "Stewards"}}</h1>
+<p class="lead">{{t $l "The people who can sign in and edit places. Volunteers don't need an account."}}</p>
 
-{{with .Done}}<p class="done" role="status">{{.}}</p>{{end}}
-{{with .Problem}}<p class="problem" role="alert">{{.}}</p>{{end}}
+{{with .Done}}<p class="done" role="status">{{say $l .}}</p>{{end}}
+{{with .Problem}}<p class="problem" role="alert">{{say $l .}}</p>{{end}}
 
 <ul class="rows">
 {{range .Stewards}}<li class="row{{if not .Enabled}} row-off{{end}}">
   <div class="row-main-static">
-    <div class="row-name">{{if .Name}}{{.Name}}{{else}}{{.Email}}{{end}}{{if .You}} <span class="tag">You</span>{{end}}{{if not .Enabled}} <span class="tag tag-off">Turned off</span>{{end}}</div>
+    <div class="row-name">{{if .Name}}{{.Name}}{{else}}{{.Email}}{{end}}{{if .You}} <span class="tag">{{t $l "You"}}</span>{{end}}{{if not .Enabled}} <span class="tag tag-off">{{t $l "Turned off"}}</span>{{end}}</div>
     {{if .Name}}<div class="row-note">{{.Email}}</div>{{end}}
   </div>
   {{if not .You}}<form method="post" action="/steward/stewards/{{.ID}}/access">
-    {{if .Enabled}}<input type="hidden" name="enabled" value="no"><button class="button button-quiet button-small" type="submit">Turn off</button>
-    {{else}}<input type="hidden" name="enabled" value="yes"><button class="button button-quiet button-small" type="submit">Turn on</button>{{end}}
+    {{if .Enabled}}<input type="hidden" name="enabled" value="no"><button class="button button-quiet button-small" type="submit">{{t $l "Turn off"}}</button>
+    {{else}}<input type="hidden" name="enabled" value="yes"><button class="button button-quiet button-small" type="submit">{{t $l "Turn on"}}</button>{{end}}
   </form>{{end}}
 </li>
 {{end}}</ul>
 
-<h2>Add a steward</h2>
+<h2>{{t $l "Add a steward"}}</h2>
 <form class="card form" method="post" action="/steward/stewards">
-  <label for="email">Their email address</label>
-  {{with index .Problems "email"}}<p class="field-problem">{{.}}</p>{{end}}
+  <label for="email">{{t $l "Their email address"}}</label>
+  {{with index .Problems "email"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   <input id="email" name="email" type="email" value="{{.Email}}" required
          autocomplete="off" inputmode="email" autocapitalize="off" spellcheck="false">
-  <label for="name">Their name <span class="optional">optional</span></label>
-  <p class="help" id="name-help">Only other stewards see it, here. Volunteers never do.</p>
-  {{with index .Problems "name"}}<p class="field-problem">{{.}}</p>{{end}}
+  <label for="name">{{t $l "Their name"}} <span class="optional">{{t $l "optional"}}</span></label>
+  <p class="help" id="name-help">{{t $l "Only other stewards see it, here. Volunteers never do."}}</p>
+  {{with index .Problems "name"}}<p class="field-problem">{{say $l .}}</p>{{end}}
   <input id="name" name="name" type="text" value="{{.Name}}" aria-describedby="name-help" maxlength="60" autocomplete="off">
-  <button class="button" type="submit">Add</button>
-  <p class="help">They sign in at {{.SignIn}} with this address, and we email them to say so.</p>
+  <button class="button" type="submit">{{t $l "Add"}}</button>
+  <p class="help">{{t $l "They sign in at {address} with this address, and we email them to say so." "address" .SignIn}}</p>
 </form>
-</div>
 {{end}}{{end}}

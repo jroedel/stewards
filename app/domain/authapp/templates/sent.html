@@ -1,14 +1,12 @@
-{{define "title"}}Check your email · Garden stewards{{end}}
-{{define "signin-link"}}<a href="/places">Back to the places list</a>{{end}}
-{{define "content"}}{{with .Data}}
-<div lang="en">
-<p class="eyebrow">Garden stewards</p>
-<h1>Check your email</h1>
-<p class="lead">If <strong>{{.Email}}</strong> belongs to a steward, a sign-in link is on its way. It works once, for fifteen minutes.</p>
+{{define "title"}}{{plain .Lang "Check your email"}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "signin-link"}}<a href="/places">{{t .Lang "Back to the places list"}}</a>{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow">{{t $l "Garden stewards"}}</p>
+<h1>{{t $l "Check your email"}}</h1>
+<p class="lead">{{t $l "If {address} belongs to a steward, a sign-in link is on its way. It works once, for fifteen minutes." "address" (strong .Email)}}</p>
 
 <div class="card">
-  <p>Nothing after a few minutes? Look in the spam folder, then <a href="/sign-in">try again</a>, checking the address for a typo.</p>
-  <p class="help">This page reads the same whether or not the address has an account, so that nobody can use it to find out who the stewards are.</p>
-</div>
+  <p>{{t $l "Nothing after a few minutes? Look in the spam folder, then {again}, checking the address for a typo." "again" (link "/sign-in" (t $l "try again"))}}</p>
+  <p class="help">{{t $l "This page reads the same whether or not the address has an account, so that nobody can use it to find out who the stewards are."}}</p>
 </div>
 {{end}}{{end}}

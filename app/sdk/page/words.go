@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"text/template/parse"
 	"unicode"
 	"unicode/utf8"
 
@@ -129,6 +130,20 @@ func (rn *Renderer) initial(l types.Lang, t types.Text) string {
 	return string(unicode.ToUpper(r))
 }
 
+// abbr is a word's first three letters, as a capital and two: a month's in
+// a row of twelve boxes, Jan for January and Ene for enero.
+func (rn *Renderer) abbr(l types.Lang, t types.Text) string {
+	r := []rune(rn.fill(t).In(l))
+	if len(r) == 0 {
+		return ""
+	}
+
+	r = r[:min(3, len(r))]
+	r[0] = unicode.ToUpper(r[0])
+
+	return string(r)
+}
+
 // compose writes v in l: as escaped HTML, with a span round anything shown
 // in the other language, or as plain text. It reports the language the
 // outermost words were in.
@@ -139,7 +154,7 @@ func (rn *Renderer) initial(l types.Lang, t types.Text) string {
 func compose(rn *Renderer, l types.Lang, v any, html bool) (string, types.Lang, error) {
 	esc := func(s string) string {
 		if html {
-			return template.HTMLEscapeString(s)
+			return textEscaper.Replace(s)
 		}
 
 		return s
@@ -188,6 +203,10 @@ func compose(rn *Renderer, l types.Lang, v any, html bool) (string, types.Lang, 
 
 		return strings.Join(parts, esc(v.Sep)), l, nil
 
+	case template.HTML:
+		// Markup made by the page itself -- a link a sentence holds, made
+		// by link -- never words from a record or a translation.
+		return string(v), l, nil
 	case string:
 		return esc(v), l, nil
 	case int:
@@ -198,6 +217,13 @@ func compose(rn *Renderer, l types.Lang, v any, html bool) (string, types.Lang, 
 
 	return "", l, fmt.Errorf("say was given a %T, which is not words", v)
 }
+
+// textEscaper escapes words for where say and t put them, between tags: the
+// three characters that can start markup there. Quotes are left as they
+// are, so "can't" is can't in the page as it is on the screen; an attribute,
+// where a quote would end the value, has plain, and html/template escapes
+// it there.
+var textEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 
 // ------------------------------------------------------------------ the catalog
 
@@ -282,4 +308,169 @@ func join(path, name string) string {
 	}
 
 	return path + "." + name
+}
+
+// Plain is v in l as plain text, its copy looked up in the memory: for words
+// that leave by another way than a page, an email's.
+func (rn *Renderer) Plain(l types.Lang, v any) string {
+	s, _ := rn.plain(l, v)
+	return s
+}
+
+// languages is each language's name, as a screen names it: "Spanish, by
+// Claude", "Since … · Spanish".
+var languages = map[types.Lang]types.Text{
+	types.English: {EN: "English"},
+	types.Spanish: {EN: "Spanish"},
+}
+
+// Language is l's name, as copy.
+func Language(l types.Lang) types.Text { return languages[l] }
+
+// LanguageWords is the catalog's entry for the languages' names.
+var LanguageWords = Copy{Where: "the name of a language, on a steward's screens", Words: languages}
+
+// ------------------------------------------------------------------ in a template
+
+// t is the screens' words written in the template itself: {{t $l "Sign
+// in"}}, or with something put in, {{t $l "Edit {name}" "name" .Name}}.
+// The English in the template is the original, looked up in the memory like
+// any other copy, and the renderer lists every one as waiting (Originals),
+// so a page's words need no list of their own in Go.
+//
+// The words must be a string written in the template, never a value: a
+// value is not in the template for Originals to find, so it would never be
+// translated. A Text from a record goes through say.
+func (rn *Renderer) t(l types.Lang, en string, pairs ...any) (template.HTML, error) {
+	return rn.say(l, Put(types.Text{EN: en}, pairs...))
+}
+
+// tPlain is t as plain text, for where markup cannot go: a title, an alt=,
+// an aria-label. {{plain $l "Sign in"}}; html/template escapes it there.
+func (rn *Renderer) tPlain(l types.Lang, en string, pairs ...any) (string, error) {
+	return rn.plain(l, Put(types.Text{EN: en}, pairs...))
+}
+
+// link is a link for a sentence to hold, {{t $l "Sign in on the {list}."
+// "list" (link "/places" (t $l "places list"))}}: so a translation can move
+// it where its language puts it. Only to a path on this site or a web
+// address -- the API's index is http:// on a laptop -- since its markup is
+// the page's own.
+func link(href string, text template.HTML) (template.HTML, error) {
+	web := strings.HasPrefix(href, "https://") || strings.HasPrefix(href, "http://")
+	if !web && (!strings.HasPrefix(href, "/") || strings.HasPrefix(href, "//")) {
+		return "", fmt.Errorf("a link in a sentence goes to a path or a web address, not %q", href)
+	}
+
+	return template.HTML(`<a href="` + template.HTMLEscapeString(href) + `">` + string(text) + `</a>`), nil
+}
+
+// strong is s in bold, for a sentence to hold: an address, a name.
+func strong(s string) template.HTML {
+	return template.HTML("<strong>" + template.HTMLEscapeString(s) + "</strong>")
+}
+
+// code is s as code, for a sentence to hold: a command to type.
+func code(s string) template.HTML {
+	return template.HTML("<code>" + template.HTMLEscapeString(s) + "</code>")
+}
+
+// Passed is what pass hands a template: the page's language beside the
+// data, for a template a page calls with {{template "row" (pass $l .)}}, which
+// otherwise would have the data and no language to say it in.
+type Passed struct {
+	Lang types.Lang
+	Data any
+}
+
+func pass(l types.Lang, data any) Passed { return Passed{Lang: l, Data: data} }
+
+// Originals is every {{t}} and {{plain}} in the templates, with the page it is on, for the
+// translation memory to list as waiting. Read from the parsed templates, so
+// it is exactly what the pages say.
+//
+// A template shared by every page -- the layout's -- is listed once, under
+// its own name; a page's own templates under the page's name.
+func (rn *Renderer) Originals(context.Context) ([]translationbus.Source, error) {
+	names := make([]string, 0, len(rn.pages))
+	for name := range rn.pages {
+		names = append(names, name)
+	}
+
+	slices.Sort(names)
+
+	type seen struct{ where, text string }
+
+	done := map[seen]bool{}
+
+	var out []translationbus.Source
+
+	for _, name := range names {
+		for _, tmpl := range rn.pages[name].Templates() {
+			if tmpl.Tree == nil {
+				continue
+			}
+
+			// By the file it was parsed from: a page that defines one of
+			// the layout's blocks for itself -- its content, its title --
+			// has a tree of its own there, from its own file.
+			where := "the " + name + " page"
+			if rn.layout[tmpl.Tree.ParseName] {
+				where = "every page (" + tmpl.Name() + ")"
+			}
+
+			eachT(tmpl.Tree.Root, func(text string) {
+				if k := (seen{where, text}); !done[k] {
+					done[k] = true
+					out = append(out, translationbus.Source{Text: types.Text{EN: text}, Where: where})
+				}
+			})
+		}
+	}
+
+	return out, nil
+}
+
+// eachT calls found with the words of every call of t under n.
+func eachT(n parse.Node, found func(string)) {
+	switch n := n.(type) {
+	case *parse.ListNode:
+		if n != nil {
+			for _, c := range n.Nodes {
+				eachT(c, found)
+			}
+		}
+	case *parse.ActionNode:
+		eachT(n.Pipe, found)
+	case *parse.IfNode:
+		eachBranch(&n.BranchNode, found)
+	case *parse.RangeNode:
+		eachBranch(&n.BranchNode, found)
+	case *parse.WithNode:
+		eachBranch(&n.BranchNode, found)
+	case *parse.TemplateNode:
+		eachT(n.Pipe, found)
+	case *parse.PipeNode:
+		if n == nil {
+			return
+		}
+
+		for _, cmd := range n.Cmds {
+			if id, ok := cmd.Args[0].(*parse.IdentifierNode); ok && (id.Ident == "t" || id.Ident == "plain") && len(cmd.Args) > 2 {
+				if s, ok := cmd.Args[2].(*parse.StringNode); ok {
+					found(s.Text)
+				}
+			}
+
+			for _, a := range cmd.Args {
+				eachT(a, found)
+			}
+		}
+	}
+}
+
+func eachBranch(b *parse.BranchNode, found func(string)) {
+	eachT(b.Pipe, found)
+	eachT(b.List, found)
+	eachT(b.ElseList, found)
 }

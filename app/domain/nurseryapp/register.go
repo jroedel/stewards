@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/nursery/nurserybus"
@@ -30,12 +29,12 @@ type nurseryRow struct {
 	// digits alone, so nothing a steward typed reaches it but those.
 	Tel template.URL
 
-	LastVisit string // "Saturday 3 October 2026", or empty for never
+	LastVisit any // "Saturday 3 October 2026", or nil for never
 }
 
 type registerView struct {
 	Nurseries []nurseryRow
-	Done      string
+	Done      any
 }
 
 func (a app) register(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +52,10 @@ func (a app) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v := registerView{Done: map[string]string{"added": "Nursery added.", "saved": "Saved.", "removed": "Nursery removed."}[r.URL.Query().Get("done")]}
+	v := registerView{}
+	if done, ok := map[string]types.Text{"added": words.Added, "saved": words.Saved, "removed": words.Removed}[r.URL.Query().Get("done")]; ok {
+		v.Done = done
+	}
 
 	for _, n := range all {
 		row := nurseryRow{ID: n.ID.String(), Name: n.Name, Address: n.Address, Website: n.Website, Phone: n.Phone, Note: n.Note}
@@ -67,7 +69,7 @@ func (a app) register(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if day, ok := last[n.ID]; ok {
-			row.LastVisit = lastVisitWords(day)
+			row.LastVisit = page.FullDate(day)
 		}
 
 		v.Nurseries = append(v.Nurseries, row)
@@ -103,19 +105,19 @@ type nurseryForm struct {
 	ID                                  string // empty for a new one
 	Name, Address, Website, Phone, Note string
 	Visited                             bool // and so not to be removed
-	Problems                            map[string]string
-	DeleteProblem                       string
+	Problems                            map[string]any
+	DeleteProblem                       any
 }
 
 func formOf(n nurserybus.Nursery) nurseryForm {
 	return nurseryForm{
 		ID: n.ID.String(), Name: n.Name, Address: n.Address, Website: n.Website, Phone: n.Phone, Note: n.Note,
-		Problems: map[string]string{},
+		Problems: map[string]any{},
 	}
 }
 
 func (a app) newNursery(w http.ResponseWriter, r *http.Request) {
-	a.render.Render(w, r, http.StatusOK, "steward-nursery-form", nurseryForm{Problems: map[string]string{}})
+	a.render.Render(w, r, http.StatusOK, "steward-nursery-form", nurseryForm{Problems: map[string]any{}})
 }
 
 func (a app) createNursery(w http.ResponseWriter, r *http.Request) {
@@ -179,7 +181,7 @@ func (a app) removeNursery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	v := formOf(n)
-	v.DeleteProblem = "Tick the box to confirm, then press Remove again."
+	v.DeleteProblem = words.Confirm
 
 	if r.PostFormValue("confirm") == "yes" {
 		err := a.stock.DeleteNursery(r.Context(), n.ID)
@@ -191,7 +193,7 @@ func (a app) removeNursery(w http.ResponseWriter, r *http.Request) {
 			return
 		case errors.Is(err, nurserybus.ErrInUse):
 			v.Visited = true
-			v.DeleteProblem = "This nursery has visits in the nursery stock, so it stays with them. Change its name or its note instead."
+			v.DeleteProblem = words.HasVisits
 		case errors.Is(err, nurserybus.ErrNotFound):
 			http.Redirect(w, r, RegisterPath+"?done=removed", http.StatusSeeOther)
 
@@ -217,7 +219,7 @@ func (a app) nurseryFields(w http.ResponseWriter, r *http.Request) (nurserybus.N
 	get := r.PostFormValue
 	v := nurseryForm{
 		Name: get("name"), Address: get("address"), Website: get("website"), Phone: get("phone"), Note: get("note"),
-		Problems: map[string]string{},
+		Problems: map[string]any{},
 	}
 
 	return nurserybus.NurseryFields{Name: v.Name, Address: v.Address, Website: v.Website, Phone: v.Phone, Note: v.Note}, v, true
@@ -232,7 +234,7 @@ func (a app) saved(w http.ResponseWriter, r *http.Request, v *nurseryForm, err e
 	case err == nil:
 		return true
 	case isInvalid:
-		v.Problems[invalid.Field] = page.Sentence(invalid.Problem)
+		v.Problems[invalid.Field] = types.Text{EN: page.Sentence(invalid.Problem)}
 		a.render.Render(w, r, http.StatusUnprocessableEntity, "steward-nursery-form", *v)
 	case errors.Is(err, nurserybus.ErrNotFound):
 		http.Error(w, "That nursery is not in the register. Go back to the nurseries.", http.StatusNotFound)
@@ -279,9 +281,4 @@ func (a app) loadNursery(w http.ResponseWriter, r *http.Request) (nurserybus.Nur
 	}
 
 	return n, true
-}
-
-// lastVisitWords is a visit's day as the screens write it.
-func lastVisitWords(day time.Time) string {
-	return day.In(types.Garden).Format("Monday 2 January 2006")
 }

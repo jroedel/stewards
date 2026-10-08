@@ -30,6 +30,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/jroedel/stewards/app/sdk/mid"
@@ -114,9 +115,9 @@ func Routes(mux *http.ServeMux, cfg Config) {
 
 // ------------------------------------------------------------------ copy
 
-// The words on these pages. English only for now: Spanish comes when the
-// screens' own words are translated (design.md, principle 6), and until then
-// say shows the English marked lang="en".
+// The words these pages say from Go, in English; Claude translates them
+// through the translation memory, and say looks them up (page/words.go). The
+// rest are in the templates, through t.
 var (
 	sayCannotRead = types.Text{EN: "We could not read that. Open the page again and try once more."}
 	sayNotAnEmail = types.Text{EN: "That does not look like an email address. Check it for a typo."}
@@ -124,7 +125,25 @@ var (
 	sayLinkFailed = types.Text{EN: "That link did not work. It may have been used already, or it may be more than fifteen minutes old. Ask for a new one."}
 	sayLinkBroken = types.Text{EN: "That link is not complete. It may have been cut in two by the mail app. Ask for a new one."}
 	sayFirstFail  = types.Text{EN: "That did not work. The secret may be wrong, or it may have been used already."}
+
+	// The email with the link. Plain text: the link has a line of its own
+	// so no mail app wraps it, and it says what to do if it was not you,
+	// because the most likely reader of an unexpected one is a steward
+	// wondering why.
+	mailSubject = types.Text{EN: "Your sign-in link for the garden stewards"}
+	mailText    = types.Text{EN: "Someone asked to sign in to the garden stewards' app as {address}.\n\n" +
+		"Open this link and press the button to sign in:\n\n{link}\n\n" +
+		"The link works once, for fifteen minutes.\n\n" +
+		"If this was not you, nothing has happened and you can delete this message.\n\n" +
+		"-- The garden stewards\n"}
 )
+
+// Words is this app's copy held in Go, for the catalog the translation
+// memory lists.
+var Words = page.Catalog{
+	{Where: "signing in, for a steward: a problem shown on the sign-in pages", Words: []types.Text{sayCannotRead, sayNotAnEmail, sayOurEnd, sayLinkFailed, sayLinkBroken, sayFirstFail}},
+	{Where: "the email a steward is sent with a link to sign in, in plain text", Words: []types.Text{mailSubject, mailText}},
+}
 
 // ------------------------------------------------------------------ asking for a link
 
@@ -205,20 +224,14 @@ func (a app) send(r *http.Request, req userbus.SignInRequest, next string) {
 		link += "&next=" + url.QueryEscape(next)
 	}
 
-	// Plain text, short, and the link on a line of its own so no mail app
-	// wraps it. It says what to do if it was not you, because the most
-	// likely reader of an unexpected one is a steward wondering why.
-	text := "Someone asked to sign in to the garden stewards' app as " + req.User.Email.String() + ".\r\n\r\n" +
-		"Open this link and press the button to sign in:\r\n\r\n" +
-		link + "\r\n\r\n" +
-		"The link works once, for fifteen minutes.\r\n\r\n" +
-		"If this was not you, nothing has happened and you can delete this message.\r\n\r\n" +
-		"-- The garden stewards\r\n"
+	// In the language of the page the link was asked for on.
+	l := mid.LangFrom(r.Context())
+	text := a.cfg.Render.Plain(l, page.Put(mailText, "address", req.User.Email.String(), "link", link))
 
 	if err := a.cfg.Mail.Send(r.Context(), mail.Message{
 		To:      req.User.Email.String(),
-		Subject: "Your sign-in link for the garden stewards",
-		Text:    text,
+		Subject: a.cfg.Render.Plain(l, mailSubject),
+		Text:    strings.ReplaceAll(text, "\n", "\r\n"),
 	}); err != nil {
 		a.cfg.Log.Error("a sign-in link could not be sent", "request_id", id, "user_id", req.User.ID.String(), "error", err)
 	}

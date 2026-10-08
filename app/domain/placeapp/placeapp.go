@@ -155,7 +155,7 @@ type indexRow struct {
 
 type indexView struct {
 	Places []indexRow
-	Done   string // what just happened, from the redirect after a save
+	Done   any // what just happened, from the redirect after a save
 
 	// Inbox is whether there is one to link to, and Waiting how many
 	// photos are in it.
@@ -226,15 +226,15 @@ func (a app) index(w http.ResponseWriter, r *http.Request) {
 	// page.
 	switch r.URL.Query().Get("done") {
 	case "added":
-		v.Done = "Place added."
+		v.Done = stewardWords.Added
 	case "saved":
-		v.Done = "Changes saved."
+		v.Done = stewardWords.Saved
 	case "removed":
-		v.Done = "Place removed."
+		v.Done = stewardWords.Removed
 	case "mapped":
-		v.Done = "Its spot on the map is saved."
+		v.Done = stewardWords.Mapped
 	case "unmapped":
-		v.Done = "It is off the map."
+		v.Done = stewardWords.Unmapped
 	}
 
 	a.render.Render(w, r, http.StatusOK, "steward-places", v)
@@ -244,8 +244,14 @@ func (a app) index(w http.ResponseWriter, r *http.Request) {
 
 // option is one choice in a select.
 type option struct {
-	Value, Label string
-	Selected     bool
+	Value string
+	Label any    // a name, or words of the form's own
+	After string // shown after it in brackets: a scientific name, an anchor
+
+	Selected bool
+
+	// name is the label in English, to sort by.
+	name string
 
 	// Also is more to find a plant by in a searchable list, not shown: see
 	// plantOption.
@@ -257,10 +263,7 @@ type option struct {
 // its Spanish name to be found by as well, which is not shown (the page
 // package's find.mjs, data-also).
 func plantOption(sp speciesbus.Species, selected bool) option {
-	o := option{Value: sp.ID.String(), Label: sp.Common.In(types.English), Selected: selected}
-	if sp.Scientific != "" {
-		o.Label += " (" + sp.Scientific + ")"
-	}
+	o := option{Value: sp.ID.String(), Label: sp.Common, After: sp.Scientific, Selected: selected, name: sp.Common.In(types.English)}
 
 	if sp.Common.ES != sp.Common.EN {
 		o.Also = sp.Common.ES
@@ -273,23 +276,23 @@ func plantOption(sp speciesbus.Species, selected bool) option {
 // so a refusal gives back exactly what was sent rather than what was saved.
 type formView struct {
 	ID    string // empty for a new place
-	Title string
+	Title any
 
 	Slug                                  string
 	Name, Purpose, Conditions, PhotoPoint page.Box
 	Sort                                  string
 	Parents, Anchors                      []option
 	CanHaveParent                         bool
-	Problems                              map[string]string
-	DeleteProblem                         string
-	PlaceName                             string
+	Problems                              map[string]any
+	DeleteProblem                         any
+	PlaceName                             types.Text
 
 	// The map, for a place that is saved and stands on its own: where it
 	// is now, if anywhere, and the other places on the map as landmarks.
 	OnMap       bool
 	Spot        *placebus.Spot
 	Others      []placebus.Spot
-	SpotProblem string
+	SpotProblem any
 }
 
 func (a app) newForm(w http.ResponseWriter, r *http.Request) {
@@ -300,7 +303,7 @@ func (a app) newForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v := formView{Title: "Add a place", Sort: "0", CanHaveParent: true}
+	v := formView{Title: stewardWords.AddAPlace, Sort: "0", CanHaveParent: true}
 	v.options(all, types.ID{}, r.URL.Query().Get("parent"), "")
 
 	a.render.Render(w, r, http.StatusOK, "place-form", v)
@@ -326,7 +329,7 @@ func (a app) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v.Title = "Add a place"
+	v.Title = stewardWords.AddAPlace
 
 	if len(v.Problems) > 0 {
 		a.again(w, r, v, types.ID{}, f)
@@ -354,7 +357,7 @@ func (a app) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v.ID, v.Slug, v.Title, v.PlaceName = p.ID.String(), p.Slug, "Edit "+p.Name.In(types.English), p.Name.In(types.English)
+	v.ID, v.Slug, v.Title, v.PlaceName = p.ID.String(), p.Slug, page.Put(stewardWords.Edit, "name", p.Name), p.Name
 
 	if len(v.Problems) > 0 {
 		a.again(w, r, v, p.ID, f)
@@ -386,7 +389,7 @@ func (a app) remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	problem := "Tick the box to confirm, then press Remove again."
+	var problem any = stewardWords.Confirm
 
 	if r.PostFormValue("confirm") == "yes" {
 		err := a.places.Delete(r.Context(), p.ID)
@@ -399,7 +402,7 @@ func (a app) remove(w http.ResponseWriter, r *http.Request) {
 
 			return
 		case isInvalid:
-			problem = page.Sentence(invalid.Problem)
+			problem = types.Text{EN: page.Sentence(invalid.Problem)}
 		default:
 			a.fail(w, r, "removing a place", err)
 
@@ -459,7 +462,7 @@ func (a app) setSpot(w http.ResponseWriter, r *http.Request) {
 		y, errY := strconv.Atoi(r.PostFormValue("at.y"))
 
 		if errX != nil || errY != nil || (x == 0 && y == 0) {
-			a.spotAgain(w, r, p, all, "Tap the map where the place is. The spot is saved as soon as you tap.")
+			a.spotAgain(w, r, p, all, stewardWords.TapTheMap)
 
 			return
 		}
@@ -479,14 +482,14 @@ func (a app) setSpot(w http.ResponseWriter, r *http.Request) {
 	case err == nil:
 		http.Redirect(w, r, IndexPath+"?done="+done, http.StatusSeeOther)
 	case isInvalid:
-		a.spotAgain(w, r, p, all, page.Sentence(invalid.Problem))
+		a.spotAgain(w, r, p, all, types.Text{EN: page.Sentence(invalid.Problem)})
 	default:
 		a.fail(w, r, "setting a place's spot on the map", err)
 	}
 }
 
 // spotAgain shows the form once more with a problem at the map.
-func (a app) spotAgain(w http.ResponseWriter, r *http.Request, p placebus.Place, all []placebus.Place, problem string) {
+func (a app) spotAgain(w http.ResponseWriter, r *http.Request, p placebus.Place, all []placebus.Place, problem types.Text) {
 	v := viewOf(p, mid.LangFrom(r.Context()))
 	v.CanHaveParent = !hasBands(all, p.ID)
 	v.options(all, p.ID, p.ParentID.String(), p.TrailAnchor)
@@ -565,7 +568,7 @@ func (a app) read(w http.ResponseWriter, r *http.Request) (placebus.Fields, form
 		PhotoPoint:    page.Typed(get("photo_point"), l),
 		Sort:          get("sort"),
 		CanHaveParent: true,
-		Problems:      map[string]string{},
+		Problems:      map[string]any{},
 	}
 
 	f := placebus.Fields{
@@ -580,7 +583,7 @@ func (a app) read(w http.ResponseWriter, r *http.Request) (placebus.Fields, form
 	if raw := get("parent"); raw != "" {
 		id, err := types.ParseID(raw)
 		if err != nil {
-			v.Problems["parent"] = "Choose the place this is inside from the list."
+			v.Problems["parent"] = stewardWords.ChooseParent
 		}
 
 		f.ParentID = id
@@ -589,7 +592,7 @@ func (a app) read(w http.ResponseWriter, r *http.Request) (placebus.Fields, form
 	if s := strings.TrimSpace(v.Sort); s != "" {
 		n, err := strconv.Atoi(s)
 		if err != nil {
-			v.Problems["sort"] = "Write the order as a whole number, such as 10. Lower comes first."
+			v.Problems["sort"] = stewardWords.SortNumber
 		}
 
 		f.Sort = n
@@ -608,7 +611,7 @@ func (a app) refuse(w http.ResponseWriter, r *http.Request, v formView, self typ
 		return
 	}
 
-	v.Problems[invalid.Field] = page.Sentence(invalid.Problem)
+	v.Problems[invalid.Field] = types.Text{EN: page.Sentence(invalid.Problem)}
 	a.again(w, r, v, self, f)
 }
 
@@ -642,18 +645,18 @@ func (a app) again(w http.ResponseWriter, r *http.Request, v formView, self type
 // has no bands of its own: placebus refuses the others, and a list that
 // offers them is a list that invites a refusal.
 func (v *formView) options(all []placebus.Place, self types.ID, parent, anchor string) {
-	v.Parents = []option{{Value: "", Label: "Nothing: it stands on its own", Selected: parent == ""}}
+	v.Parents = []option{{Value: "", Label: stewardWords.StandsAlone, Selected: parent == ""}}
 
 	for _, p := range all {
 		if p.TopLevel() && p.ID != self {
-			v.Parents = append(v.Parents, option{Value: p.ID.String(), Label: p.Name.In(types.English), Selected: p.ID.String() == parent})
+			v.Parents = append(v.Parents, option{Value: p.ID.String(), Label: p.Name, Selected: p.ID.String() == parent})
 		}
 	}
 
-	v.Anchors = []option{{Value: "", Label: "Not a station", Selected: anchor == ""}}
+	v.Anchors = []option{{Value: "", Label: stewardWords.NotAStation, Selected: anchor == ""}}
 
 	for _, t := range placebus.TrailAnchors {
-		v.Anchors = append(v.Anchors, option{Value: t, Label: stationName[t] + " (#" + t + ")", Selected: t == anchor})
+		v.Anchors = append(v.Anchors, option{Value: t, Label: cardWords.Stations[t], After: "#" + t, Selected: t == anchor})
 	}
 }
 
@@ -671,7 +674,7 @@ var stationName = map[string]string{
 // viewOf is p in the form, on a page in l.
 func viewOf(p placebus.Place, l types.Lang) formView {
 	return formView{
-		ID: p.ID.String(), Title: "Edit " + p.Name.In(types.English), PlaceName: p.Name.In(types.English),
+		ID: p.ID.String(), Title: page.Put(stewardWords.Edit, "name", p.Name), PlaceName: p.Name,
 		Slug:       p.Slug,
 		Name:       page.BoxOf(p.Name, l),
 		Purpose:    page.BoxOf(p.Purpose, l),
