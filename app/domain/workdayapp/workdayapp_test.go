@@ -122,7 +122,7 @@ func (s *site) do(method, path string, form url.Values, signedIn bool) *httptest
 }
 
 func day(date, starts, ends, title string) url.Values {
-	return url.Values{"date": {date}, "starts": {starts}, "ends": {ends}, "title_en": {title}}
+	return url.Values{"date": {date}, "starts": {starts}, "ends": {ends}, "title": {title}}
 }
 
 // A steward schedules a day, and it is on the home page at once, at the
@@ -131,7 +131,7 @@ func TestAStewardSchedulesADayAndTheHomePageShowsIt(t *testing.T) {
 	s := serve(t)
 
 	f := day("2026-10-10", "08:00", "11:30", "Planting the rain garden")
-	f.Set("details_en", "Meet at the fire pit.")
+	f.Set("details", "Meet at the fire pit.")
 
 	w := s.do(http.MethodPost, "/steward/days", f, true)
 	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/steward/days?done=added" {
@@ -229,7 +229,7 @@ func TestAMistakeIsSaidBesideItsInput(t *testing.T) {
 			t.Errorf("%s: %d, want 422 saying %q", name, w.Code, tc.want)
 		}
 
-		if title := tc.form.Get("title_en"); title != "" && !strings.Contains(body, `value="`+title+`"`) {
+		if title := tc.form.Get("title"); title != "" && !strings.Contains(body, `value="`+title+`"`) {
 			t.Errorf("%s: the form lost what was typed", name)
 		}
 	}

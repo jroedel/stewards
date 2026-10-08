@@ -46,7 +46,7 @@ before(async () => {
     })()`);
 
   stage("adding a plant and three photos");
-  let w = await post("/steward/species", new URLSearchParams({ slug: "brazos-penstemon", common_en: "Brazos penstemon", scientific: "Penstemon tenuis", status: "native" }));
+  let w = await post("/steward/species", new URLSearchParams({ slug: "brazos-penstemon", common: "Brazos penstemon", scientific: "Penstemon tenuis", status: "native" }));
   assert.equal(w.status, 303, `adding the plant: ${w.status}\n${await w.text()}`);
 
   const list = await (await fetch(base + "/steward/species", { headers })).text();
@@ -147,7 +147,7 @@ test("Change opens a sheet, and a photo filed under the wrong plant is moved and
   const had = await plants();
   const w = await fetch(`${server.base}/steward/species`, {
     method: "POST",
-    body: new URLSearchParams({ slug: "turks-cap", common_en: "Turk's cap", scientific: "Malvaviscus arboreus var. drummondii", status: "native" }),
+    body: new URLSearchParams({ slug: "turks-cap", common: "Turk's cap", scientific: "Malvaviscus arboreus var. drummondii", status: "native" }),
     redirect: "manual",
     headers,
   });

@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
 	"github.com/jroedel/stewards/business/types"
@@ -133,9 +134,8 @@ func rows(days []workdaybus.Day) []row {
 type formView struct {
 	ID, Heading string
 
-	Date, Starts, Ends   string
-	TitleEN, TitleES     string
-	DetailsEN, DetailsES string
+	Date, Starts, Ends string
+	Title, Details     page.Box
 
 	Problems      map[string]string
 	DeleteProblem string
@@ -159,7 +159,7 @@ func (a app) editForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.cfg.Render.Render(w, r, http.StatusOK, "day-form", viewOf(d))
+	a.cfg.Render.Render(w, r, http.StatusOK, "day-form", viewOf(d, mid.LangFrom(r.Context())))
 }
 
 func (a app) create(w http.ResponseWriter, r *http.Request) {
@@ -244,7 +244,7 @@ func (a app) remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v := viewOf(d)
+	v := viewOf(d, mid.LangFrom(r.Context()))
 	v.DeleteProblem = "Tick the box to confirm, then press Remove again."
 
 	a.cfg.Render.Render(w, r, http.StatusUnprocessableEntity, "day-form", v)
@@ -287,19 +287,15 @@ func read(w http.ResponseWriter, r *http.Request) (workdaybus.Fields, formView, 
 		return workdaybus.Fields{}, formView{}, false
 	}
 
-	get := r.PostFormValue
+	get, l := r.PostFormValue, mid.LangFrom(r.Context())
 
 	v := formView{
 		Date: get("date"), Starts: get("starts"), Ends: get("ends"),
-		TitleEN: get("title_en"), TitleES: get("title_es"),
-		DetailsEN: get("details_en"), DetailsES: get("details_es"),
+		Title: page.Typed(get("title"), l), Details: page.Typed(get("details"), l),
 		Problems: map[string]string{},
 	}
 
-	f := workdaybus.Fields{
-		Title:   types.Text{EN: v.TitleEN, ES: v.TitleES},
-		Details: types.Text{EN: v.DetailsEN, ES: v.DetailsES},
-	}
+	f := workdaybus.Fields{Title: v.Title.Text(l), Details: v.Details.Text(l)}
 
 	day, err := time.ParseInLocation(dateLayout, v.Date, types.Garden)
 	if err != nil {
@@ -353,14 +349,14 @@ func (a app) refused(w http.ResponseWriter, r *http.Request, v *formView, err er
 	return true
 }
 
-func viewOf(d workdaybus.Day) formView {
+// viewOf is d in the form, on a page in l.
+func viewOf(d workdaybus.Day, l types.Lang) formView {
 	s, e := d.Starts.In(types.Garden), d.Ends.In(types.Garden)
 
 	return formView{
 		ID: d.ID.String(), Heading: heading(d),
 		Date: s.Format(dateLayout), Starts: s.Format(timeLayout), Ends: e.Format(timeLayout),
-		TitleEN: d.Title.EN, TitleES: d.Title.ES,
-		DetailsEN: d.Details.EN, DetailsES: d.Details.ES,
+		Title: page.BoxOf(d.Title, l), Details: page.BoxOf(d.Details, l),
 	}
 }
 

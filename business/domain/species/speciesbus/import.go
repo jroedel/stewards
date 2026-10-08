@@ -49,8 +49,6 @@ func (b *Business) Import(ctx context.Context, f Fields) (Imported, error) {
 
 	f = tidy(f)
 
-	translationbus.Complete(b.tr, f.texts()...)
-
 	existing, err := b.BySlug(ctx, f.Slug)
 
 	switch {
@@ -64,6 +62,8 @@ func (b *Business) Import(ctx context.Context, f Fields) (Imported, error) {
 	case err != nil:
 		return Imported{}, err
 	}
+
+	translationbus.Complete(f.texts(), existing.words())
 
 	if same(fieldsOf(existing), f) {
 		return Imported{Species: existing, Outcome: Unchanged}, nil

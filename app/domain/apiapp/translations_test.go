@@ -133,3 +133,49 @@ func TestATranslationBatchIsRefusedWhole(t *testing.T) {
 		}
 	}
 }
+
+// A steward who speaks Spanish has Claude send their words in Spanish: they
+// wait for an English translation, which Claude sends from Spanish, and the
+// place answers in both.
+func TestWordsSentInSpanishAreTranslatedIntoEnglish(t *testing.T) {
+	s := serve(t)
+
+	body, _ := json.Marshal(map[string]any{
+		"name":       map[string]string{"en": "Hummingbird bed"},
+		"conditions": map[string]string{"es": "Sombra por la tarde. Se seca rápido."},
+	})
+
+	if w := s.api(http.MethodPut, "/api/v1/places/hummingbird-bed", s.key, bytes.NewReader(body), "application/json"); w.Code != http.StatusCreated {
+		t.Fatalf("adding the place: %d %s", w.Code, w.Body.String())
+	}
+
+	got := decode[pendingAnswer](t, s.api(http.MethodGet, "/api/v1/translations/pending", s.key, nil, ""))
+
+	var spanish apiapp.PendingJSON
+	for _, p := range got.Pending {
+		if p.WrittenIn == "es" {
+			spanish = p
+		}
+	}
+
+	if spanish.Text != "Sombra por la tarde. Se seca rápido." {
+		t.Fatalf("pending: %+v", got.Pending)
+	}
+
+	s.translate(map[string]any{"translations": []map[string]string{
+		{"key": spanish.Key, "from": "es", "text": "Shade in the afternoon. Dries out fast."},
+	}})
+
+	place := decode[struct {
+		Place apiapp.PlaceJSON `json:"place"`
+	}](t, s.api(http.MethodGet, "/api/v1/places/hummingbird-bed", s.key, nil, ""))
+
+	if c := place.Place.Conditions; c.EN != "Shade in the afternoon. Dries out fast." || c.ES != "Sombra por la tarde. Se seca rápido." {
+		t.Errorf("the conditions: %+v", c)
+	}
+
+	// Sending its Spanish back as it is changes nothing.
+	if w := s.api(http.MethodPut, "/api/v1/places/hummingbird-bed", s.key, bytes.NewReader(body), "application/json"); decode[map[string]any](t, w)["outcome"] != "unchanged" {
+		t.Errorf("sent again: %s", w.Body.String())
+	}
+}

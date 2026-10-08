@@ -37,23 +37,56 @@ type Text struct {
 	ES string
 }
 
-// In is the text in the language asked for, falling back to English when the
-// Spanish has not been written yet.
+// In is the text in the language asked for, falling back to the other half
+// when that one has not been written or translated yet.
 //
 // Falling back rather than showing nothing, because a volunteer reading
-// Spanish still needs to know which bed they are standing in; and rather than
-// translating on the fly, for the reason Text gives.
+// Spanish still needs to know which bed they are standing in -- and so does
+// a steward reading English, now that a person may write in Spanish; and
+// rather than translating on the fly, for the reason Text gives.
 func (t Text) In(l Lang) string {
-	if l == Spanish && t.ES != "" {
+	if (l == Spanish && t.ES != "") || t.EN == "" {
 		return t.ES
 	}
 
 	return t.EN
 }
 
-// HasSpanish reports whether the Spanish half has been written, so a page can
-// mark English shown in its place with lang="en" for a screen reader.
-func (t Text) HasSpanish() bool { return t.ES != "" }
+// Shown is the language In(l) gives the text in: l, or the other one when it
+// falls back -- so a page can mark it with lang= for a screen reader.
+func (t Text) Shown(l Lang) Lang {
+	switch {
+	case l == Spanish && t.ES == "" && t.EN != "":
+		return English
+	case l == English && t.EN == "" && t.ES != "":
+		return Spanish
+	}
+
+	return l
+}
+
+// Written reports whether either half has been written: whether there is
+// anything to show at all.
+func (t Text) Written() bool { return t.EN != "" || t.ES != "" }
+
+// Half is the half in l alone, with no falling back: what a form with one
+// box per field shows in its box.
+func (t Text) Half(l Lang) string {
+	if l == Spanish {
+		return t.ES
+	}
+
+	return t.EN
+}
+
+// Only is s alone, as the half in l.
+func Only(l Lang, s string) Text {
+	if l == Spanish {
+		return Text{ES: s}
+	}
+
+	return Text{EN: s}
+}
 
 // Trimmed is the text with surrounding space removed from both halves, which
 // is how everything typed into a form arrives at a rule.

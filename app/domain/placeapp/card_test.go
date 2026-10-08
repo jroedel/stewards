@@ -20,13 +20,16 @@ func (s *site) pilot() {
 		{"rain-garden-wall-edge", "Wall edge band", "", "Low plants, so nothing blocks the view."},
 	} {
 		w := s.post("/steward/places", url.Values{
-			"slug": {b.slug}, "name_en": {b.en}, "name_es": {b.es}, "purpose_en": {b.purpose},
+			"slug": {b.slug}, "name": {b.en}, "purpose": {b.purpose},
 			"parent": {garden.ID.String()}, "sort": {string(rune('1' + i))},
 		})
 		if w.Code != http.StatusSeeOther {
 			s.t.Fatalf("adding %s: %d", b.slug, w.Code)
 		}
 	}
+
+	// Claude's Spanish for some of it, and not yet for the rest.
+	s.translate("Rain garden", "Jardín de lluvia", "Inflow band", "Banda de entrada")
 }
 
 // A volunteer, signed out, from the list to the garden to a band.
@@ -94,8 +97,8 @@ func TestASignedInStewardCanEditFromTheCard(t *testing.T) {
 	}
 }
 
-// In Spanish: the Spanish a steward wrote, and English marked where there is
-// none -- never a guess.
+// In Spanish: Claude's translations, and English marked where there is none
+// yet -- never a guess made on the fly.
 func TestTheCardIsInThePhonesLanguage(t *testing.T) {
 	s := serve(t)
 	s.pilot()
@@ -118,14 +121,14 @@ func TestTheCardIsInThePhonesLanguage(t *testing.T) {
 func TestAStationsSpaceLinksToItsPrayer(t *testing.T) {
 	s := serve(t)
 
-	s.post("/steward/places", url.Values{"slug": {"st-francis"}, "name_en": {"St. Francis garden"}, "trail_anchor": {"francis"}})
+	s.post("/steward/places", url.Values{"slug": {"st-francis"}, "name": {"St. Francis garden"}, "trail_anchor": {"francis"}})
 
 	body := s.getAs("/places/st-francis", "").Body.String()
 	if !strings.Contains(body, `href="https://schoenstatt-fathers.us/trail/#francis"`) || !strings.Contains(body, `<span class="station-name">St. Francis</span>`) {
 		t.Error("the station's space does not link to its prayer")
 	}
 
-	s.post("/steward/places", url.Values{"slug": {"switchbacks"}, "name_en": {"Switchbacks"}})
+	s.post("/steward/places", url.Values{"slug": {"switchbacks"}, "name": {"Switchbacks"}})
 	if strings.Contains(s.getAs("/places/switchbacks", "").Body.String(), "/trail/#") {
 		t.Error("a place that is not a station links to one")
 	}
@@ -176,7 +179,7 @@ func TestAStewardAddsToAListFromTheCard(t *testing.T) {
 	pull := body[strings.Index(body, `id="add-pull"`):]
 	pull = pull[:strings.Index(pull, "</form>")]
 
-	for _, want := range []string{`name="action" value="pull"`, `name="return" value="card"`, ">Winecup</option>", `name="note_es"`} {
+	for _, want := range []string{`name="action" value="pull"`, `name="return" value="card"`, ">Winecup</option>", `name="note"`} {
 		if !strings.Contains(pull, want) {
 			t.Errorf("the Pull form does not have %s", want)
 		}
@@ -193,8 +196,7 @@ func TestAStewardAddsToAListFromTheCard(t *testing.T) {
 
 	// Adding from it comes back to the card, at the list.
 	w := s.post("/steward/places/"+garden+"/plants", url.Values{
-		"species": {winecup}, "action": {"pull"}, "note_en": {"seedlings along the path"},
-		"note_es": {"plántulas junto al camino"}, "return": {"card"},
+		"species": {winecup}, "action": {"pull"}, "note": {"seedlings along the path"}, "return": {"card"},
 	})
 	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/places/rain-garden#pull-h" {
 		t.Fatalf("adding from the card: %d %q", w.Code, w.Header().Get("Location"))
@@ -285,7 +287,7 @@ func TestAPlantGoesFromToPlantToGrowingAndBack(t *testing.T) {
 
 	// And a note typed replaces it.
 	s.post("/steward/places/"+garden+"/plants", url.Values{
-		"species": {penstemon}, "action": {"protect"}, "planned": {"yes"}, "return": {"card"}, "note_en": {"6 in, 3 more by the wall"},
+		"species": {penstemon}, "action": {"protect"}, "planned": {"yes"}, "return": {"card"}, "note": {"6 in, 3 more by the wall"},
 	})
 	if got := toPlant(); !strings.Contains(got, "6 in, 3 more by the wall") || strings.Contains(got, "6 plants, in the middle") {
 		t.Error("a new note did not replace the old one")

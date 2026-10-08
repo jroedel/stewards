@@ -264,7 +264,7 @@ func (a app) group(ctx context.Context, photos []photobus.Photo, ticked bool) ([
 				return nil, err
 			}
 
-			out = append(out, manyPlant{Name: sp.Common.EN, Scientific: sp.Scientific, Sources: sp.Sources})
+			out = append(out, manyPlant{Name: sp.Common.In(types.English), Scientific: sp.Scientific, Sources: sp.Sources})
 			last = p.SpeciesID
 		}
 

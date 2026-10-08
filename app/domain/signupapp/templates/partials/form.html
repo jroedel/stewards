@@ -6,7 +6,7 @@
   <h2>{{say $l .Copy.FormTitle}}</h2>
   <p class="help" id="signup-help">{{say $l .Copy.FormHelp}}</p>
   <label for="signup-email">{{say $l .Copy.FormLabel}}</label>
-  {{with .Problem.EN}}<p class="field-problem" role="alert">{{say $l $.Data.Problem}}</p>{{end}}
+  {{if .Problem.Written}}<p class="field-problem" role="alert">{{say $l $.Data.Problem}}</p>{{end}}
   <input id="signup-email" name="email" type="email" value="{{.Email}}" autocomplete="email" inputmode="email" required aria-describedby="signup-help">
   <div class="honeypot" aria-hidden="true"><label for="signup-website">Leave this empty</label><input id="signup-website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
   <button class="button" type="submit">{{say $l .Copy.FormButton}}</button>

@@ -48,11 +48,14 @@ type Imported struct {
 // the comment above.
 func (b *Business) Import(ctx context.Context, placeID, speciesID types.ID, f Fields) (Imported, error) {
 	f.Note = f.Note.Trimmed()
-	translationbus.Complete(b.tr, &f.Note)
 
 	existing, found, err := b.listed(ctx, placeID, speciesID)
 	if err != nil {
 		return Imported{}, err
+	}
+
+	if found {
+		translationbus.Complete([]*types.Text{&f.Note}, []types.Text{existing.Note})
 	}
 
 	if found && existing.Action == f.Action && existing.Planned == f.Planned && existing.Note == f.Note {

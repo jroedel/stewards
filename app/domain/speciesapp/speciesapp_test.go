@@ -136,10 +136,10 @@ func (s *site) post(path string, form url.Values) *httptest.ResponseRecorder {
 func penstemon() url.Values {
 	return url.Values{
 		"slug":         {"brazos-penstemon"},
-		"common_en":    {"Brazos penstemon"},
+		"common":       {"Brazos penstemon"},
 		"scientific":   {"Penstemon tenuis"},
 		"status":       {"native"},
-		"flower_en":    {"Purple-pink"},
+		"flower":       {"Purple-pink"},
 		"swatches":     {"#B0418F"},
 		"bloom":        {"3", "4", "5"},
 		"height_min":   {"24"},
@@ -147,7 +147,7 @@ func penstemon() url.Values {
 		"width_min":    {"24"},
 		"light":        {"1", "2"},
 		"water":        {"2", "4"},
-		"note_en":      {"Poor drainage OK. Red winter leaves."},
+		"note":         {"Poor drainage OK. Red winter leaves."},
 		"source_label": {"Lady Bird Johnson Wildflower Center", "The Natural Gardener list, Sep 2026", ""},
 		"source_url":   {"https://www.wildflower.org/plants/result.php?id_plant=PETE4", "", ""},
 		"confirmed":    {"yes"},

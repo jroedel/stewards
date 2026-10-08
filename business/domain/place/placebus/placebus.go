@@ -227,7 +227,7 @@ func (b *Business) Update(ctx context.Context, id types.ID, f Fields) (Place, er
 		return Place{}, err
 	}
 
-	if err := translationbus.KeepAll(ctx, b.tr, f.texts(), b.fill(p).words()); err != nil {
+	if err := translationbus.KeepAll(ctx, b.tr, f.texts(), p.words()); err != nil {
 		return Place{}, err
 	}
 
@@ -264,7 +264,7 @@ func (b *Business) SetSpot(ctx context.Context, id types.ID, spot *Spot) (Place,
 
 	if spot != nil {
 		if !p.TopLevel() {
-			return Place{}, Invalid{Field: "spot", Problem: fmt.Sprintf("%s is inside another place, so it is shown on that place's card rather than on the map", p.Name.EN)}
+			return Place{}, Invalid{Field: "spot", Problem: fmt.Sprintf("%s is inside another place, so it is shown on that place's card rather than on the map", p.Name.In(types.English))}
 		}
 
 		if spot.X < 0 || spot.X > MapWidth || spot.Y < 0 || spot.Y > MapHeight {
@@ -304,7 +304,7 @@ func (b *Business) Delete(ctx context.Context, id types.ID) error {
 	}
 
 	if kids := children(all, id); len(kids) > 0 {
-		return Invalid{Field: "place", Problem: fmt.Sprintf("%s has %d smaller places inside it. Move or remove those first", p.Name.EN, len(kids))}
+		return Invalid{Field: "place", Problem: fmt.Sprintf("%s has %d smaller places inside it. Move or remove those first", p.Name.In(types.English), len(kids))}
 	}
 
 	// Plants listed here, and photos that say they were taken here --
@@ -312,7 +312,7 @@ func (b *Business) Delete(ctx context.Context, id types.ID) error {
 	// keep a place: the database refuses the delete while one names it.
 	if err := b.store.Delete(ctx, id); err != nil {
 		if errors.Is(err, ErrInUse) {
-			return Invalid{Field: "place", Problem: fmt.Sprintf("%s still has plants listed, or photos taken there, in a plant's photos or the inbox. Take the plants off its list, clear the place from those photos, and sort the inbox, first", p.Name.EN)}
+			return Invalid{Field: "place", Problem: fmt.Sprintf("%s still has plants listed, or photos taken there, in a plant's photos or the inbox. Take the plants off its list, clear the place from those photos, and sort the inbox, first", p.Name.In(types.English))}
 		}
 
 		return err
@@ -411,8 +411,8 @@ const maxName = 60
 // the place being updated, or the zero ID for a new one.
 func (b *Business) check(ctx context.Context, self types.ID, f Fields) error {
 	switch {
-	case f.Name.EN == "":
-		return Invalid{Field: "name", Problem: "give the place a name in English. Spanish is optional"}
+	case !f.Name.Written():
+		return Invalid{Field: "name", Problem: "give the place a name"}
 	case utf8.RuneCountInString(f.Name.EN) > maxName || utf8.RuneCountInString(f.Name.ES) > maxName:
 		return Invalid{Field: "name", Problem: fmt.Sprintf("keep the name under %d characters; it has to fit on a phone", maxName)}
 	}
@@ -443,7 +443,7 @@ func (b *Business) check(ctx context.Context, self types.ID, f Fields) error {
 	}
 
 	if !parent.TopLevel() {
-		return Invalid{Field: "parent", Problem: fmt.Sprintf("%s is itself inside another place. Places go only one level deep", parent.Name.EN)}
+		return Invalid{Field: "parent", Problem: fmt.Sprintf("%s is itself inside another place. Places go only one level deep", parent.Name.In(types.English))}
 	}
 
 	if self.Zero() {
@@ -503,7 +503,7 @@ func (b *Business) Originals(ctx context.Context) ([]translationbus.Source, erro
 
 	names := map[types.ID]string{}
 	for _, p := range all {
-		names[p.ID] = written(p.Name)
+		names[p.ID] = p.Name.In(types.English)
 	}
 
 	var out []translationbus.Source
@@ -529,9 +529,6 @@ func (b *Business) Originals(ctx context.Context) ([]translationbus.Source, erro
 
 	return out, nil
 }
-
-// written is a text in whichever language it was written, for a label.
-func written(t types.Text) string { return cmp.Or(t.EN, t.ES) }
 
 // fill is p with its words in both languages, from the translation memory.
 func (b *Business) fill(p Place) Place {
@@ -576,5 +573,5 @@ func children(all []Place, id types.ID) []Place {
 }
 
 func byListOrder(a, b Place) int {
-	return cmp.Or(cmp.Compare(a.Sort, b.Sort), strings.Compare(a.Name.EN, b.Name.EN))
+	return cmp.Or(cmp.Compare(a.Sort, b.Sort), strings.Compare(a.Name.In(types.English), b.Name.In(types.English)))
 }

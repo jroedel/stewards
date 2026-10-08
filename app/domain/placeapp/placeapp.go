@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
@@ -256,7 +257,7 @@ type option struct {
 // its Spanish name to be found by as well, which is not shown (the page
 // package's find.mjs, data-also).
 func plantOption(sp speciesbus.Species, selected bool) option {
-	o := option{Value: sp.ID.String(), Label: sp.Common.EN, Selected: selected}
+	o := option{Value: sp.ID.String(), Label: sp.Common.In(types.English), Selected: selected}
 	if sp.Scientific != "" {
 		o.Label += " (" + sp.Scientific + ")"
 	}
@@ -274,17 +275,14 @@ type formView struct {
 	ID    string // empty for a new place
 	Title string
 
-	Slug                       string
-	NameEN, NameES             string
-	PurposeEN, PurposeES       string
-	ConditionsEN, ConditionsES string
-	PhotoPointEN, PhotoPointES string
-	Sort                       string
-	Parents, Anchors           []option
-	CanHaveParent              bool
-	Problems                   map[string]string
-	DeleteProblem              string
-	PlaceName                  string
+	Slug                                  string
+	Name, Purpose, Conditions, PhotoPoint page.Box
+	Sort                                  string
+	Parents, Anchors                      []option
+	CanHaveParent                         bool
+	Problems                              map[string]string
+	DeleteProblem                         string
+	PlaceName                             string
 
 	// The map, for a place that is saved and stands on its own: where it
 	// is now, if anywhere, and the other places on the map as landmarks.
@@ -314,7 +312,7 @@ func (a app) editForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v := viewOf(p)
+	v := viewOf(p, mid.LangFrom(r.Context()))
 	v.CanHaveParent = !hasBands(all, p.ID)
 	v.options(all, p.ID, p.ParentID.String(), p.TrailAnchor)
 	v.mapOf(p, all)
@@ -356,7 +354,7 @@ func (a app) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v.ID, v.Slug, v.Title, v.PlaceName = p.ID.String(), p.Slug, "Edit "+p.Name.EN, p.Name.EN
+	v.ID, v.Slug, v.Title, v.PlaceName = p.ID.String(), p.Slug, "Edit "+p.Name.In(types.English), p.Name.In(types.English)
 
 	if len(v.Problems) > 0 {
 		a.again(w, r, v, p.ID, f)
@@ -409,7 +407,7 @@ func (a app) remove(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	v := viewOf(p)
+	v := viewOf(p, mid.LangFrom(r.Context()))
 	v.CanHaveParent = !hasBands(all, p.ID)
 	v.options(all, p.ID, p.ParentID.String(), p.TrailAnchor)
 	v.mapOf(p, all)
@@ -489,7 +487,7 @@ func (a app) setSpot(w http.ResponseWriter, r *http.Request) {
 
 // spotAgain shows the form once more with a problem at the map.
 func (a app) spotAgain(w http.ResponseWriter, r *http.Request, p placebus.Place, all []placebus.Place, problem string) {
-	v := viewOf(p)
+	v := viewOf(p, mid.LangFrom(r.Context()))
 	v.CanHaveParent = !hasBands(all, p.ID)
 	v.options(all, p.ID, p.ParentID.String(), p.TrailAnchor)
 	v.mapOf(p, all)
@@ -557,14 +555,14 @@ func (a app) read(w http.ResponseWriter, r *http.Request) (placebus.Fields, form
 		return placebus.Fields{}, formView{}, false
 	}
 
-	get := r.PostFormValue
+	get, l := r.PostFormValue, mid.LangFrom(r.Context())
 
 	v := formView{
-		Slug:   get("slug"),
-		NameEN: get("name_en"), NameES: get("name_es"),
-		PurposeEN: get("purpose_en"), PurposeES: get("purpose_es"),
-		ConditionsEN: get("conditions_en"), ConditionsES: get("conditions_es"),
-		PhotoPointEN: get("photo_point_en"), PhotoPointES: get("photo_point_es"),
+		Slug:          get("slug"),
+		Name:          page.Typed(get("name"), l),
+		Purpose:       page.Typed(get("purpose"), l),
+		Conditions:    page.Typed(get("conditions"), l),
+		PhotoPoint:    page.Typed(get("photo_point"), l),
 		Sort:          get("sort"),
 		CanHaveParent: true,
 		Problems:      map[string]string{},
@@ -572,10 +570,10 @@ func (a app) read(w http.ResponseWriter, r *http.Request) (placebus.Fields, form
 
 	f := placebus.Fields{
 		Slug:        v.Slug,
-		Name:        types.Text{EN: v.NameEN, ES: v.NameES},
-		Purpose:     types.Text{EN: v.PurposeEN, ES: v.PurposeES},
-		Conditions:  types.Text{EN: v.ConditionsEN, ES: v.ConditionsES},
-		PhotoPoint:  types.Text{EN: v.PhotoPointEN, ES: v.PhotoPointES},
+		Name:        v.Name.Text(l),
+		Purpose:     v.Purpose.Text(l),
+		Conditions:  v.Conditions.Text(l),
+		PhotoPoint:  v.PhotoPoint.Text(l),
 		TrailAnchor: get("trail_anchor"),
 	}
 
@@ -648,7 +646,7 @@ func (v *formView) options(all []placebus.Place, self types.ID, parent, anchor s
 
 	for _, p := range all {
 		if p.TopLevel() && p.ID != self {
-			v.Parents = append(v.Parents, option{Value: p.ID.String(), Label: p.Name.EN, Selected: p.ID.String() == parent})
+			v.Parents = append(v.Parents, option{Value: p.ID.String(), Label: p.Name.In(types.English), Selected: p.ID.String() == parent})
 		}
 	}
 
@@ -670,15 +668,16 @@ var stationName = map[string]string{
 	"therese":  "St. Thérèse of Lisieux",
 }
 
-func viewOf(p placebus.Place) formView {
+// viewOf is p in the form, on a page in l.
+func viewOf(p placebus.Place, l types.Lang) formView {
 	return formView{
-		ID: p.ID.String(), Title: "Edit " + p.Name.EN, PlaceName: p.Name.EN,
-		Slug:   p.Slug,
-		NameEN: p.Name.EN, NameES: p.Name.ES,
-		PurposeEN: p.Purpose.EN, PurposeES: p.Purpose.ES,
-		ConditionsEN: p.Conditions.EN, ConditionsES: p.Conditions.ES,
-		PhotoPointEN: p.PhotoPoint.EN, PhotoPointES: p.PhotoPoint.ES,
-		Sort: strconv.Itoa(p.Sort),
+		ID: p.ID.String(), Title: "Edit " + p.Name.In(types.English), PlaceName: p.Name.In(types.English),
+		Slug:       p.Slug,
+		Name:       page.BoxOf(p.Name, l),
+		Purpose:    page.BoxOf(p.Purpose, l),
+		Conditions: page.BoxOf(p.Conditions, l),
+		PhotoPoint: page.BoxOf(p.PhotoPoint, l),
+		Sort:       strconv.Itoa(p.Sort),
 	}
 }
 

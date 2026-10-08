@@ -160,7 +160,7 @@ func (b *Business) Update(ctx context.Context, id types.ID, f Fields) (Day, erro
 		return Day{}, err
 	}
 
-	if err := translationbus.KeepAll(ctx, b.tr, f.texts(), b.fill(d).words()); err != nil {
+	if err := translationbus.KeepAll(ctx, b.tr, f.texts(), d.words()); err != nil {
 		return Day{}, err
 	}
 
@@ -307,7 +307,7 @@ func check(f Fields) (Fields, error) {
 		return f, Invalid{Field: "ends", Problem: "the end time is before the start. Check am and pm"}
 	case f.Ends.Sub(f.Starts) > maxLength:
 		return f, Invalid{Field: "ends", Problem: "that is longer than twelve hours. Check am and pm"}
-	case f.Title.EN == "":
+	case !f.Title.Written():
 		return f, Invalid{Field: "title", Problem: "say in a few words what you will work on"}
 	case utf8.RuneCountInString(f.Title.EN) > maxTitle || utf8.RuneCountInString(f.Title.ES) > maxTitle:
 		return f, Invalid{Field: "title", Problem: fmt.Sprintf("keep the title under %d characters; the rest can go in the details", maxTitle)}

@@ -96,13 +96,13 @@ func (a app) sheet(ctx context.Context, p photobus.Photo, f changeForm, places [
 	onButton := false
 	for _, id := range buttons {
 		if sp, ok := byID[id]; ok {
-			s.Recent = append(s.Recent, option{Value: id.String(), Label: sp.Common.EN, Selected: id == f.SpeciesID})
+			s.Recent = append(s.Recent, option{Value: id.String(), Label: sp.Common.In(types.English), Selected: id == f.SpeciesID})
 			onButton = onButton || id == f.SpeciesID
 		}
 	}
 
 	slices.SortFunc(plants, func(x, y speciesbus.Species) int {
-		return cmp.Compare(strings.ToLower(x.Common.EN), strings.ToLower(y.Common.EN))
+		return cmp.Compare(strings.ToLower(x.Common.In(types.English)), strings.ToLower(y.Common.In(types.English)))
 	})
 
 	s.Species = []option{{Value: "", Label: "Another plant", Selected: onButton || f.SpeciesID.Zero()}}
@@ -131,7 +131,7 @@ func (a app) sheet(ctx context.Context, p photobus.Photo, f changeForm, places [
 // its scientific one, so that either finds it, and its Spanish name to be
 // found by as well (the page package's find.mjs, data-also).
 func plantOption(sp speciesbus.Species, selected bool) option {
-	o := option{Value: sp.ID.String(), Label: sp.Common.EN, Selected: selected}
+	o := option{Value: sp.ID.String(), Label: sp.Common.In(types.English), Selected: selected}
 	if sp.Scientific != "" {
 		o.Label += " (" + sp.Scientific + ")"
 	}

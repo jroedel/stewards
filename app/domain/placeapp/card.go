@@ -336,7 +336,7 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 
 	for _, list := range [][]plantLine{v.Planned, v.Calendar, v.Protect, v.Pull, v.Careful} {
 		slices.SortStableFunc(list, func(x, y plantLine) int {
-			return cmp.Compare(strings.ToLower(x.Name.EN), strings.ToLower(y.Name.EN))
+			return cmp.Compare(strings.ToLower(x.Name.In(types.English)), strings.ToLower(y.Name.In(types.English)))
 		})
 	}
 

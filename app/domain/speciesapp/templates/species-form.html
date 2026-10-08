@@ -7,15 +7,14 @@
 {{if .ID}}<a class="onward" href="/steward/species/{{.ID}}/photos"><span>Photos <span class="quiet">young plant, leaf, flower, full size, winter</span></span><span aria-hidden="true">›</span></a>{{end}}
 
 {{if .Problems}}<p class="problem" role="alert">Nothing was saved yet. Fix what is marked below and press Save again.</p>{{end}}
+<p class="help">Write in English or in Spanish, whichever you think in. Claude translates it into the other; a plant's Spanish name only where a source gives one.</p>
 
 <form class="card form" method="post" action="{{if .ID}}/steward/species/{{.ID}}{{else}}/steward/species{{end}}">
   <fieldset>
     <legend>Name</legend>
     {{template "species-problem" (index .Problems "common")}}
-    <label for="common_en">Common name, in English</label>
-    <input id="common_en" name="common_en" type="text" value="{{.CommonEN}}" required maxlength="60">
-    <label for="common_es">En español <span class="optional">optional</span></label>
-    <input id="common_es" name="common_es" type="text" value="{{.CommonES}}" lang="es" maxlength="60">
+    <label for="common">Common name</label>
+    <input id="common" name="common" type="text" value="{{.Common.Value}}" lang="{{.Common.Lang}}" required maxlength="60">
     <label for="scientific">Scientific name</label>
     {{template "species-problem" (index .Problems "scientific")}}
     <input id="scientific" name="scientific" type="text" value="{{.Scientific}}" autocapitalize="off" spellcheck="false" placeholder="Callirhoe involucrata">
@@ -59,10 +58,8 @@
 
   <fieldset>
     <legend>Flower</legend>
-    <label for="flower_en">Colour, in words</label>
-    <input id="flower_en" name="flower_en" type="text" value="{{.FlowerEN}}" placeholder="Purple-pink">
-    <label for="flower_es">En español <span class="optional">optional</span></label>
-    <input id="flower_es" name="flower_es" type="text" value="{{.FlowerES}}" lang="es">
+    <label for="flower">Colour, in words</label>
+    <input id="flower" name="flower" type="text" value="{{.Flower.Value}}" lang="{{.Flower.Lang}}" placeholder="Purple-pink">
     <label for="swatches">Colour codes <span class="optional">optional</span></label>
     <p class="help" id="swatches-help">For the coloured dots on the bloom strip: up to four, like <strong>#8e1b4b</strong>, separated by spaces.</p>
     {{template "species-problem" (index .Problems "swatches")}}
@@ -104,10 +101,8 @@
   <fieldset>
     <legend>Notes for planters</legend>
     {{template "species-problem" (index .Problems "note")}}
-    <label for="note_en">In English</label>
-    <textarea id="note_en" name="note_en" rows="4">{{.NoteEN}}</textarea>
-    <label for="note_es">En español <span class="optional">optional</span></label>
-    <textarea id="note_es" name="note_es" rows="4" lang="es">{{.NoteES}}</textarea>
+    <label class="sr-only" for="note">Notes for planters</label>
+    <textarea id="note" name="note" rows="4" lang="{{.Note.Lang}}">{{.Note.Value}}</textarea>
   </fieldset>
 
   <button class="button" type="submit">Save</button>

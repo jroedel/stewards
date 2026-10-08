@@ -30,7 +30,7 @@ If Phase 1 achieves that, it has done its job.
 | Steward (admin) | The garden stewards | Edits places and species, checks IDs against sources, sets "today's job". Shown in the app as "the garden stewards", never by name |
 | Future curator | A botanist or master naturalist, when one joins | Takes over ID confirmation |
 
-Offer Spanish as well. The paid gardeners work in Spanish, and some volunteers may too. Content is written in English first, with Spanish on the species cards and the "today's job" notes.
+Offer Spanish as well. The paid gardeners work in Spanish, and some volunteers may too. Content was to be written in English first; since 2026-10-07 a person writes in whichever language they think in, one box per field, and Claude translates it into the other (design.md, principle 6), so a gardener can add a note in Spanish as readily as a steward in English.
 
 ## What "the Garden" covers
 

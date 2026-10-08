@@ -24,7 +24,7 @@
 <h2>{{say $l .Copy.Places}}</h2>
 {{if .Places}}
 <ul class="rows">
-{{range .Places}}<li><a class="row" href="/places/{{.Slug}}">{{if .Number}}<span class="row-pin" aria-hidden="true">{{.Number}}</span>{{end}}<div><div class="row-name">{{say $l .Name}}</div>{{if .Purpose.EN}}<div class="row-note">{{say $l .Purpose}}</div>{{end}}</div><span class="row-go" aria-hidden="true">›</span></a></li>
+{{range .Places}}<li><a class="row" href="/places/{{.Slug}}">{{if .Number}}<span class="row-pin" aria-hidden="true">{{.Number}}</span>{{end}}<div><div class="row-name">{{say $l .Name}}</div>{{if .Purpose.Written}}<div class="row-note">{{say $l .Purpose}}</div>{{end}}</div><span class="row-go" aria-hidden="true">›</span></a></li>
 {{end}}</ul>
 {{else}}
 <div class="card empty"><p>{{say $l .Copy.Empty}}</p></div>

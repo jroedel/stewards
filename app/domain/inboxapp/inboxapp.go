@@ -525,7 +525,7 @@ type option struct {
 // its Spanish name to be found by as well, which is not shown (the page
 // package's find.mjs, data-also).
 func plantOption(sp speciesbus.Species, selected bool) option {
-	o := option{Value: sp.ID.String(), Label: sp.Common.EN, Selected: selected}
+	o := option{Value: sp.ID.String(), Label: sp.Common.In(types.English), Selected: selected}
 	if sp.Scientific != "" {
 		o.Label += " (" + sp.Scientific + ")"
 	}
@@ -1320,7 +1320,7 @@ func (a app) showSort(w http.ResponseWriter, r *http.Request, status int, it inb
 	chosen := false
 	for _, id := range recent {
 		if sp, ok := byID[id]; ok {
-			v.Recent = append(v.Recent, option{Value: id.String(), Label: sp.Common.EN, Selected: id == s.SpeciesID})
+			v.Recent = append(v.Recent, option{Value: id.String(), Label: sp.Common.In(types.English), Selected: id == s.SpeciesID})
 			chosen = chosen || id == s.SpeciesID
 		}
 	}
@@ -1558,10 +1558,10 @@ func (a app) placeNames(ctx context.Context) (map[types.ID]string, error) {
 
 func placeName(p placebus.Place, byID map[types.ID]placebus.Place) string {
 	if parent, ok := byID[p.ParentID]; ok && !p.TopLevel() {
-		return parent.Name.EN + ": " + p.Name.EN
+		return parent.Name.In(types.English) + ": " + p.Name.In(types.English)
 	}
 
-	return p.Name.EN
+	return p.Name.In(types.English)
 }
 
 func (a app) fail(w http.ResponseWriter, r *http.Request, what string, err error) {

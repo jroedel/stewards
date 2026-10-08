@@ -17,10 +17,8 @@
     <label for="action-{{.SpeciesID}}">What to do with it here</label>
     <select id="action-{{.SpeciesID}}" name="action">{{range .Actions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
     <label class="check"><input type="checkbox" name="planned" value="yes"{{if .Planned}} checked{{end}}> To plant: not in the ground yet, or more are going in</label>
-    <label for="note_en-{{.SpeciesID}}">Note <span class="optional">optional</span></label>
-    <input id="note_en-{{.SpeciesID}}" name="note_en" type="text" value="{{.NoteEN}}" maxlength="500">
-    <label for="note_es-{{.SpeciesID}}">En español <span class="optional">optional</span></label>
-    <input id="note_es-{{.SpeciesID}}" name="note_es" type="text" value="{{.NoteES}}" maxlength="500" lang="es">
+    <label for="note-{{.SpeciesID}}">Note <span class="optional">optional</span></label>
+    <input id="note-{{.SpeciesID}}" name="note" type="text" value="{{.Note.Value}}" lang="{{.Note.Lang}}" maxlength="500">
     <button class="button button-quiet" type="submit">Save</button>
   </form>
   <form method="post" action="/steward/places/{{$.Data.PlaceID}}/plants/{{.SpeciesID}}/remove">
@@ -45,11 +43,9 @@
   <select id="action" name="action">{{range .Add.Actions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
   <label class="check"><input type="checkbox" name="planned" value="yes"{{if .Add.Planned}} checked{{end}}> To plant: not in the ground yet, or more are going in</label>
   <p class="help">A plant to plant goes on the card's "To plant" list and is always protected. Untick it once it is in the ground; it stays under Protect and on the flowering calendar.</p>
-  <label for="note_en">Note <span class="optional">optional</span></label>
+  <label for="note">Note <span class="optional">optional</span></label>
   <p class="help" id="note-help">What to know about it here: "six around the pipe outlets", "pull before it seeds".</p>
-  <input id="note_en" name="note_en" type="text" value="{{.Add.NoteEN}}" aria-describedby="note-help" maxlength="500">
-  <label for="note_es">En español <span class="optional">optional</span></label>
-  <input id="note_es" name="note_es" type="text" value="{{.Add.NoteES}}" maxlength="500" lang="es">
+  <input id="note" name="note" type="text" value="{{.Add.Note.Value}}" lang="{{.Add.Note.Lang}}" aria-describedby="note-help" maxlength="500">
   <button class="button" type="submit">List it here</button>
 </form>
 <script type="module" src="{{$.Script "find.mjs"}}"></script>

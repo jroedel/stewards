@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
@@ -137,7 +138,7 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 	v := listView{}
 	for _, sp := range all {
 		row := listRow{
-			ID: sp.ID.String(), Slug: sp.Slug, Common: sp.Common.EN, Scientific: sp.Scientific,
+			ID: sp.ID.String(), Slug: sp.Slug, Common: sp.Common.In(types.English), Scientific: sp.Scientific,
 			Status: sp.Status.Label(), Bloom: sp.Bloom.String(), Confirmed: sp.Confirmed, Swatches: sp.Swatches,
 		}
 
@@ -182,16 +183,18 @@ type source struct {
 type formView struct {
 	ID, Title, Slug, Name string
 
-	CommonEN, CommonES, Scientific string
-	Statuses                       []option
-	Confirmed                      bool
-	FlowerEN, FlowerES, Swatches   string
-	Months                         []month
-	HeightMin, HeightMax           string
-	WidthMin, WidthMax             string
-	Light, Water                   []option
-	NoteEN, NoteES                 string
-	Sources                        []source
+	Common               page.Box
+	Scientific           string
+	Statuses             []option
+	Confirmed            bool
+	Flower               page.Box
+	Swatches             string
+	Months               []month
+	HeightMin, HeightMax string
+	WidthMin, WidthMax   string
+	Light, Water         []option
+	Note                 page.Box
+	Sources              []source
 
 	Problems      map[string]string
 	DeleteProblem string
@@ -211,7 +214,7 @@ func (a app) editForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.render.Render(w, r, http.StatusOK, "species-form", viewOf(sp))
+	a.render.Render(w, r, http.StatusOK, "species-form", viewOf(sp, mid.LangFrom(r.Context())))
 }
 
 func (a app) create(w http.ResponseWriter, r *http.Request) {
@@ -248,7 +251,7 @@ func (a app) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v.ID, v.Slug, v.Name, v.Title = sp.ID.String(), sp.Slug, sp.Common.EN, "Edit "+sp.Common.EN
+	v.ID, v.Slug, v.Name, v.Title = sp.ID.String(), sp.Slug, sp.Common.In(types.English), "Edit "+sp.Common.In(types.English)
 
 	if len(v.Problems) == 0 {
 		if _, err := a.species.Update(r.Context(), sp.ID, f); err != nil {
@@ -278,7 +281,7 @@ func (a app) remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v := viewOf(sp)
+	v := viewOf(sp, mid.LangFrom(r.Context()))
 	v.DeleteProblem = "Tick the box to confirm, then press Remove again."
 
 	if r.PostFormValue("confirm") == "yes" {
@@ -338,28 +341,28 @@ func read(w http.ResponseWriter, r *http.Request) (speciesbus.Fields, formView, 
 		return speciesbus.Fields{}, formView{}, false
 	}
 
-	get := r.PostFormValue
+	get, l := r.PostFormValue, mid.LangFrom(r.Context())
 
 	v := formView{
-		Slug:     get("slug"),
-		CommonEN: get("common_en"), CommonES: get("common_es"), Scientific: get("scientific"),
+		Slug:   get("slug"),
+		Common: page.Typed(get("common"), l), Scientific: get("scientific"),
 		Confirmed: get("confirmed") == "yes",
-		FlowerEN:  get("flower_en"), FlowerES: get("flower_es"), Swatches: get("swatches"),
+		Flower:    page.Typed(get("flower"), l), Swatches: get("swatches"),
 		HeightMin: get("height_min"), HeightMax: get("height_max"),
 		WidthMin: get("width_min"), WidthMax: get("width_max"),
-		NoteEN: get("note_en"), NoteES: get("note_es"),
+		Note:     page.Typed(get("note"), l),
 		Problems: map[string]string{},
 	}
 
 	f := speciesbus.Fields{
 		Slug:        v.Slug,
-		Common:      types.Text{EN: v.CommonEN, ES: v.CommonES},
+		Common:      v.Common.Text(l),
 		Scientific:  v.Scientific,
 		Status:      speciesbus.Status(get("status")),
 		Confirmed:   v.Confirmed,
-		FlowerColor: types.Text{EN: v.FlowerEN, ES: v.FlowerES},
+		FlowerColor: v.Flower.Text(l),
 		Swatches:    strings.FieldsFunc(v.Swatches, func(r rune) bool { return r == ',' || r == ' ' }),
-		Note:        types.Text{EN: v.NoteEN, ES: v.NoteES},
+		Note:        v.Note.Text(l),
 	}
 
 	for _, raw := range r.PostForm["bloom"] {
@@ -469,7 +472,8 @@ func fill(v formView, f speciesbus.Fields) formView {
 	return v
 }
 
-func viewOf(sp speciesbus.Species) formView {
+// viewOf is sp in the form, on a page in l.
+func viewOf(sp speciesbus.Species, l types.Lang) formView {
 	size := func(n int) string {
 		if n == 0 {
 			return ""
@@ -479,13 +483,13 @@ func viewOf(sp speciesbus.Species) formView {
 	}
 
 	v := formView{
-		ID: sp.ID.String(), Title: "Edit " + sp.Common.EN, Slug: sp.Slug, Name: sp.Common.EN,
-		CommonEN: sp.Common.EN, CommonES: sp.Common.ES, Scientific: sp.Scientific,
+		ID: sp.ID.String(), Title: "Edit " + sp.Common.In(types.English), Slug: sp.Slug, Name: sp.Common.In(types.English),
+		Common: page.BoxOf(sp.Common, l), Scientific: sp.Scientific,
 		Confirmed: sp.Confirmed,
-		FlowerEN:  sp.FlowerColor.EN, FlowerES: sp.FlowerColor.ES, Swatches: strings.Join(sp.Swatches, " "),
+		Flower:    page.BoxOf(sp.FlowerColor, l), Swatches: strings.Join(sp.Swatches, " "),
 		HeightMin: size(sp.Height.Min), HeightMax: size(sp.Height.Max),
 		WidthMin: size(sp.Width.Min), WidthMax: size(sp.Width.Max),
-		NoteEN: sp.Note.EN, NoteES: sp.Note.ES,
+		Note: page.BoxOf(sp.Note, l),
 	}
 
 	for _, src := range sp.Sources {

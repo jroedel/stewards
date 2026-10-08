@@ -6,7 +6,7 @@
 <h1>Let {{.Name}} work as you?</h1>
 <p class="lead"><strong>{{.Host}}</strong> is asking to add and change plants, photos, places and what grows where, and to sort your photo inbox, as you ({{.Email}}).</p>
 
-{{if .Problem.EN}}<p class="problem" role="alert">{{say $l .Problem}}</p>{{end}}
+{{if .Problem.Written}}<p class="problem" role="alert">{{say $l .Problem}}</p>{{end}}
 
 <div class="card">
   <p>It cannot confirm a plant, check a photo, or delete anything. What it sends waits on these screens for a steward to look at — except a plant it marks to pull, which is on the place card at once.</p>

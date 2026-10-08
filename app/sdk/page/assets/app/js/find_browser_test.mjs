@@ -16,7 +16,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { launch, skip, stage } from "../../../../../../scripts/browser.mjs";
-import { sessionCookie, startServer } from "../../../../../../scripts/testserver.mjs";
+import { sessionCookie, startServer, translate } from "../../../../../../scripts/testserver.mjs";
 
 let server, browser, page, headers, ids;
 const plant = {};
@@ -35,7 +35,8 @@ before(async () => {
   await page.goto(`${base}/healthz`);
 
   stage("adding five plants and sending two photos");
-  for (const [slug, common_en, scientific, common_es] of [
+  const names = {};
+  for (const [slug, common, scientific, spanish] of [
     ["turks-cap", "Turk's cap", "Malvaviscus arboreus var. drummondii", "Monacillo"],
     ["turks-cap-pink", "Turk's cap 'Pink'", "Malvaviscus arboreus var. drummondii", ""],
     ["winecup", "Winecup", "Callirhoe involucrata", "Copa de vino"],
@@ -43,11 +44,15 @@ before(async () => {
     ["texas-red-oak", "Texas red oak", "Quercus buckleyi", ""],
   ]) {
     const before = await speciesIDs();
-    const w = await post("/steward/species", new URLSearchParams({ slug, common_en, common_es, scientific, status: "native" }));
-    assert.equal(w.status, 303, `adding ${common_en}: ${w.status}\n${await w.text()}`);
+    const w = await post("/steward/species", new URLSearchParams({ slug, common, scientific, status: "native" }));
+    assert.equal(w.status, 303, `adding ${common}: ${w.status}\n${await w.text()}`);
     plant[slug] = (await speciesIDs()).find((id) => !before.includes(id));
-    assert.ok(plant[slug], `${common_en} is not on the list`);
+    assert.ok(plant[slug], `${common} is not on the list`);
+    if (spanish) names[common] = spanish;
   }
+
+  // Their Spanish names, as Claude gives them.
+  await translate(server, names);
 
   ids = await send("#c60", "#6c0");
 
@@ -194,7 +199,7 @@ test("a plant on the sort screen is found by any part of its name, and chosen wi
 test("a list the form needs is still needed, and asked for by the box", opts, async () => {
   const w = await fetch(`${server.base}/steward/places`, {
     method: "POST",
-    body: new URLSearchParams({ slug: "rain-garden", name_en: "Rain garden" }),
+    body: new URLSearchParams({ slug: "rain-garden", name: "Rain garden" }),
     redirect: "manual",
     headers,
   });

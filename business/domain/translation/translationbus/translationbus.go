@@ -198,55 +198,68 @@ func (b *Business) Fill(t types.Text) types.Text {
 }
 
 // Keep is what to store for t, a text a person has just saved, and it puts
-// any translation that came with it into the memory. before is the text as
-// it was shown to them, filled; the zero Text for something new.
+// any translation that came with it into the memory. stored is the text as
+// the record holds it now: the original alone, or the zero Text for
+// something new.
 //
-// What is stored is the original alone. It is the English when there is
-// English: while the forms still have a box for each language, the English
-// box is the one a steward is asked to fill, and the Spanish one is the
-// translation.
+// A form has one box per field, in the language of the page, and shows in it
+// the text as the page would: in that language, or the original while its
+// translation waits. So what comes back is one half:
 //
-// A translation that arrives unchanged beside a changed original is not
-// kept: a steward who corrects the English and leaves the Spanish box as it
-// was has not translated the new words, and keeping the old Spanish would
-// show volunteers a translation of what the note used to say. The new words
-// wait for Claude instead.
+//   - the same as was shown: nothing has changed, and the record keeps its
+//     original, whichever language that is in;
+//   - anything else: the person has written new words, in the language of
+//     their page, and those are the original now. Their translation waits
+//     for Claude.
 //
-// Leaving the other box empty takes nothing out of the memory, because the
-// translation belongs to the words and not to this record: another place may
-// say the same thing.
-func (b *Business) Keep(ctx context.Context, t, before types.Text) (types.Text, error) {
-	var (
-		stored types.Text
-		source string
-		from   types.Lang
-		other  string
-	)
+// A program may send both halves (the API's {en, es}). Unchanged, that is
+// nothing; with only the English changed, the old Spanish is a translation
+// of the old words and is not kept -- the new words wait for Claude rather
+// than show volunteers a translation of what the note used to say. Otherwise
+// the English is the original and the Spanish its translation, kept in the
+// memory as Given.
+//
+// Nothing comes out of the memory here, because a translation belongs to the
+// words and not to this record: another place may say the same thing.
+func (b *Business) Keep(ctx context.Context, t, stored types.Text) (types.Text, error) {
+	before := b.Fill(stored)
 
 	switch {
-	case t.EN != "":
-		stored, source, from, other = types.Text{EN: t.EN}, t.EN, types.English, t.ES
-	case t.ES != "":
-		stored, source, from = types.Text{ES: t.ES}, t.ES, types.Spanish
-	default:
+	case t == before:
+		return stored, nil
+	case !t.Written():
 		return types.Text{}, nil
+	case t.EN == "" || t.ES == "":
+		l := types.English
+		if t.EN == "" {
+			l = types.Spanish
+		}
+
+		if t.Half(l) == before.In(l) {
+			return stored, nil
+		}
+
+		return types.Only(l, t.Half(l)), nil
 	}
 
-	if other == "" || (other == before.ES && t.EN != before.EN) {
-		return stored, nil
+	kept := types.Text{EN: t.EN}
+
+	if t.ES == before.ES && t.EN != before.EN {
+		return kept, nil
 	}
 
-	if tr, ok := b.Lookup(source); ok && tr.Pair() == t {
-		return stored, nil
+	old, known := b.Lookup(t.EN)
+	if known && old.Pair() == t {
+		return kept, nil
 	}
 
 	now := b.now()
 	tr := Translation{
-		Key: Key(source), Source: source, From: from, Translated: other, By: Given,
+		Key: Key(t.EN), Source: t.EN, From: types.English, Translated: t.ES, By: Given,
 		CreatedAt: now, UpdatedAt: now,
 	}
 
-	if old, ok := b.Lookup(source); ok {
+	if known {
 		tr.CreatedAt = old.CreatedAt
 	}
 
@@ -256,7 +269,7 @@ func (b *Business) Keep(ctx context.Context, t, before types.Text) (types.Text, 
 
 	b.remember(tr)
 
-	return stored, nil
+	return kept, nil
 }
 
 // Move puts the Spanish half of an old record's text into the memory, unless
@@ -303,7 +316,7 @@ func (b *Business) remember(t Translation) {
 // *Business is one; so is None.
 type Memory interface {
 	Fill(t types.Text) types.Text
-	Keep(ctx context.Context, t, before types.Text) (types.Text, error)
+	Keep(ctx context.Context, t, stored types.Text) (types.Text, error)
 	Move(ctx context.Context, t types.Text) (types.Text, error)
 }
 
@@ -328,13 +341,13 @@ func FillAll(m Memory, texts ...*types.Text) {
 }
 
 // KeepAll replaces each of texts with what to store for it, through m.Keep.
-// before is the same fields as they were shown, filled, in the same order; nil
-// for a record that is new.
-func KeepAll(ctx context.Context, m Memory, texts []*types.Text, before []types.Text) error {
+// stored is the same fields as the record holds them now, in the same order;
+// nil for a record that is new.
+func KeepAll(ctx context.Context, m Memory, texts []*types.Text, stored []types.Text) error {
 	for i, t := range texts {
 		var was types.Text
-		if before != nil {
-			was = before[i]
+		if stored != nil {
+			was = stored[i]
 		}
 
 		kept, err := m.Keep(ctx, *t, was)
@@ -367,18 +380,28 @@ func MoveAll(ctx context.Context, m Memory, texts ...*types.Text) (bool, error) 
 	return changed, nil
 }
 
-// Complete fills, from m, each of texts that has one half written and not
-// the other, in place; a text with both halves, or neither, is left alone.
+// Complete puts back, in place, each of texts that a program sent with one
+// half the same as that half of existing -- the same fields as the record
+// shows them now, filled, in the same order.
 //
 // It is for an import comparing what a program sent with what is there. A
 // program that sends the English alone has said nothing about the Spanish,
-// which belongs to the words and stays in the memory; completed, what it
-// sent compares equal to the record it already matches, and the answer is
-// "unchanged" rather than an update that changes nothing.
-func Complete(m Memory, texts ...*types.Text) {
-	for _, t := range texts {
-		if (t.EN == "") != (t.ES == "") {
-			*t = m.Fill(*t)
+// which belongs to the words; completed, what it sent compares equal to the
+// record it already matches, and the answer is "unchanged" rather than an
+// update that changes nothing.
+func Complete(texts []*types.Text, existing []types.Text) {
+	for i, t := range texts {
+		if (t.EN == "") == (t.ES == "") {
+			continue
+		}
+
+		l := types.English
+		if t.EN == "" {
+			l = types.Spanish
+		}
+
+		if t.Half(l) == existing[i].In(l) {
+			*t = existing[i]
 		}
 	}
 }

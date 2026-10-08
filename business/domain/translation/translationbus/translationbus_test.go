@@ -263,3 +263,58 @@ func TestMoveNeverReplacesWhatTheMemoryHas(t *testing.T) {
 		}
 	}
 }
+
+// A form has one box per field, in the page's language, showing the text in
+// that language. Saved unchanged, the record keeps its original whichever
+// language it is in; changed, what was typed is the original now, in the
+// language it was typed in, and its translation waits for Claude.
+func TestOneBoxInThePagesLanguage(t *testing.T) {
+	b := setup(t).open(t)
+
+	stored := keep(t, b, sun, types.Text{})
+
+	// On the Spanish page the box showed the Spanish. Left as it was:
+	if got := keep(t, b, types.Text{ES: sun.ES}, stored); got != stored {
+		t.Errorf("unchanged on the Spanish page: stored %+v, want %+v", got, stored)
+	}
+
+	// Sent back whole, as a program reads it: nothing either.
+	if got := keep(t, b, sun, stored); got != stored {
+		t.Errorf("sent back whole: stored %+v, want %+v", got, stored)
+	}
+
+	// Changed: the Spanish is the original now, alone.
+	written := types.Text{ES: "Pleno sol, seco desde julio"}
+	if got := keep(t, b, written, stored); got != written {
+		t.Errorf("changed on the Spanish page: stored %+v, want %+v", got, written)
+	}
+
+	// The old words keep their translation, for any record that says them.
+	if got := b.Fill(types.Text{EN: sun.EN}); got != sun {
+		t.Errorf("Fill = %+v", got)
+	}
+
+	// Emptied: nothing.
+	if got := keep(t, b, types.Text{}, written); got != (types.Text{}) {
+		t.Errorf("emptied: stored %+v", got)
+	}
+}
+
+func TestCompletePutsBackWhatAProgramLeftAsItWas(t *testing.T) {
+	existing := []types.Text{sun, sun, sun, sun}
+	sent := []types.Text{{EN: sun.EN}, {ES: sun.ES}, {EN: "Shade all day"}, {EN: sun.EN, ES: "Otra cosa"}}
+
+	texts := make([]*types.Text, len(sent))
+	for i := range sent {
+		texts[i] = &sent[i]
+	}
+
+	translationbus.Complete(texts, existing)
+
+	want := []types.Text{sun, sun, {EN: "Shade all day"}, {EN: sun.EN, ES: "Otra cosa"}}
+	for i := range want {
+		if sent[i] != want[i] {
+			t.Errorf("%d: %+v, want %+v", i, sent[i], want[i])
+		}
+	}
+}

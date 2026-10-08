@@ -36,7 +36,7 @@ before(async () => {
   await page.goto(`${base}/healthz`);
 
   stage("adding a plant and sending three photos");
-  let w = await post("/steward/species", new URLSearchParams({ slug: "turks-cap", common_en: "Turk's cap", scientific: "Malvaviscus arboreus var. drummondii", status: "native" }));
+  let w = await post("/steward/species", new URLSearchParams({ slug: "turks-cap", common: "Turk's cap", scientific: "Malvaviscus arboreus var. drummondii", status: "native" }));
   assert.equal(w.status, 303, `adding the plant: ${w.status}\n${await w.text()}`);
 
   const list = await (await fetch(base + "/steward/species", { headers })).text();

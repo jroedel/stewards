@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
@@ -23,14 +24,14 @@ type plantRow struct {
 	SpeciesID, Name, Scientific string
 	Actions                     []option
 	Planned                     bool
-	NoteEN, NoteES              string
+	Note                        page.Box
 }
 
 type addView struct {
-	Species        []option
-	Actions        []option
-	Planned        bool
-	NoteEN, NoteES string
+	Species []option
+	Actions []option
+	Planned bool
+	Note    page.Box
 }
 
 type plantsView struct {
@@ -77,7 +78,7 @@ func (a app) setPlant(w http.ResponseWriter, r *http.Request) {
 	f := listingbus.Fields{
 		Action:  listingbus.Action(r.PostFormValue("action")),
 		Planned: r.PostFormValue("planned") == "yes",
-		Note:    types.Text{EN: r.PostFormValue("note_en"), ES: r.PostFormValue("note_es")},
+		Note:    types.Only(mid.LangFrom(r.Context()), r.PostFormValue("note")),
 	}
 
 	speciesID, err := types.ParseID(r.PostFormValue("species"))
@@ -91,7 +92,7 @@ func (a app) setPlant(w http.ResponseWriter, r *http.Request) {
 	// card's Growing button and its "plant more" both send none, and change
 	// only whether the plant is on To plant; a steward clearing a note does
 	// it on this screen, where the note is in front of them.
-	if fromCard := r.PostFormValue("return") == "card"; fromCard && f.Note.Trimmed().EN == "" && f.Note.Trimmed().ES == "" {
+	if fromCard := r.PostFormValue("return") == "card"; fromCard && !f.Note.Trimmed().Written() {
 		listed, err := a.listings.ForPlace(r.Context(), p.ID)
 		if err != nil {
 			a.fail(w, r, "reading what is listed at a place", err)
@@ -166,7 +167,8 @@ func (a app) showPlants(w http.ResponseWriter, r *http.Request, status int, p pl
 		byID[sp.ID] = sp
 	}
 
-	v.PlaceID, v.PlaceName, v.Slug = p.ID.String(), p.Name.EN, p.Slug
+	lang := mid.LangFrom(r.Context())
+	v.PlaceID, v.PlaceName, v.Slug = p.ID.String(), p.Name.In(types.English), p.Slug
 	v.NoSpecies = len(all) == 0
 
 	here := map[types.ID]bool{}
@@ -176,8 +178,8 @@ func (a app) showPlants(w http.ResponseWriter, r *http.Request, status int, p pl
 		here[l.SpeciesID] = true
 
 		v.Rows = append(v.Rows, plantRow{
-			SpeciesID: l.SpeciesID.String(), Name: sp.Common.EN, Scientific: sp.Scientific,
-			Actions: actionOptions(l.Action), Planned: l.Planned, NoteEN: l.Note.EN, NoteES: l.Note.ES,
+			SpeciesID: l.SpeciesID.String(), Name: sp.Common.In(types.English), Scientific: sp.Scientific,
+			Actions: actionOptions(l.Action), Planned: l.Planned, Note: page.BoxOf(l.Note, lang),
 		})
 	}
 
@@ -185,7 +187,7 @@ func (a app) showPlants(w http.ResponseWriter, r *http.Request, status int, p pl
 		return cmp.Compare(strings.ToLower(x.Name), strings.ToLower(y.Name))
 	})
 
-	v.Add = addView{Actions: actionOptions(f.Action), Planned: f.Planned, NoteEN: f.Note.EN, NoteES: f.Note.ES}
+	v.Add = addView{Actions: actionOptions(f.Action), Planned: f.Planned, Note: page.BoxOf(f.Note, lang)}
 	v.Add.Species = []option{{Value: "", Label: "Choose a plant", Selected: chosen == ""}}
 
 	for _, sp := range all {

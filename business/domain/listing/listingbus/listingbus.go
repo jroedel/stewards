@@ -164,19 +164,19 @@ func (b *Business) Set(ctx context.Context, placeID, speciesID types.ID, f Field
 		return Listing{}, Invalid{Field: "note", Problem: fmt.Sprintf("keep the note under %d characters", maxNote)}
 	}
 
-	// The note as it was shown, for Keep to tell a translation the steward
-	// wrote from one left as it was. A place's list is a few dozen rows.
-	listed, err := b.ForPlace(ctx, placeID)
+	// The note as stored, for Keep to tell words the steward wrote from
+	// words left as they were shown. A place's list is a few dozen rows.
+	listed, err := b.store.ForPlace(ctx, placeID)
 	if err != nil {
 		return Listing{}, err
 	}
 
-	var before types.Text
+	var stored types.Text
 	if i := slices.IndexFunc(listed, func(l Listing) bool { return l.SpeciesID == speciesID }); i >= 0 {
-		before = listed[i].Note
+		stored = listed[i].Note
 	}
 
-	note, err := b.tr.Keep(ctx, f.Note, before)
+	note, err := b.tr.Keep(ctx, f.Note, stored)
 	if err != nil {
 		return Listing{}, err
 	}
