@@ -81,9 +81,8 @@ func (a *App) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+PlacesPath, a.list)
 }
 
-// The copy on these screens. Spanish comes when the screens' own words are
-// translated (design.md, principle 6), and until then the page shows the
-// English marked lang="en".
+// The copy on these screens, in English; Claude translates it through the
+// translation memory, and say looks it up (page/words.go).
 type wording struct {
 	Eyebrow, Title, Lead types.Text
 
@@ -98,11 +97,18 @@ type wording struct {
 
 	// The trail's foundation text, Laudato Si' 84, quoted from the Vatican's
 	// own English. It is Francis's words, not ours, so its Spanish is the
-	// Vatican's Spanish when it comes, never one we write.
+	// Vatican's own Spanish, written here beside it, and never a translation:
+	// a text with both halves is not waiting for one. The English is cut at
+	// the end of the first clause, and the Spanish at the same place.
 	Quote, QuoteBy types.Text
 
 	PlacesEyebrow, PlacesTitle, PlacesLead, Places, Empty types.Text
 	MapLabel                                              types.Text
+}
+
+// Words is this app's copy, for the catalog the translation memory lists.
+var Words = page.Catalog{
+	{Where: "the home page and the list of places, which a newcomer or a volunteer reads first, often on a phone", Words: words},
 }
 
 var words = wording{
@@ -126,8 +132,11 @@ var words = wording{
 	TrailAsk:    types.Text{EN: "Walking the trail to pray?"},
 	TrailGo:     types.Text{EN: "Stations and prayers"},
 
-	Quote:   types.Text{EN: "The history of our friendship with God is always linked to particular places which take on an intensely personal meaning."},
-	QuoteBy: types.Text{EN: "Pope Francis"},
+	Quote: types.Text{
+		EN: "The history of our friendship with God is always linked to particular places which take on an intensely personal meaning.",
+		ES: "La historia de la propia amistad con Dios siempre se desarrolla en un espacio geográfico que se convierte en un signo personalísimo.",
+	},
+	QuoteBy: types.Text{EN: "Pope Francis", ES: "Papa Francisco"},
 
 	PlacesEyebrow: types.Text{EN: "Garden stewards"},
 	PlacesTitle:   types.Text{EN: "Where are you working?"},
@@ -141,7 +150,7 @@ var words = wording{
 
 // day is one stewardship day as the home page shows it.
 type day struct {
-	Date, Hours    types.Text
+	Date, Hours    page.Phrase
 	Title, Details types.Text
 
 	// Today and Now are the "Today" tag design.md gives a work day:

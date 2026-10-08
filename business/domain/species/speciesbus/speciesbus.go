@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -105,20 +106,36 @@ const maxInches = 480
 // that when both ends are whole feet ("4–7 ft"). Anything else stays in
 // inches rather than mixing units in one range.
 func (s Size) String() string {
-	if s.Max == 0 {
+	n, feet := s.Amount()
+
+	switch {
+	case n == "":
 		return ""
+	case feet:
+		return n + " ft"
 	}
 
-	n, unit := func(v int) int { return v }, "in"
+	return n + " in"
+}
+
+// Amount is the size's number, "18–24" or "4–7", and whether it is in feet
+// rather than inches, by String's rule: for a card that writes the unit in
+// the reader's language. "" for a size not recorded.
+func (s Size) Amount() (n string, feet bool) {
+	if s.Max == 0 {
+		return "", false
+	}
+
+	in := func(v int) int { return v }
 	if s.Max > 36 && s.Min%12 == 0 && s.Max%12 == 0 {
-		n, unit = func(v int) int { return v / 12 }, "ft"
+		in, feet = func(v int) int { return v / 12 }, true
 	}
 
 	if s.Min == s.Max {
-		return fmt.Sprintf("%d %s", n(s.Max), unit)
+		return strconv.Itoa(in(s.Max)), feet
 	}
 
-	return fmt.Sprintf("%d–%d %s", n(s.Min), n(s.Max), unit)
+	return fmt.Sprintf("%d–%d", in(s.Min), in(s.Max)), feet
 }
 
 // Source is what an ID was checked against.

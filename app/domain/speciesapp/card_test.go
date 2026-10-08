@@ -64,7 +64,7 @@ func TestAVolunteerReadsAPlantForPlanting(t *testing.T) {
 		"Native",
 		`href="/plants/brazos-penstemon" aria-current="page">Planting`,
 		"Purple-pink",
-		"Mar–May",
+		"March to May",
 		"24 in tall",
 		"Full sun · Part shade",
 		"Poor drainage OK. Red winter leaves.",
@@ -186,7 +186,7 @@ func TestAVolunteerReadsWhenItWasSeenInFlower(t *testing.T) {
 	add(160, "2025-04-10", true, "")
 
 	body := s.do(http.MethodGet, "/plants/brazos-penstemon", nil, false).Body.String()
-	want := "Seen in flower: 2026: 3 Apr – 20 May (Pedernales Falls State Park) · 2025: 10 Apr"
+	want := "Seen in flower: 2026: 3 April – 20 May (Pedernales Falls State Park) · 2025: 10 April"
 	if !strings.Contains(body, want) {
 		t.Errorf("the card does not say %q", want)
 	}
@@ -211,7 +211,7 @@ func TestAVolunteerSeesItsFruit(t *testing.T) {
 	}
 
 	planting := s.do(http.MethodGet, "/plants/brazos-penstemon", nil, false).Body.String()
-	if !strings.Contains(planting, "Seen in fruit: 2026: 12 Aug – 3 Oct") || !strings.Contains(planting, "<strong>Fruit or seed</strong>") {
+	if !strings.Contains(planting, "Seen in fruit: 2026: 12 August – 3 October") || !strings.Contains(planting, "<strong>Fruit or seed</strong>") {
 		t.Error("the planting view does not show the fruit")
 	}
 

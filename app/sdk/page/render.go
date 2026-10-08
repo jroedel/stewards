@@ -68,6 +68,10 @@ type Renderer struct {
 
 	// The installable app a steward's pages offer, if any: see OfferApp.
 	manifest, appScript string
+
+	// words is the translation memory the screens' own words are looked up
+	// in, or nil: see Translate.
+	words Translations
 }
 
 type asset struct {
@@ -132,7 +136,12 @@ func NewRenderer(log *slog.Logger, own ...fs.FS) (*Renderer, error) {
 		return nil, fmt.Errorf("the chrome is missing from the binary: %w", err)
 	}
 
-	base, err := template.New("base").Funcs(Funcs).ParseFS(chrome, "*.html")
+	// The renderer is made first, so the template helpers that look words
+	// up in the translation memory can be bound to it; Translate sets the
+	// memory after.
+	rn := &Renderer{log: log}
+
+	base, err := template.New("base").Funcs(rn.funcs()).ParseFS(chrome, "*.html")
 	if err != nil {
 		return nil, fmt.Errorf("the layout could not be read: %w", err)
 	}
@@ -192,16 +201,13 @@ func NewRenderer(log *slog.Logger, own ...fs.FS) (*Renderer, error) {
 	sum := sha256.Sum256(css)
 	digest := hex.EncodeToString(sum[:])[:12]
 
-	rn := &Renderer{
-		log:         log,
-		pages:       pages,
-		css:         css,
-		cssPath:     "/static/app." + digest + ".css",
-		cssETag:     `"` + digest + `"`,
-		scripts:     map[string]asset{},
-		scriptPaths: map[string]string{},
-		files:       map[string]asset{},
-	}
+	rn.pages = pages
+	rn.css = css
+	rn.cssPath = "/static/app." + digest + ".css"
+	rn.cssETag = `"` + digest + `"`
+	rn.scripts = map[string]asset{}
+	rn.scriptPaths = map[string]string{}
+	rn.files = map[string]asset{}
 
 	// Every module in js/ but the tests beside them, which the embed takes
 	// along: they are a few kilobytes, and a pattern that left them out

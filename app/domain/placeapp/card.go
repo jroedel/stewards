@@ -3,13 +3,13 @@ package placeapp
 import (
 	"cmp"
 	"errors"
-	"fmt"
 	"net/http"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/jroedel/stewards/app/sdk/mid"
+	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
@@ -46,13 +46,26 @@ func CardRoutes(mux *http.ServeMux, cfg Config) {
 	mux.HandleFunc("GET /places/{slug}", a.card)
 }
 
-// The words on the card. English, with the Spanish to be written by a native
-// speaker (design.md, principle 6); until then say marks the English.
+// The words on the card, in English; Claude translates them through the
+// translation memory, and say looks them up (page/words.go).
 type cardWording struct {
 	Back, PartOf, Inside, Conditions, PhotoPoint, PhotoPointHelp,
 	StationIntro, StationGo, NotListed, NotSure, Edit,
-	PlannedHere, PlannedHelp, Flowers, FlowersHelp,
+	PlannedHere, PlannedHelp, Flowers, FlowersHelp, Plant,
 	Protect, ProtectHelp, Pull, PullHelp, Careful, CarefulHelp, NothingHere types.Text
+
+	// A plant's size on the To plant list, and a band's plants in a few
+	// words on its parent's card.
+	TallWide, Tall, ToPlant, ToPull types.Text
+
+	// Stations is each station's name as the card heads its link, by its
+	// anchor.
+	Stations map[string]types.Text
+}
+
+// Words is the card's copy, for the catalog the translation memory lists.
+var Words = page.Catalog{
+	{Where: "the place card, which a volunteer reads standing in the garden", Words: cardWords},
 }
 
 var cardWords = cardWording{
@@ -78,13 +91,25 @@ var cardWords = cardWording{
 	Careful:        types.Text{EN: "Careful"},
 	CarefulHelp:    types.Text{EN: "Wear gloves near these."},
 	NothingHere:    types.Text{EN: "Nothing listed."},
+	Plant:          types.Text{EN: "Plant"},
+
+	TallWide: types.Text{EN: "{height} tall, {width} wide"},
+	Tall:     types.Text{EN: "{height} tall"},
+	ToPlant:  types.Text{EN: "{count} to plant"},
+	ToPull:   types.Text{EN: "{count} to pull"},
+
+	Stations: stationWords(),
 }
 
-// monthLetters head the flowering calendar's twelve columns. Spanish gives
-// January its own letter, enero.
-var monthLetters = map[types.Lang][]string{
-	types.English: strings.Split("J F M A M J J A S O N D", " "),
-	types.Spanish: strings.Split("E F M A M J J A S O N D", " "),
+// stationWords is stationName as copy: a saint's name has a Spanish form,
+// San José for St. Joseph, which the translation gives.
+func stationWords() map[string]types.Text {
+	out := map[string]types.Text{}
+	for anchor, name := range stationName {
+		out[anchor] = types.Text{EN: name}
+	}
+
+	return out
 }
 
 type cardRow struct {
@@ -94,7 +119,7 @@ type cardRow struct {
 
 	// Summary is a band's plants in a few words, on its parent's card:
 	// "4 to plant · 1 to pull".
-	Summary types.Text
+	Summary page.List
 }
 
 // plantLine is one plant on a card: on the To plant list, in a panel, or a
@@ -106,10 +131,10 @@ type plantLine struct {
 	Name       types.Text
 	Scientific string
 	Note       types.Text
-	Size       types.Text
-	Swatch     string // the first colour, for the calendar; "" for none
-	Bloom      []bool // twelve, January first
-	BloomWords string // "Mar–May", for a screen reader beside the cells
+	Size       any       // a page.Phrase, or nil when no size is recorded
+	Swatch     string    // the first colour, for the calendar; "" for none
+	Bloom      []bool    // twelve, January first
+	BloomWords page.List // "March to May", for a screen reader beside the cells
 
 	// Thumb is the id of the plant's flower photo, or its full-size one,
 	// for the To plant list: a planter imagining the bed needs to see what is
@@ -141,7 +166,7 @@ type cardView struct {
 	Listed                 bool
 	Planned, Calendar      []plantLine
 	Protect, Pull, Careful []plantLine
-	Months                 []string
+	Months                 []types.Text // the calendar's columns, headed by their initials
 
 	// EditURL is set only for a signed-in steward.
 	EditURL string
@@ -296,7 +321,7 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 	}
 
 	v.Listed = len(listed) > 0
-	v.Months = monthLetters[mid.LangFrom(ctx)]
+	v.Months = page.Months()
 
 	for _, l := range listed {
 		sp, ok := species[l.SpeciesID]
@@ -340,8 +365,8 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	if name, ok := stationName[p.TrailAnchor]; ok {
-		v.Station = types.Text{EN: name}
+	if name, ok := cardWords.Stations[p.TrailAnchor]; ok {
+		v.Station = name
 		v.StationURL = trailURL + "#" + p.TrailAnchor
 	}
 
@@ -373,7 +398,7 @@ func lineOf(sp speciesbus.Species, l listingbus.Listing) plantLine {
 	line := plantLine{
 		SpeciesID: sp.ID.String(), Action: l.Action,
 		Slug: sp.Slug, Name: sp.Common, Scientific: sp.Scientific, Note: l.Note,
-		Bloom: make([]bool, 12), BloomWords: sp.Bloom.String(),
+		Bloom: make([]bool, 12), BloomWords: page.Run(sp.Bloom),
 	}
 
 	if len(sp.Swatches) > 0 {
@@ -384,19 +409,29 @@ func lineOf(sp speciesbus.Species, l listingbus.Listing) plantLine {
 		line.Bloom[m-1] = sp.Bloom.Has(m)
 	}
 
-	switch h, w := sp.Height.String(), sp.Width.String(); {
-	case h != "" && w != "":
-		line.Size = types.Text{EN: h + " tall, " + w + " wide"}
-	case h != "":
-		line.Size = types.Text{EN: h + " tall"}
+	switch h, w := length(sp.Height), length(sp.Width); {
+	case h != nil && w != nil:
+		line.Size = page.Put(cardWords.TallWide, "height", h, "width", w)
+	case h != nil:
+		line.Size = page.Put(cardWords.Tall, "height", h)
 	}
 
 	return line
 }
 
+// length is a size as the card writes it, or nil for one not recorded.
+func length(s speciesbus.Size) any {
+	n, feet := s.Amount()
+	if n == "" {
+		return nil
+	}
+
+	return page.Length(n, feet)
+}
+
 // summary is a band's listings in a few words for its row on the parent's
-// card. English only, like the rest of the card's own wording for now.
-func summary(listed []listingbus.Listing) types.Text {
+// card.
+func summary(listed []listingbus.Listing) page.List {
 	var planned, pull int
 	for _, l := range listed {
 		if l.Planned {
@@ -408,16 +443,16 @@ func summary(listed []listingbus.Listing) types.Text {
 		}
 	}
 
-	var parts []string
+	out := page.List{Sep: " · "}
 	if planned > 0 {
-		parts = append(parts, fmt.Sprintf("%d to plant", planned))
+		out.Items = append(out.Items, page.Put(cardWords.ToPlant, "count", planned))
 	}
 
 	if pull > 0 {
-		parts = append(parts, fmt.Sprintf("%d to pull", pull))
+		out.Items = append(out.Items, page.Put(cardWords.ToPull, "count", pull))
 	}
 
-	return types.Text{EN: strings.Join(parts, " · ")}
+	return out
 }
 
 // withThumb adds the picture a planter is shown beside a planned plant: its

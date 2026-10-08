@@ -9,11 +9,16 @@ import (
 	"github.com/jroedel/stewards/business/types"
 )
 
-// Funcs are the template helpers every page has.
-var Funcs = template.FuncMap{
-	"say":      Say,
-	"sentence": Sentence,
-	"short":    Short,
+// funcs are the template helpers every page has. say and words look the
+// screens' own words up in the renderer's translation memory (words.go).
+func (rn *Renderer) funcs() template.FuncMap {
+	return template.FuncMap{
+		"say":      rn.say,
+		"words":    rn.plain,
+		"initial":  rn.initial,
+		"sentence": Sentence,
+		"short":    Short,
+	}
 }
 
 // ShortLen is how much of an ID a person is shown: as much as anybody needs
@@ -42,14 +47,12 @@ func Short(id string) string {
 // translation memory (translationbus) holds the ones a steward can.
 //
 // The text is escaped here, since the result is trusted HTML.
+//
+// This is say without the translation memory, which a template's say looks
+// the screens' own words up in first; it also takes a Phrase or a List.
 func Say(l types.Lang, t types.Text) template.HTML {
-	s := template.HTMLEscapeString(t.In(l))
-
-	if shown := t.Shown(l); shown != l {
-		return template.HTML(`<span lang="` + string(shown) + `">` + s + `</span>`)
-	}
-
-	return template.HTML(s)
+	s, _ := (*Renderer)(nil).say(l, t)
+	return s
 }
 
 // Sentence makes a rule's problem into something a page can show on its own:

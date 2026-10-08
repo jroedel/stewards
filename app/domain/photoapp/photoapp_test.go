@@ -315,7 +315,7 @@ func TestAStewardAddsAPhotoAndChecksIt(t *testing.T) {
 	for _, want := range []string{
 		`src="/photos/` + id + `/small.jpg"`,
 		`href="/plants/brazos-penstemon/photos/` + id + `?view=weeding"`,
-		`alt="Brazos penstemon: leaf"`,
+		`alt="Brazos penstemon: Leaf"`,
 		"Our photo · April 2027",
 		"No young-plant photo yet.",
 	} {
@@ -335,7 +335,7 @@ func TestAStewardAddsAPhotoAndChecksIt(t *testing.T) {
 	for _, want := range []string{
 		`src="/photos/` + id + `/large.jpg"`,
 		`class="zoom-full" src="/photos/` + id + `/full.jpg"`,
-		`alt="Brazos penstemon: leaf"`,
+		`alt="Brazos penstemon: Leaf"`,
 		"Our photo · April 2027",
 		"Pinch to zoom in.",
 		`href="/photos/` + id + `/full.jpg"`,
