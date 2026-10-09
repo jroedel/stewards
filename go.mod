@@ -10,7 +10,7 @@ module github.com/jroedel/stewards
 // fixed since -- red in CI and green on a developer machine.
 //
 // Raise this when a Go patch release fixes an advisory the scan reports.
-go 1.26.8
+go 1.26.9
 
 tool golang.org/x/vuln/cmd/govulncheck
 
