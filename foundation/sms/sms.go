@@ -250,6 +250,97 @@ func (t *Twilio) Send(ctx context.Context, m Message) (string, error) {
 	return ok.SID, nil
 }
 
+// ------------------------------------------------------------------ checking
+
+// Owns asks Twilio, with the key, whether the From number is on the
+// account. It sends nothing and costs nothing, and it is the whole of what
+// "is the Twilio configuration right?" can mean short of sending a text: the
+// key authenticates, the account is the one the key belongs to, and the
+// number texts would come from is that account's. A nil error is yes; any
+// other answer is a sentence saying which part is wrong.
+func (t *Twilio) Owns(ctx context.Context) error {
+	q := url.Values{"PhoneNumber": {t.cfg.From}, "PageSize": {"1"}}
+
+	var list struct {
+		Numbers []struct {
+			PhoneNumber string `json:"phone_number"`
+		} `json:"incoming_phone_numbers"`
+	}
+
+	code, err := t.get(ctx, "/IncomingPhoneNumbers.json?"+q.Encode(), &list)
+
+	switch {
+	case err != nil:
+		return err
+	case code == http.StatusUnauthorized:
+		return errors.New("Twilio did not accept the API key: check api_key_sid and api_key_secret, and that the key was made on this account")
+	case code == http.StatusNotFound:
+		return errors.New("Twilio has no such account: check account_sid, which begins AC")
+	case code != http.StatusOK:
+		return fmt.Errorf("Twilio answered %d to a question about the number", code)
+	case len(list.Numbers) == 0:
+		return errors.New("the number texts are sent from is not on this Twilio account: check from")
+	}
+
+	return nil
+}
+
+// Status is a message's status as Twilio has it -- "queued", "sent",
+// "delivered", "undelivered", "failed" -- and its error code, when it has
+// one: 30007 is a carrier filtering it, 30003 a phone that is off.
+func (t *Twilio) Status(ctx context.Context, sid string) (string, int, error) {
+	var m struct {
+		Status    string `json:"status"`
+		ErrorCode *int   `json:"error_code"`
+	}
+
+	code, err := t.get(ctx, "/Messages/"+url.PathEscape(sid)+".json", &m)
+
+	switch {
+	case err != nil:
+		return "", 0, err
+	case code != http.StatusOK:
+		return "", 0, fmt.Errorf("Twilio answered %d to a question about the text", code)
+	case m.ErrorCode != nil:
+		return m.Status, *m.ErrorCode, nil
+	}
+
+	return m.Status, 0, nil
+}
+
+// get reads one of the account's resources into v, and reports the HTTP
+// status; v is filled only on a 200.
+func (t *Twilio) get(ctx context.Context, path string, v any) (int, error) {
+	endpoint := t.base + "/2010-04-01/Accounts/" + url.PathEscape(t.cfg.AccountSID) + path
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return 0, fmt.Errorf("building the request to Twilio: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+	req.SetBasicAuth(t.cfg.KeySID, t.cfg.KeySecret)
+
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("reaching Twilio: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return 0, fmt.Errorf("reading Twilio's reply: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusOK {
+		if err := json.Unmarshal(body, v); err != nil {
+			return 0, fmt.Errorf("the reply was a 200 that did not come from Twilio")
+		}
+	}
+
+	return resp.StatusCode, nil
+}
+
 // oneLine collapses a provider's sentence so it cannot break a log line.
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
