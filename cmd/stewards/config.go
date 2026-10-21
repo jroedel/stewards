@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/jroedel/stewards/business/types"
 )
 
 // config is the whole runtime configuration, read from a TOML file.
@@ -70,6 +72,18 @@ type config struct {
 		From     string `toml:"from"`
 		FromName string `toml:"from_name"`
 	} `toml:"mail"`
+
+	// SMS is the Twilio account volunteers' texts go out through, with an
+	// API key minted for this app alone (see foundation/sms for why a key
+	// and not the account's token). Without it the app runs and the phone
+	// fields are not offered: nobody is asked for a number that nothing
+	// can text.
+	SMS struct {
+		AccountSID   string `toml:"account_sid"`
+		APIKeySID    string `toml:"api_key_sid"`
+		APIKeySecret string `toml:"api_key_secret"`
+		From         string `toml:"from"`
+	} `toml:"sms"`
 }
 
 // minBootstrap is the shortest bootstrap secret the binary accepts. It mints
@@ -180,6 +194,25 @@ func loadConfig(path string) (config, error) {
 		}
 	}
 
+	// Checked as a set, for the reason [mail] is: a half-filled section
+	// would fail at a volunteer's first sign-up, which is the worst moment.
+	if cfg.SMS.AccountSID != "" {
+		for field, value := range map[string]string{
+			"api_key_sid": cfg.SMS.APIKeySID, "api_key_secret": cfg.SMS.APIKeySecret, "from": cfg.SMS.From,
+		} {
+			if value == "" {
+				return cfg, fmt.Errorf("%s sets [sms] account_sid but not %s; the first text would fail", path, field)
+			}
+		}
+
+		from, err := types.ParsePhone(cfg.SMS.From)
+		if err != nil || !strings.HasPrefix(strings.TrimSpace(cfg.SMS.From), "+") {
+			return cfg, fmt.Errorf("%s has [sms] from %q; write the number texts come from with its country code, such as +15125550100", path, cfg.SMS.From)
+		}
+
+		cfg.SMS.From = from.String()
+	}
+
 	if n := len(cfg.Auth.BootstrapSecret); n > 0 && n < minBootstrap {
 		return cfg, fmt.Errorf("%s has an [auth] bootstrap_secret of %d characters; it signs somebody in with no email, so it needs at least %d. Run make bootstrap-secret for one", path, n, minBootstrap)
 	}
@@ -210,7 +243,14 @@ func (c config) summary() string {
 		bootstrap = "secret set"
 	}
 
+	texts := "not configured - volunteers are not asked for a phone number"
+	if c.SMS.AccountSID != "" {
+		from, _ := types.ParsePhone(c.SMS.From)
+		texts = "Twilio, from " + from.Redacted()
+	}
+
 	fmt.Fprintf(&b, "outgoing mail  %s\n", mail)
+	fmt.Fprintf(&b, "texts          %s\n", texts)
 	fmt.Fprintf(&b, "bootstrap      %s\n", bootstrap)
 
 	return b.String()

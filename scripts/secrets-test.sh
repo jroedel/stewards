@@ -103,8 +103,8 @@ check "local uses DEV_ADDR and loses its quotes" \
 	grep -q '^addr = "127.0.0.1:18451"$' "$TMP/local.toml"
 check "production's public address is https on APP_HOST" \
 	grep -qx 'base_url = "https://stewards.example.invalid"' "$TMP/prod.toml"
-check "with no runtime values, there is no [auth] and no [mail]" \
-	bash -c '! grep -qE "^\[(auth|mail)\]" "$0"' "$TMP/prod.toml"
+check "with no runtime values, there is no [auth], [mail] or [sms]" \
+	bash -c '! grep -qE "^\[(auth|mail|sms)\]" "$0"' "$TMP/prod.toml"
 
 # Everything sign-in needs, with a password holding the two characters that
 # end a TOML string early.
@@ -115,6 +115,10 @@ check "with no runtime values, there is no [auth] and no [mail]" \
 	printf 'SMTP_USER=stewards@example.invalid\n'
 	printf "SMTP_PASSWORD='pa\"ss\\\\word'\n"
 	printf 'MAIL_FROM=stewards@example.invalid\n'
+	printf 'TWILIO_ACCOUNT_SID=AC00000000000000000000000000000001\n'
+	printf 'TWILIO_API_KEY_SID=SK00000000000000000000000000000002\n'
+	printf "TWILIO_API_KEY_SECRET='a\"key\\\\secret'\n"
+	printf 'TWILIO_FROM=+15125550100\n'
 } > "$TMP/runtime.env"
 SECRETS_ENV="$TMP/runtime.env" "$SECRETS" render production > "$TMP/runtime.toml"
 
@@ -124,6 +128,10 @@ check "a quote and a backslash in the password are escaped" \
 	grep -qxF 'password = "pa\"ss\\word"' "$TMP/runtime.toml"
 check "the port is a bare number, and defaults to 587" \
 	grep -qx 'port = 587' "$TMP/runtime.toml"
+check "the Twilio account and number reach [sms]" \
+	bash -c 'grep -qx "\[sms\]" "$0" && grep -qx "account_sid = \"AC00000000000000000000000000000001\"" "$0" && grep -qx "from = \"+15125550100\"" "$0"' "$TMP/runtime.toml"
+check "and the key secret is escaped like the password" \
+	grep -qxF 'api_key_secret = "a\"key\\secret"' "$TMP/runtime.toml"
 
 echo
 echo "the rendered config is one the binary accepts"
@@ -137,6 +145,10 @@ if go -C "$REPO_DIR" build -o "$TMP/stewards" ./cmd/stewards 2>/dev/null; then
 		bash -c '"$0" -config "$1" -check | grep -q "outgoing mail  smtp.example.invalid:587"' "$TMP/stewards" "$TMP/runtime.toml"
 	check "and never prints the password" \
 		bash -c '! "$0" -config "$1" -check | grep -q "pa.ss"' "$TMP/stewards" "$TMP/runtime.toml"
+	check "whose -check says texts are set up, from a redacted number" \
+		bash -c '"$0" -config "$1" -check | grep -q "texts          Twilio, from +•••••••0100"' "$TMP/stewards" "$TMP/runtime.toml"
+	check "and never prints the key secret" \
+		bash -c '! "$0" -config "$1" -check | grep -q "key.secret"' "$TMP/stewards" "$TMP/runtime.toml"
 else
 	echo "  skip the binary would not build here"
 fi
@@ -207,6 +219,17 @@ check "a corrupt key is refused before a deploy uses it" \
 sed "s|^APP_DIR=.*|APP_DIR=public_html/stewards|" "$SECRETS_ENV" > "$TMP/exposed.env"
 SECRETS_ENV="$TMP/exposed.env" "$SECRETS" check > "$TMP/out" 2>&1 || true
 check "an APP_DIR inside public_html is refused" said "is inside public_html"
+
+# Half a Twilio section is refused by the binary, so check refuses it first;
+# and the account SID pasted where the key's goes is caught by its shape.
+{ cat "$SECRETS_ENV"; printf 'TWILIO_ACCOUNT_SID=AC1\n'; } > "$TMP/half-sms.env"
+SECRETS_ENV="$TMP/half-sms.env" "$SECRETS" check > "$TMP/out" 2>&1 || true
+check "a Twilio account with no key is a problem" said "TWILIO_API_KEY_SID is empty; the app would refuse the config"
+
+{ cat "$SECRETS_ENV"; printf 'TWILIO_ACCOUNT_SID=AC1\nTWILIO_API_KEY_SID=AC2\nTWILIO_API_KEY_SECRET=s\nTWILIO_FROM=5125550100\n'; } > "$TMP/wrong-sms.env"
+SECRETS_ENV="$TMP/wrong-sms.env" "$SECRETS" check > "$TMP/out" 2>&1 || true
+check "an account SID where the key goes is named" said "TWILIO_API_KEY_SID should begin SK"
+check "and a from number with no country code" said "TWILIO_FROM must start with +"
 
 check "a missing credentials file is an error, not a default" \
 	bash -c '! SECRETS_ENV=/nonexistent "$0" check >/dev/null 2>&1' "$SECRETS"
