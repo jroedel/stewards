@@ -52,3 +52,15 @@ bootstrap_secret = ""
 # password = ""
 # from = "stewards@example.org"
 # from_name = "Garden stewards"
+
+# [sms] is the Twilio account volunteers' texts go out through: an API key
+# minted for this app (Twilio console, Account > API keys, a Standard key),
+# not the account's own auth token. Leave the section out and the app still
+# runs; volunteers are simply not asked for a phone number. On the server
+# this is written from secrets.env by make deploy-send-secrets.
+#
+# [sms]
+# account_sid = "AC..."
+# api_key_sid = "SK..."
+# api_key_secret = ""
+# from = "+15125550100"

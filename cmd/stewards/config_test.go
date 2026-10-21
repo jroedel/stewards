@@ -71,6 +71,12 @@ func TestABadConfigIsRefusedWithAReason(t *testing.T) {
 		"a relay with no from":     {db + "[mail]\nhost = \"smtp.example.org\"\nuser = \"u\"\npassword = \"p\"\n", "not from"},
 
 		"a short bootstrap secret": {db + "[auth]\nbootstrap_secret = \"too-short\"\n", "make bootstrap-secret"},
+
+		// Twilio, the same: all four or none, and a from number that says
+		// its country rather than one guessed at.
+		"texts with no key secret": {db + "[sms]\naccount_sid = \"AC1\"\napi_key_sid = \"SK1\"\nfrom = \"+15125550100\"\n", "not api_key_secret"},
+		"texts with no from":       {db + "[sms]\naccount_sid = \"AC1\"\napi_key_sid = \"SK1\"\napi_key_secret = \"s\"\n", "not from"},
+		"texts from no country":    {db + "[sms]\naccount_sid = \"AC1\"\napi_key_sid = \"SK1\"\napi_key_secret = \"s\"\nfrom = \"512 555 0100\"\n", "country code"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := loadConfig(writeConfig(t, tc.body))
@@ -175,5 +181,42 @@ func TestPhotosGoBesideTheDatabase(t *testing.T) {
 	cfg, err = loadConfig(writeConfig(t, "[db]\npath = \"stewards.db\"\n[photos]\ndir = \"/elsewhere/photos\"\n"))
 	if err != nil || cfg.Photos.Dir != "/elsewhere/photos" {
 		t.Errorf("a chosen directory: %q, %v", cfg.Photos.Dir, err)
+	}
+}
+
+func TestTextsAreTidiedAndSummarisedWithoutSecrets(t *testing.T) {
+	cfg, err := loadConfig(writeConfig(t, db+`
+[sms]
+account_sid = "AC-an-account"
+api_key_sid = "SK-a-key"
+api_key_secret = "a-key-secret"
+from = "+1 (512) 555-0100"
+`))
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+
+	if cfg.SMS.From != "+15125550100" {
+		t.Errorf("from = %q, want it in E.164", cfg.SMS.From)
+	}
+
+	summary := cfg.summary()
+	for _, secret := range []string{"a-key-secret", "SK-a-key", "5125550100"} {
+		if strings.Contains(summary, secret) {
+			t.Errorf("the summary prints %q:\n%s", secret, summary)
+		}
+	}
+
+	if !strings.Contains(summary, "Twilio, from +•••••••0100") {
+		t.Errorf("the summary does not describe texts:\n%s", summary)
+	}
+
+	none, err := loadConfig(writeConfig(t, db))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(none.summary(), "not asked for a phone number") {
+		t.Errorf("the summary does not say texts are off:\n%s", none.summary())
 	}
 }
