@@ -22,6 +22,15 @@
   <p class="day-when">{{say $l .Date}}<span class="day-hours">{{say $l .Hours}}</span></p>
   <p class="day-title">{{say $l .Title}}</p>
   {{if .Details.Written}}<p class="day-details prose">{{say $l .Details}}</p>{{end}}
+  {{if $.Data.RSVP}}
+  {{if .Coming}}{{$c := .Coming}}{{$n := len $c}}<p class="day-coming">
+    {{- if .Others}}{{t $l "{a}, {b}, {c} and {n} more are coming" "a" (index $c 0) "b" (index $c 1) "c" (index $c 2) "n" .Others}}
+    {{- else if eq $n 1}}{{t $l "{a} is coming" "a" (index $c 0)}}
+    {{- else if eq $n 2}}{{t $l "{a} and {b} are coming" "a" (index $c 0) "b" (index $c 1)}}
+    {{- else}}{{t $l "{a}, {b} and {c} are coming" "a" (index $c 0) "b" (index $c 1) "c" (index $c 2)}}{{end -}}
+  </p>{{end}}
+  <a class="button button-block" href="/days/{{.ID}}">{{t $l "I'll be there"}}</a>
+  {{end}}
 </li>
 {{end}}</ul>
 {{else}}

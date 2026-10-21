@@ -23,6 +23,7 @@ import (
 
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/page"
+	"github.com/jroedel/stewards/business/domain/rsvp/rsvpbus"
 	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
 	"github.com/jroedel/stewards/business/types"
 	"github.com/jroedel/stewards/foundation/web"
@@ -50,11 +51,21 @@ type Days interface {
 	Delete(ctx context.Context, id types.ID) error
 }
 
-// Config is what this app needs.
+// RSVPs is what this app needs from the sign-up rules: who is coming, with
+// how to reach them, and taking a name off.
+type RSVPs interface {
+	ForDay(ctx context.Context, day types.ID) ([]rsvpbus.RSVP, error)
+	Counts(ctx context.Context, days []types.ID) (map[types.ID]int, error)
+	Remove(ctx context.Context, id types.ID) error
+}
+
+// Config is what this app needs. RSVPs may be nil, when the sign-up is not
+// mounted, and the screens then say nothing of who is coming.
 type Config struct {
 	Log    *slog.Logger
 	Render *page.Renderer
 	Days   Days
+	RSVPs  RSVPs
 }
 
 type app struct{ cfg Config }
@@ -70,6 +81,8 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 		"GET " + Path + "/{id}/edit":    a.editForm,
 		"POST " + Path + "/{id}":        a.update,
 		"POST " + Path + "/{id}/delete": a.remove,
+
+		"POST " + Path + "/{id}/coming/{rsvp}/remove": a.removeComing,
 	} {
 		mux.Handle(pattern, guard(h))
 	}
@@ -81,6 +94,7 @@ type row struct {
 	ID          string
 	Date, Hours page.Phrase
 	Title       types.Text
+	Coming      int
 }
 
 type listView struct {
@@ -128,6 +142,12 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 
 	v := listView{Upcoming: rows(up), Recent: rows(past)}
 
+	if err := a.count(r.Context(), v.Upcoming); err != nil {
+		a.fail(w, r, "counting who is coming", err)
+
+		return
+	}
+
 	// A fixed sentence chosen by a word, never the query echoed.
 	switch r.URL.Query().Get("done") {
 	case "added":
@@ -139,6 +159,30 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.cfg.Render.Render(w, r, http.StatusOK, "steward-days", v)
+}
+
+// count fills in how many are coming to each row.
+func (a app) count(ctx context.Context, rs []row) error {
+	if a.cfg.RSVPs == nil || len(rs) == 0 {
+		return nil
+	}
+
+	ids := make([]types.ID, 0, len(rs))
+	for _, r := range rs {
+		id, _ := types.ParseID(r.ID)
+		ids = append(ids, id)
+	}
+
+	counts, err := a.cfg.RSVPs.Counts(ctx, ids)
+	if err != nil {
+		return err
+	}
+
+	for i, id := range ids {
+		rs[i].Coming = counts[id]
+	}
+
+	return nil
 }
 
 func rows(days []workdaybus.Day) []row {
@@ -163,6 +207,18 @@ type formView struct {
 
 	Problems      map[string]any
 	DeleteProblem any
+
+	// Coming is who has said they will come, for a day being edited; nil
+	// when the sign-up is off.
+	Coming  []coming
+	Signups bool
+	Removed bool
+}
+
+// coming is one person on a day, as a steward sees them: the name shown,
+// and how to reach them.
+type coming struct {
+	ID, Name, Email, Phone string
 }
 
 // The inputs' own formats: what <input type="date"> and type="time" send.
@@ -183,7 +239,68 @@ func (a app) editForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.cfg.Render.Render(w, r, http.StatusOK, "day-form", viewOf(d, mid.LangFrom(r.Context())))
+	v := viewOf(d, mid.LangFrom(r.Context()))
+	if !a.withComing(w, r, d.ID, &v) {
+		return
+	}
+
+	v.Removed = r.URL.Query().Get("done") == "removed"
+
+	a.cfg.Render.Render(w, r, http.StatusOK, "day-form", v)
+}
+
+// withComing adds who is coming to v, or answers 500 and reports false.
+func (a app) withComing(w http.ResponseWriter, r *http.Request, day types.ID, v *formView) bool {
+	if a.cfg.RSVPs == nil {
+		return true
+	}
+
+	rs, err := a.cfg.RSVPs.ForDay(r.Context(), day)
+	if err != nil {
+		a.fail(w, r, "reading who is coming", err)
+
+		return false
+	}
+
+	v.Signups = true
+	for _, rv := range rs {
+		v.Coming = append(v.Coming, coming{
+			ID: rv.ID.String(), Name: rv.Name,
+			Email: rv.Contact.Email.String(), Phone: rv.Contact.Phone.National(),
+		})
+	}
+
+	return true
+}
+
+// removeComing takes a name off a day: one that should not be on a public
+// page, or someone who said in person they cannot come. The sign-up form
+// needs no box ticked for it, unlike removing a day: it is one name, and
+// they can sign up again.
+func (a app) removeComing(w http.ResponseWriter, r *http.Request) {
+	d, ok := a.load(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := types.ParseID(r.PathValue("rsvp"))
+	if err != nil || a.cfg.RSVPs == nil {
+		http.NotFound(w, r)
+
+		return
+	}
+
+	if err := a.cfg.RSVPs.Remove(r.Context(), id); err != nil && !errors.Is(err, rsvpbus.ErrNotFound) {
+		a.fail(w, r, "removing a sign-up", err)
+
+		return
+	}
+
+	me, _ := mid.StewardFrom(r.Context())
+	a.cfg.Log.InfoContext(r.Context(), "a sign-up removed by a steward", "request_id", web.RequestIDFrom(r.Context()),
+		"day_id", d.ID.String(), "rsvp_id", id.String(), "user_id", me.ID.String())
+
+	http.Redirect(w, r, Path+"/"+d.ID.String()+"/edit?done=removed", http.StatusSeeOther)
 }
 
 func (a app) create(w http.ResponseWriter, r *http.Request) {

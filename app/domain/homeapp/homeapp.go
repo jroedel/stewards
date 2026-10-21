@@ -68,9 +68,23 @@ type App struct {
 // -- no relay, or sign-in off -- because a form that can never send its
 // welcome is worse than no form; the phone is asked for only when a text can
 // be sent to it.
+//
+// Coming is who has said they will come to each day, which dayapp's page
+// takes; nil with the form off, and the days then have no "I'll be there".
 type SignUp struct {
 	On, Texts bool
+	Coming    Coming
 }
+
+// Coming is the names shown for a day.
+type Coming interface {
+	Coming(ctx context.Context, day types.ID) ([]string, error)
+}
+
+// shownOnCard is how many names a day's card on the home page gives before
+// "and 3 others": enough to spot a friend, few enough for a phone's width.
+// The day's own page lists them all.
+const shownOnCard = 3
 
 // New constructs one.
 func New(log *slog.Logger, render *page.Renderer, places Places, days Days, signUp SignUp) *App {
@@ -156,8 +170,13 @@ var words = wording{
 
 // day is one stewardship day as the home page shows it.
 type day struct {
+	ID             string
 	Date, Hours    page.Phrase
 	Title, Details types.Text
+
+	// Coming is the first few names, and Others how many more.
+	Coming []string
+	Others int
 
 	// Today and Now are the "Today" tag design.md gives a work day:
 	// whoever scans the sign on a work morning should learn the stewards
@@ -169,6 +188,7 @@ type homeView struct {
 	Copy    wording
 	Days    []day
 	SignUp  bool
+	RSVP    bool
 	Contact page.ContactFields
 }
 
@@ -183,14 +203,33 @@ func (a *App) home(w http.ResponseWriter, r *http.Request) {
 	now := a.days.Now()
 	today := now.In(types.Garden).Format(time.DateOnly)
 
-	v := homeView{Copy: words, SignUp: a.signUp.On, Contact: page.ContactFields{ID: "signup", Texts: a.signUp.Texts}}
+	v := homeView{
+		Copy: words, SignUp: a.signUp.On, RSVP: a.signUp.Coming != nil,
+		Contact: page.ContactFields{ID: "signup", Texts: a.signUp.Texts},
+	}
+
 	for _, d := range up {
-		v.Days = append(v.Days, day{
+		dv := day{
+			ID:   d.ID.String(),
 			Date: page.Date(d.Starts), Hours: page.Hours(d.Starts, d.Ends),
 			Title: d.Title, Details: d.Details,
 			Today: d.Starts.In(types.Garden).Format(time.DateOnly) == today,
 			Now:   !now.Before(d.Starts) && now.Before(d.Ends),
-		})
+		}
+
+		if v.RSVP {
+			names, err := a.signUp.Coming.Coming(r.Context(), d.ID)
+			if err != nil {
+				a.fail(w, r, "reading who is coming", err)
+
+				return
+			}
+
+			dv.Coming = names[:min(len(names), shownOnCard)]
+			dv.Others = len(names) - len(dv.Coming)
+		}
+
+		v.Days = append(v.Days, dv)
 	}
 
 	a.render.Render(w, r, http.StatusOK, "home", v)
