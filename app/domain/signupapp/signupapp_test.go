@@ -14,6 +14,8 @@ import (
 	"github.com/jroedel/stewards/app/sdk/muxer"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
+	"github.com/jroedel/stewards/business/domain/notice/noticebus"
+	"github.com/jroedel/stewards/business/domain/notice/stores/noticedb"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/photo/stores/photodb"
 	"github.com/jroedel/stewards/business/domain/photo/stores/photofs"
@@ -29,6 +31,7 @@ import (
 	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
 	"github.com/jroedel/stewards/business/types"
 	"github.com/jroedel/stewards/foundation/mail"
+	"github.com/jroedel/stewards/foundation/sms"
 	"github.com/jroedel/stewards/foundation/sqldb"
 )
 
@@ -37,12 +40,18 @@ type site struct {
 	h      http.Handler
 	list   *subscriberbus.Business
 	mail   *mail.Recorder
+	texts  *sms.Recorder
 	log    *strings.Builder
 	cookie *http.Cookie
 }
 
-// Through the muxer, with a recorded mailbox and a log the test can read.
-func serve(t *testing.T) *site {
+// Through the muxer, with a recorded mailbox and phone and a log the test
+// can read. Texts are on; serveNoTexts is the app with no Twilio.
+func serve(t *testing.T) *site { return serveWith(t, true) }
+
+func serveNoTexts(t *testing.T) *site { return serveWith(t, false) }
+
+func serveWith(t *testing.T, withTexts bool) *site {
 	t.Helper()
 
 	db, err := sqldb.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -60,13 +69,24 @@ func serve(t *testing.T) *site {
 		func() error { return userdb.Init(t.Context(), db) },
 		func() error { return workdaydb.Init(t.Context(), db) },
 		func() error { return subscriberdb.Init(t.Context(), db) },
+		func() error { return noticedb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	s := &site{t: t, list: subscriberbus.NewBusiness(subscriberdb.NewStore(db), nil), mail: &mail.Recorder{}, log: &strings.Builder{}}
+	s := &site{t: t, mail: &mail.Recorder{}, texts: &sms.Recorder{}, log: &strings.Builder{}}
+
+	var texts sms.Sender
+	if withTexts {
+		texts = s.texts
+	}
+
+	notices := noticebus.NewBusiness(noticedb.NewStore(db), s.mail, texts, nil)
+	s.list = subscriberbus.NewBusiness(subscriberdb.NewStore(db), notices, nil)
+	notices.OnStopped(s.list.Stopped)
+
 	log := slog.New(slog.NewTextHandler(s.log, nil))
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
 
@@ -79,6 +99,7 @@ func serve(t *testing.T) *site {
 		Users:       users,
 		Workdays:    workdaybus.NewBusiness(workdaydb.NewStore(db), nil, nil),
 		Subscribers: s.list,
+		Notices:     notices,
 		BaseURL:     "https://stewards.example.invalid", Mail: s.mail,
 	}); err != nil {
 		t.Fatal(err)
@@ -171,7 +192,7 @@ func TestANewcomerSignsUpAndLeaves(t *testing.T) {
 	}
 
 	on, _ := s.list.All(t.Context())
-	if len(on) != 1 || on[0].Email.String() != "walker@example.org" {
+	if len(on) != 1 || on[0].Contact.Email.String() != "walker@example.org" {
 		t.Fatalf("on the list: %+v", on)
 	}
 
@@ -195,7 +216,7 @@ func TestANewcomerSignsUpAndLeaves(t *testing.T) {
 	}
 
 	// Opening the unsubscribe link changes nothing; pressing its button does.
-	if page := s.do(http.MethodGet, strings.TrimPrefix(leave, "https://stewards.example.invalid"), nil, false).Body.String(); !strings.Contains(page, "Stop these emails?") {
+	if page := s.do(http.MethodGet, strings.TrimPrefix(leave, "https://stewards.example.invalid"), nil, false).Body.String(); !strings.Contains(page, "Stop these messages?") {
 		t.Errorf("the unsubscribe page has no button")
 	}
 
@@ -250,10 +271,22 @@ func TestTheFormTellsAStrangerNothing(t *testing.T) {
 		}
 	}
 
-	// A typo is the one thing said differently, and it is about the typing.
-	w := s.do(http.MethodPost, "/subscribe", url.Values{"email": {"walker.example.org"}}, false)
-	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "doesn't look like an email address") || !strings.Contains(w.Body.String(), `value="walker.example.org"`) {
-		t.Errorf("a typo: %d\n%s", w.Code, w.Body)
+	// A typo is the one thing said differently, and it is about the typing,
+	// beside the field that has it, with both fields given back.
+	for _, tc := range []struct {
+		email, phone, want string
+	}{
+		{"walker.example.org", "", "doesn't look like an email address"},
+		{"walker@example.org", "555-0123", "doesn't look like a mobile number"},
+		{"", "", "Leave an email, a mobile number, or both"},
+	} {
+		w := s.do(http.MethodPost, "/subscribe", url.Values{"email": {tc.email}, "phone": {tc.phone}}, false)
+		body := w.Body.String()
+
+		if w.Code != http.StatusUnprocessableEntity || !strings.Contains(body, tc.want) ||
+			!strings.Contains(body, `value="`+tc.email+`"`) || !strings.Contains(body, `value="`+tc.phone+`"`) {
+			t.Errorf("%q and %q: %d\n%s", tc.email, tc.phone, w.Code, body)
+		}
 	}
 }
 
@@ -274,4 +307,99 @@ func photos(t *testing.T, db *sql.DB) *photobus.Business {
 	}
 
 	return photobus.NewBusiness(photodb.NewStore(db), files, nil)
+}
+
+// A phone alone, then the same person's email: one row, and each half
+// welcomed once, the text with its own short words and the links in it.
+func TestAPhoneSignsUpAndAddsAnEmail(t *testing.T) {
+	s := serve(t)
+
+	home := s.do(http.MethodGet, "/", nil, false).Body.String()
+	if !strings.Contains(home, `name="phone"`) || !strings.Contains(home, "reply STOP at any time") {
+		t.Fatal("the home page does not ask for a phone, or does not say how to stop texts")
+	}
+
+	if w := s.do(http.MethodPost, "/subscribe", url.Values{"phone": {"(512) 555-0123"}}, false); w.Code != http.StatusSeeOther {
+		t.Fatalf("a phone alone: %d\n%s", w.Code, w.Body)
+	}
+
+	tx, ok := s.texts.Last()
+	if !ok || tx.To != "+15125550123" || !strings.Contains(tx.Body, "reply STOP") ||
+		!strings.Contains(tx.Body, "https://stewards.example.invalid/unsubscribe?t=") || len(s.mail.Sent) != 0 {
+		t.Fatalf("the welcome text: %+v, %d emails", tx, len(s.mail.Sent))
+	}
+
+	s.do(http.MethodPost, "/subscribe", url.Values{"email": {"walker@example.org"}, "phone": {"512 555 0123"}}, false)
+
+	on, _ := s.list.All(t.Context())
+	if len(on) != 1 || on[0].Contact.Email.String() != "walker@example.org" || len(s.texts.Sent()) != 1 || len(s.mail.Sent) != 1 {
+		t.Errorf("after adding the email: %+v; %d texts, %d emails", on, len(s.texts.Sent()), len(s.mail.Sent))
+	}
+
+	// The steward sees the number the way it is read aloud.
+	if list := s.do(http.MethodGet, "/steward/subscribers", nil, true).Body.String(); !strings.Contains(list, "(512) 555-0123") {
+		t.Error("the stewards' list does not show the phone")
+	}
+
+	// The number never reaches the log, in any form.
+	for _, n := range []string{"5125550123", "555-0123", "555 0123"} {
+		if strings.Contains(s.log.String(), n) {
+			t.Errorf("a number was logged:\n%s", s.log)
+		}
+	}
+}
+
+// A STOP takes the number off: the next text to it is refused, and the
+// person who also gave an email keeps getting email.
+func TestAStopTakesTheNumberOff(t *testing.T) {
+	s := serve(t)
+
+	s.do(http.MethodPost, "/subscribe", url.Values{"email": {"walker@example.org"}, "phone": {"512 555 0123"}}, false)
+
+	s.texts.Refuse = func(sms.Message) error { return sms.Refused{Code: 21610, Message: "unsubscribed recipient"} }
+
+	// Signing up a second number for the same email welcomes it, is refused,
+	// and the refusal takes that number off.
+	s.do(http.MethodPost, "/subscribe", url.Values{"phone": {"512 555 0124"}}, false)
+
+	on, _ := s.list.All(t.Context())
+	if len(on) != 1 || on[0].Contact.Phone.String() != "+15125550123" {
+		t.Errorf("the list: %+v", on)
+	}
+}
+
+// With no Twilio the form is as it was: an email, required, and no phone.
+func TestWithNoTextsTheFormAsksForAnEmail(t *testing.T) {
+	s := serveNoTexts(t)
+
+	home := s.do(http.MethodGet, "/", nil, false).Body.String()
+	if strings.Contains(home, `name="phone"`) || !strings.Contains(home, `name="email"`) {
+		t.Fatal("the home page asks for a phone with texts off")
+	}
+
+	// A phone sent anyway, from an old page, is not kept.
+	w := s.do(http.MethodPost, "/subscribe", url.Values{"phone": {"512 555 0123"}}, false)
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "Leave your email") {
+		t.Errorf("a phone with texts off: %d\n%s", w.Code, w.Body)
+	}
+
+	if on, _ := s.list.All(t.Context()); len(on) != 0 {
+		t.Errorf("on the list: %+v", on)
+	}
+}
+
+// The messages screen shows the welcome both ways and in both languages.
+func TestTheMessagesScreenShowsTheWelcomeBothWays(t *testing.T) {
+	s := serve(t)
+
+	if w := s.do(http.MethodGet, "/steward/messages", nil, false); w.Code != http.StatusSeeOther {
+		t.Errorf("signed out: %d", w.Code)
+	}
+
+	page := s.do(http.MethodGet, "/steward/messages", nil, true).Body.String()
+	for _, want := range []string{"Welcome to the list", "Thank you for signing up for stewardship days", "reply STOP", "Spanish", "Waiting for its translation"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the messages screen does not say %q", want)
+		}
+	}
 }

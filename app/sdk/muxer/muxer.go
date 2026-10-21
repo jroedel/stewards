@@ -16,6 +16,7 @@ import (
 	"github.com/jroedel/stewards/app/domain/homeapp"
 	"github.com/jroedel/stewards/app/domain/inboxapp"
 	"github.com/jroedel/stewards/app/domain/mcpapp"
+	"github.com/jroedel/stewards/app/domain/noticeapp"
 	"github.com/jroedel/stewards/app/domain/nurseryapp"
 	"github.com/jroedel/stewards/app/domain/oauthapp"
 	"github.com/jroedel/stewards/app/domain/photoapp"
@@ -30,6 +31,7 @@ import (
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/inbox/inboxbus"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
+	"github.com/jroedel/stewards/business/domain/notice/noticebus"
 	"github.com/jroedel/stewards/business/domain/nursery/nurserybus"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
@@ -68,9 +70,14 @@ type Config struct {
 	// Translations may be nil likewise, for no translations in the API.
 	Translations *translationbus.Business
 
-	// Subscribers may be nil, and with no Mail or no BaseURL it is unused:
-	// the email sign-up is mounted only when it can send its welcome.
+	// Subscribers may be nil, and with no Mail, no Notices or no BaseURL it
+	// is unused: the sign-up is mounted only when it can send its welcome.
 	Subscribers *subscriberbus.Business
+
+	// Notices sends to volunteers by email and text; nil means the sign-up
+	// and the messages screen are not mounted. Whether it can text is its
+	// own to say (noticebus.Business.Texts).
+	Notices *noticebus.Business
 
 	// BaseURL is the public origin. Empty means sign-in is off: its routes
 	// are not mounted, and with no other write in the app, the origin check
@@ -108,7 +115,7 @@ const maxUpload = photobus.MaxBytes + 1<<20
 // template, through t, are found by the renderer instead.
 func words() page.Catalog {
 	var out page.Catalog
-	for _, c := range []page.Catalog{homeapp.Words, placeapp.Words, speciesapp.Words, signupapp.Words, authapp.Words, oauthapp.Words, stewardapp.Words, workdayapp.Words, translationapp.Words, nurseryapp.Words, photoapp.Words, inboxapp.Words, {page.CalendarWords, page.LanguageWords}} {
+	for _, c := range []page.Catalog{homeapp.Words, placeapp.Words, speciesapp.Words, signupapp.Words, authapp.Words, oauthapp.Words, stewardapp.Words, workdayapp.Words, translationapp.Words, nurseryapp.Words, photoapp.Words, inboxapp.Words, {page.CalendarWords, page.LanguageWords, page.ContactWords, signupapp.NoticeWords}} {
 		out = append(out, c...)
 	}
 
@@ -122,7 +129,7 @@ func New(cfg Config) (http.Handler, error) {
 
 	// One renderer holding every app's pages: the stylesheet has one hashed
 	// path, and net/http panics on a pattern registered twice.
-	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, inboxapp.Templates, nurseryapp.Templates, stewardapp.Templates, oauthapp.Templates, workdayapp.Templates, signupapp.Templates, translationapp.Templates)
+	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, inboxapp.Templates, nurseryapp.Templates, stewardapp.Templates, oauthapp.Templates, workdayapp.Templates, signupapp.Templates, noticeapp.Templates, translationapp.Templates)
 	if err != nil {
 		return nil, err
 	}
@@ -144,8 +151,9 @@ func New(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("GET /static/fonts/{file}", render.Files("fonts"))
 	mux.HandleFunc("GET /static/img/{file}", render.Files("img"))
 
-	signUp := cfg.BaseURL != "" && cfg.Mail != nil && cfg.Subscribers != nil
-	homeapp.New(cfg.Log, render, cfg.Places, cfg.Workdays, signUp).Routes(mux)
+	signUp := cfg.BaseURL != "" && cfg.Mail != nil && cfg.Subscribers != nil && cfg.Notices != nil
+	texts := signUp && cfg.Notices.Texts()
+	homeapp.New(cfg.Log, render, cfg.Places, cfg.Workdays, homeapp.SignUp{On: signUp, Texts: texts}).Routes(mux)
 	places := placeapp.Config{Log: cfg.Log, Render: render, Places: cfg.Places, Species: cfg.Species, Listings: cfg.Listings, Photos: cfg.Photos}
 	if cfg.Translations != nil {
 		places.Translations = cfg.Translations
@@ -207,8 +215,17 @@ func New(cfg Config) (http.Handler, error) {
 		}
 
 		if signUp {
-			signupapp.Routes(mux, signupapp.Config{
-				Log: cfg.Log, Render: render, List: cfg.Subscribers, Mail: cfg.Mail, BaseURL: cfg.BaseURL,
+			signup := signupapp.Config{
+				Log: cfg.Log, Render: render, List: cfg.Subscribers, Notices: cfg.Notices, BaseURL: cfg.BaseURL,
+			}
+			signupapp.Routes(mux, signup, guard)
+
+			// Every message the app sends, both ways, for a steward to read
+			// before any goes. Each app that writes to volunteers adds its
+			// kinds here.
+			noticeapp.Routes(mux, noticeapp.Config{
+				Log: cfg.Log, Render: render, Texts: texts,
+				Kinds: signupapp.Notices(signup),
 			}, guard)
 		} else {
 			cfg.Log.Warn("the email sign-up is off: there is no [mail] relay")

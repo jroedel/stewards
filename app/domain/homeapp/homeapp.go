@@ -60,14 +60,20 @@ type App struct {
 	render *page.Renderer
 	places Places
 	days   Days
-	signUp bool
+	signUp SignUp
 }
 
-// New constructs one. signUp says whether to show the email sign-up form,
-// which signupapp answers; it is off when that app is not mounted -- no
-// relay, or sign-in off -- because a form that can never send its
-// welcome is worse than no form.
-func New(log *slog.Logger, render *page.Renderer, places Places, days Days, signUp bool) *App {
+// SignUp is whether to show the sign-up form, which signupapp answers, and
+// whether it asks for a phone. The form is off when that app is not mounted
+// -- no relay, or sign-in off -- because a form that can never send its
+// welcome is worse than no form; the phone is asked for only when a text can
+// be sent to it.
+type SignUp struct {
+	On, Texts bool
+}
+
+// New constructs one.
+func New(log *slog.Logger, render *page.Renderer, places Places, days Days, signUp SignUp) *App {
 	return &App{log: log, render: render, places: places, days: days, signUp: signUp}
 }
 
@@ -90,7 +96,7 @@ type wording struct {
 
 	// The sign-up form's words, the same as signupapp's own copy of the
 	// form; see the template.
-	FormTitle, FormHelp, FormLabel, FormButton types.Text
+	FormTitle, FormHelp, FormHelpTexts, FormButton types.Text
 
 	Explore, ExploreWhat types.Text
 	TrailAsk, TrailGo    types.Text
@@ -122,10 +128,10 @@ var words = wording{
 	Today:  types.Text{EN: "Today"},
 	Now:    types.Text{EN: "Happening now"},
 
-	FormTitle:  types.Text{EN: "Hear about the next day"},
-	FormHelp:   types.Text{EN: "Leave your email and we'll write when a stewardship day is scheduled. Nothing else, and you can stop any time."},
-	FormLabel:  types.Text{EN: "Your email"},
-	FormButton: types.Text{EN: "Keep me posted"},
+	FormTitle:     types.Text{EN: "Hear about the next day"},
+	FormHelp:      types.Text{EN: "Leave your email and we'll write when a stewardship day is scheduled. Nothing else, and you can stop any time."},
+	FormHelpTexts: types.Text{EN: "Leave your email or mobile number and we'll let you know when a stewardship day is scheduled. Nothing else, and you can stop any time."},
+	FormButton:    types.Text{EN: "Keep me posted"},
 
 	Explore:     types.Text{EN: "Explore the trail"},
 	ExploreWhat: types.Text{EN: "the places along it, and what grows in each"},
@@ -160,9 +166,10 @@ type day struct {
 }
 
 type homeView struct {
-	Copy   wording
-	Days   []day
-	SignUp bool
+	Copy    wording
+	Days    []day
+	SignUp  bool
+	Contact page.ContactFields
 }
 
 func (a *App) home(w http.ResponseWriter, r *http.Request) {
@@ -176,7 +183,7 @@ func (a *App) home(w http.ResponseWriter, r *http.Request) {
 	now := a.days.Now()
 	today := now.In(types.Garden).Format(time.DateOnly)
 
-	v := homeView{Copy: words, SignUp: a.signUp}
+	v := homeView{Copy: words, SignUp: a.signUp.On, Contact: page.ContactFields{ID: "signup", Texts: a.signUp.Texts}}
 	for _, d := range up {
 		v.Days = append(v.Days, day{
 			Date: page.Date(d.Starts), Hours: page.Hours(d.Starts, d.Ends),

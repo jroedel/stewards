@@ -242,3 +242,34 @@ func TestRecorder(t *testing.T) {
 		t.Errorf("Sent = %+v", r.Sent())
 	}
 }
+
+func TestSegments(t *testing.T) {
+	tests := []struct {
+		body    string
+		n       int
+		unicode bool
+	}{
+		{"", 0, false},
+		{"See you Saturday at 8.", 1, false},
+		{strings.Repeat("a", 160), 1, false},
+		{strings.Repeat("a", 161), 2, false},
+		{strings.Repeat("a", 306), 2, false},
+		{strings.Repeat("a", 307), 3, false},
+		{strings.Repeat("€", 80), 1, false}, // two each, 160 in all
+		{strings.Repeat("€", 81), 2, false},
+
+		// ñ and é are GSM; á is not, and turns the whole text to UCS-2.
+		{"Mañana, café.", 1, false},
+		{"Sábado", 1, true},
+		{strings.Repeat("á", 70), 1, true},
+		{strings.Repeat("á", 71), 2, true},
+		{strings.Repeat("😀", 35), 1, true}, // two units each
+		{strings.Repeat("😀", 36), 2, true},
+	}
+
+	for _, tt := range tests {
+		if n, u := sms.Segments(tt.body); n != tt.n || u != tt.unicode {
+			t.Errorf("Segments(%.20q…) = %d, %v; want %d, %v", tt.body, n, u, tt.n, tt.unicode)
+		}
+	}
+}

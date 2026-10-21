@@ -2,7 +2,7 @@
 {{define "content"}}{{$l := .Lang}}{{with .Data}}
 <p class="eyebrow"><a href="/steward">{{t $l "Places"}}</a></p>
 <h1>{{t $l "Email list"}}</h1>
-<p class="lead">{{t $l "People who signed up on the home page to hear about stewardship days."}}</p>
+<p class="lead">{{t $l "People who signed up on the home page to hear about stewardship days, by email, by text, or both."}}</p>
 
 {{if .Removed}}<p class="done" role="status">{{t $l "Removed from the list."}}</p>{{end}}
 
@@ -17,7 +17,7 @@
 <ul class="rows">
 {{range .Rows}}<li class="row">
   <div class="row-main-static">
-    <div class="row-name">{{.Email}}</div>
+    <div class="row-name">{{.Email}}{{if and .Email .Phone}} · {{end}}{{.Phone}}</div>
     <div class="row-note">{{t $l "Since {date}" "date" .Since}} · {{say $l .Lang}}</div>
   </div>
   <form method="post" action="/steward/subscribers/{{.ID}}/remove">
