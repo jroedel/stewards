@@ -741,6 +741,37 @@ dns_report() {
 	done
 }
 
+# ------------------------------------------------------------------ texts
+
+# texts-check asks the binary on the server, with the config.toml it runs
+# with, whether texts can go: run there rather than from this machine,
+# because the config a person last sent may not be the one in secrets.env,
+# and the server's way out to api.twilio.com is the one the app uses.
+#
+# With no number it sends nothing: Twilio is asked whether the from number
+# is the account's, which only a working key on the right account can ask.
+# With TO= it sends that number one test text and watches whether it
+# arrives, which is the only way to see a carrier filtering texts from the
+# number shared with eumaeus (30007).
+#
+# The binary prints numbers redacted and never the key; see
+# cmd/stewards/texts.go.
+cmd_texts_check() {
+	load_config; need_app_dir; ssh_setup
+
+	local to="${1:-}" args=""
+	if [ -n "$to" ]; then
+		case "$to" in
+		*[!0-9+\ \(\).-]*) die "TO should be a phone number, such as TO=+15125550123" ;;
+		esac
+		args=" -text-to $(printf '%q' "$to")"
+	fi
+
+	log "asking Twilio from the server, with the app's own config.toml"
+	remote_in_app "./$APP -config config.toml -check-texts$args" \
+		|| die "texts are not working; the reason is above"
+}
+
 # ------------------------------------------------------------------ dispatch
 
 usage() {
@@ -754,6 +785,8 @@ usage() {
 		  restart          restart the app
 		  mail-report      how cron and mail are set up, and what the domains publish; no secrets
 		  upload-check     whether Apache lets uploads of the app's sizes through; stores nothing
+		  texts-check [to] whether Twilio accepts the app's key and number; sends nothing,
+		                   or one test text to the number given
 		  htaccess         install the Apache front end only, then check it from outside
 		  render-htaccess  print the .htaccess that would be installed, touch nothing
 	USAGE
@@ -767,6 +800,7 @@ backup)          shift; cmd_backup "$@" ;;
 restart)         shift; cmd_restart "$@" ;;
 mail-report)     shift; cmd_mail_report "$@" ;;
 upload-check)    shift; cmd_upload_check "$@" ;;
+texts-check)     shift; cmd_texts_check "$@" ;;
 htaccess)        shift; cmd_htaccess "$@" ;;
 render-htaccess) shift; load_config; render_htaccess ;;
 *)               usage; exit 2 ;;

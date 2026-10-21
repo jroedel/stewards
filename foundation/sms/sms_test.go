@@ -273,3 +273,68 @@ func TestSegments(t *testing.T) {
 		}
 	}
 }
+
+func TestOwnsSaysWhichPartIsWrong(t *testing.T) {
+	tests := []struct {
+		name string
+		h    http.HandlerFunc
+		want string
+	}{
+		{"the number is the account's", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet || r.URL.Path != "/2010-04-01/Accounts/"+accountSID+"/IncomingPhoneNumbers.json" || r.URL.Query().Get("PhoneNumber") != from {
+				t.Errorf("asked %s %s", r.Method, r.URL)
+			}
+			if u, p, _ := r.BasicAuth(); u != keySID || p != keySecret {
+				t.Errorf("auth %q:%q", u, p)
+			}
+			reply(w, http.StatusOK, `{"incoming_phone_numbers": [{"phone_number": "+15125550100"}]}`)
+		}, ""},
+		{"a wrong key", func(w http.ResponseWriter, _ *http.Request) {
+			reply(w, http.StatusUnauthorized, `{"code": 20003, "message": "Authenticate"}`)
+		}, "did not accept the API key"},
+		{"a wrong account", func(w http.ResponseWriter, _ *http.Request) {
+			reply(w, http.StatusNotFound, `{"code": 20404, "message": "not found"}`)
+		}, "no such account"},
+		{"a number that is someone else's", func(w http.ResponseWriter, _ *http.Request) {
+			reply(w, http.StatusOK, `{"incoming_phone_numbers": []}`)
+		}, "not on this Twilio account"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := serve(t, tt.h).Owns(t.Context())
+
+			switch {
+			case tt.want == "" && err != nil:
+				t.Errorf("Owns: %v", err)
+			case tt.want != "" && (err == nil || !strings.Contains(err.Error(), tt.want)):
+				t.Errorf("Owns = %v, want it to say %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestStatusReadsTheMessage(t *testing.T) {
+	s := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/2010-04-01/Accounts/" + accountSID + "/Messages/SM1.json":
+			reply(w, http.StatusOK, `{"sid": "SM1", "status": "delivered", "error_code": null}`)
+		case "/2010-04-01/Accounts/" + accountSID + "/Messages/SM2.json":
+			reply(w, http.StatusOK, `{"sid": "SM2", "status": "undelivered", "error_code": 30007}`)
+		default:
+			reply(w, http.StatusNotFound, `{"code": 20404, "message": "not found"}`)
+		}
+	})
+
+	if status, code, err := s.Status(t.Context(), "SM1"); status != "delivered" || code != 0 || err != nil {
+		t.Errorf("SM1 = %q %d %v", status, code, err)
+	}
+
+	if status, code, err := s.Status(t.Context(), "SM2"); status != "undelivered" || code != 30007 || err != nil {
+		t.Errorf("SM2 = %q %d %v", status, code, err)
+	}
+
+	if _, _, err := s.Status(t.Context(), "SM3"); err == nil {
+		t.Error("an unknown message has a status")
+	}
+}

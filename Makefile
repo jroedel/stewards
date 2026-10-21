@@ -173,6 +173,10 @@ prod-mail-report: ## How cron and mail are set up on the server, and the domains
 prod-upload-check: ## Does Apache let a 26 MB photo and a 160 MB batch through to the app? Stores nothing
 	@deploy/deploy.sh upload-check
 
+.PHONY: prod-texts-check
+prod-texts-check: ## Does Twilio accept the live app's key and number? Sends nothing; TO=+1... sends that number one test text
+	@deploy/deploy.sh texts-check "$(TO)"
+
 .PHONY: prod-restart
 prod-restart: ## Restart the live app
 	@deploy/deploy.sh restart

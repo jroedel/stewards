@@ -59,6 +59,8 @@ func run() error {
 	var (
 		configPath = flag.String("config", "config.toml", "path to the configuration file")
 		check      = flag.Bool("check", false, "load and validate the configuration, print a summary, and exit")
+		checkSMS   = flag.Bool("check-texts", false, "ask Twilio whether [sms] can send, and exit; with -text-to, send one test text")
+		textTo     = flag.String("text-to", "", "with -check-texts, a number to send one test text to")
 	)
 
 	flag.Parse()
@@ -76,6 +78,25 @@ func run() error {
 		fmt.Print(cfg.summary())
 
 		return nil
+	}
+
+	if *checkSMS {
+		if cfg.SMS.AccountSID == "" {
+			return fmt.Errorf("%s has no [sms], so texts are off: fill in the TWILIO_ values in secrets.env and run make deploy-send-secrets", *configPath)
+		}
+
+		twilio, err := sms.NewTwilio(sms.Config{
+			AccountSID: cfg.SMS.AccountSID, KeySID: cfg.SMS.APIKeySID,
+			KeySecret: cfg.SMS.APIKeySecret, From: cfg.SMS.From,
+		})
+		if err != nil {
+			return fmt.Errorf("%s [sms]: %w", *configPath, err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		return checkTexts(ctx, os.Stdout, twilio, cfg.SMS.From, *textTo, 30*time.Second, 3*time.Second)
 	}
 
 	logFile, shouldClose, err := openLog(cfg.Log.File)
