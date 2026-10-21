@@ -1,0 +1,59 @@
+{{define "title"}}{{words .Lang .Data.Heading}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow"><a href="/steward/days/{{.DayID}}/edit">{{t $l "Back to the day"}}</a></p>
+<h1>{{say $l .Heading}}</h1>
+<p class="lead">{{say $l .Lead}}</p>
+
+{{with .Note}}
+<form class="card form" method="post" action="{{$.Data.Action}}">
+  <label for="message">{{t $l "The message"}}</label>
+  <p class="help" id="message-help">{{t $l "Short and plain: it goes by text as written, and inside an email with the day's details. Up to 320 characters."}}</p>
+  <textarea id="message" name="message" rows="4" maxlength="320" aria-describedby="message-help" required>{{.Message}}</textarea>
+  <label for="spanish">{{t $l "In Spanish"}} <span class="optional">{{t $l "optional"}}</span></label>
+  <p class="help" id="spanish-help">{{t $l "For the people who signed up in Spanish. Leave it empty and they get the message as written."}}</p>
+  <textarea id="spanish" name="spanish" rows="4" maxlength="320" lang="es" aria-describedby="spanish-help">{{.Spanish}}</textarea>
+  <input type="hidden" name="action" value="preview">
+  <button class="button button-quiet" type="submit">{{t $l "Show how it will look"}}</button>
+</form>
+{{end}}
+
+{{if .People}}
+<p class="aside">
+  {{- if eq .People 1}}{{t $l "It goes to 1 person"}}{{else}}{{t $l "It goes to {n} people" "n" .People}}{{end}}:
+  {{t $l "{emails} by email, {texts} by text" "emails" .Emails "texts" .Texts}}{{if .Spanish}}; {{t $l "{n} in Spanish" "n" .Spanish}}{{end}}.
+</p>
+{{end}}
+{{if .Waiting}}<p class="field-problem">{{say $l .WaitingText}}</p>{{end}}
+
+{{range .Previews}}
+<section class="card message">
+  <h2>{{say $l .Lang}}</h2>
+  {{if .Waiting}}<p class="field-problem">{{t $l "Waiting for its translation: until Claude translates it, this goes in English."}}</p>{{end}}
+  <p class="message-label">{{t $l "Email"}}</p>
+  <div class="message-body">
+    <p class="message-subject">{{.Subject}}</p>
+    <p class="prose">{{.Email}}</p>
+  </div>
+  <p class="message-label">{{t $l "Text"}} <span class="quiet">{{if eq .Segments 1}}{{t $l "{chars} characters, one text" "chars" .Chars}}{{else}}{{t $l "{chars} characters, sent as {n} texts" "chars" .Chars "n" .Segments}}{{end}}{{if .Unicode}} · {{t $l "accented letters make each text shorter"}}{{end}}</span></p>
+  {{if .Same}}<p class="help">{{t $l "The same words as the email."}}</p>
+  {{else}}<div class="message-body message-text"><p class="prose">{{.Text}}</p></div>{{end}}
+</section>
+{{end}}
+
+{{with .Notice}}<p class="aside">{{say $l .}}</p>{{end}}
+
+{{if .Done.Written}}
+<div class="card empty"><p>{{say $l .Done}}</p></div>
+{{else if .Hidden}}
+<form class="card form" method="post" action="{{.Action}}">
+  {{range $k, $v := .Hidden}}<input type="hidden" name="{{$k}}" value="{{$v}}">
+  {{end}}
+  <button class="button" type="submit">{{say $l .Button}}</button>
+</form>
+{{else if not .Note}}
+<form class="card form" method="post" action="{{.Action}}">
+  <button class="button" type="submit">{{say $l .Button}}</button>
+</form>
+{{end}}
+{{with .Skip}}<a class="onward" href="/steward/days"><span>{{say $l .}}</span><span aria-hidden="true">›</span></a>{{end}}
+{{end}}{{end}}

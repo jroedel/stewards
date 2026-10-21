@@ -6,10 +6,12 @@
 package muxer
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 
 	"github.com/jroedel/stewards/app/domain/apiapp"
 	"github.com/jroedel/stewards/app/domain/authapp"
@@ -43,6 +45,7 @@ import (
 	"github.com/jroedel/stewards/business/domain/translation/translationbus"
 	"github.com/jroedel/stewards/business/domain/user/userbus"
 	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
+	"github.com/jroedel/stewards/business/types"
 	"github.com/jroedel/stewards/foundation/mail"
 	"github.com/jroedel/stewards/foundation/oauth"
 	"github.com/jroedel/stewards/foundation/sqldb"
@@ -86,6 +89,12 @@ type Config struct {
 	// no day pages and no "I'll be there".
 	RSVPs *rsvpbus.Business
 
+	// Background is the app's own context, for work that outlives a
+	// request: a message going to many, and the reminders the evening
+	// before, which a loop started here sends. nil means neither -- a test
+	// about something else has no use for them.
+	Background context.Context
+
 	// BaseURL is the public origin. Empty means sign-in is off: its routes
 	// are not mounted, and with no other write in the app, the origin check
 	// then has nothing to let through.
@@ -122,7 +131,7 @@ const maxUpload = photobus.MaxBytes + 1<<20
 // template, through t, are found by the renderer instead.
 func words() page.Catalog {
 	var out page.Catalog
-	for _, c := range []page.Catalog{homeapp.Words, placeapp.Words, speciesapp.Words, signupapp.Words, authapp.Words, oauthapp.Words, stewardapp.Words, workdayapp.Words, translationapp.Words, nurseryapp.Words, photoapp.Words, inboxapp.Words, {page.CalendarWords, page.LanguageWords, page.ContactWords, signupapp.NoticeWords, dayapp.NoticeWords}, dayapp.Words} {
+	for _, c := range []page.Catalog{homeapp.Words, placeapp.Words, speciesapp.Words, signupapp.Words, authapp.Words, oauthapp.Words, stewardapp.Words, workdayapp.Words, translationapp.Words, nurseryapp.Words, photoapp.Words, inboxapp.Words, {page.CalendarWords, page.LanguageWords, page.ContactWords, signupapp.NoticeWords, dayapp.NoticeWords}, dayapp.Words, workdayapp.MessageWords} {
 		out = append(out, c...)
 	}
 
@@ -172,12 +181,29 @@ func New(cfg Config) (http.Handler, error) {
 	if rsvp {
 		home.Coming, days.RSVPs = cfg.RSVPs, cfg.RSVPs
 
+		// Writing to many: the list, the people coming, and the reminder.
+		if cfg.Background != nil {
+			days.Notices, days.List, days.Background = cfg.Notices, cfg.Subscribers, cfg.Background
+			days.Links = workdayapp.Links{
+				Home:   cfg.BaseURL + "/",
+				Day:    func(id types.ID) string { return cfg.BaseURL + dayapp.DayPath(id) },
+				Cancel: func(t string) string { return cfg.BaseURL + dayapp.CancelPath + "?t=" + url.QueryEscape(t) },
+				Leave:  func(t string) string { return cfg.BaseURL + signupapp.LeavePath + "?t=" + url.QueryEscape(t) },
+			}
+
+			go workdayapp.RemindLoop(cfg.Background, days)
+		}
+
 		day := dayapp.Config{
 			Log: cfg.Log, Render: render, RSVPs: cfg.RSVPs, Days: cfg.Workdays, List: cfg.Subscribers,
 			Notices: cfg.Notices, BaseURL: cfg.BaseURL, LeavePath: signupapp.LeavePath,
 		}
 		dayapp.Routes(mux, day)
 		kinds = append(kinds, dayapp.Notices(day)...)
+
+		if days.Notices != nil {
+			kinds = append(kinds, workdayapp.Notices(days)...)
+		}
 	}
 
 	homeapp.New(cfg.Log, render, cfg.Places, cfg.Workdays, home).Routes(mux)

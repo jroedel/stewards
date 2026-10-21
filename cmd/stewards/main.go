@@ -215,6 +215,7 @@ func run() error {
 		Subscribers: subscribers,
 		Notices:     notices,
 		RSVPs:       rsvps,
+		Background:  ctx,
 		BaseURL:     cfg.Server.BaseURL,
 		Mail:        sender,
 		Bootstrap:   cfg.Auth.BootstrapSecret,
@@ -225,7 +226,14 @@ func run() error {
 
 	log.Info("starting", "addr", cfg.Server.Addr, "db", cfg.DB.Path, "photos", cfg.Photos.Dir, "memory_limit_mb", setMemoryLimit(os.Getenv("GOMEMLIMIT"))>>20)
 
-	return web.Serve(ctx, log, cfg.Server.ShutdownGrace.Duration, cfg.Server.Addr, handler)
+	err = web.Serve(ctx, log, cfg.Server.ShutdownGrace.Duration, cfg.Server.Addr, handler)
+
+	// A message going to many stops at the next person when ctx ends; wait
+	// for the one in hand, so it is recorded as sent or not rather than
+	// left unknown.
+	notices.Wait()
+
+	return err
 }
 
 // memoryLimit is the heap size the garbage collector works to stay under: a

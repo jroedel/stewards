@@ -58,10 +58,44 @@
 {{end}}
 {{end}}
 
+{{if and .ID .Messaging}}
+<h2 id="sent">{{t $l "Messages about this day"}}</h2>
+{{if .Sending}}<p class="done" role="status">{{t $l "Sending now. The texts go one a second; reload this page to see how it is going."}}</p>{{end}}
+{{if .Sent}}
+<ul class="rows">
+{{range .Sent}}<li class="row"><div class="row-main-static">
+  <div class="row-name">{{say $l .Name}}</div>
+  <div class="row-note">{{say $l .When}} · {{t $l "{n} sent" "n" .Sent}}{{if .Sending}} · {{t $l "{n} still going" "n" .Sending}}{{end}}{{if .Failed}} · {{t $l "{n} failed" "n" .Failed}}{{end}}{{if .Stopped}} · {{t $l "{n} had replied STOP, and are off the lists now" "n" .Stopped}}{{end}}</div>
+</div></li>
+{{end}}</ul>
+{{end}}
+{{if not .Told}}<a class="onward" href="/steward/days/{{.ID}}/announce"><span>{{t $l "Tell the list"}} <span class="quiet">{{t $l "everyone who asked to hear about the days; see the message first"}}</span></span><span aria-hidden="true">›</span></a>{{end}}
+{{if .Coming}}
+<form class="card form" method="post" action="/steward/days/{{.ID}}/note">
+  <h3>{{t $l "Write to the people coming"}}</h3>
+  <label for="note-message">{{t $l "The message"}}</label>
+  <p class="help" id="note-help">{{t $l "Such as “We'll decide at 9 am whether we're rained out.” Up to 320 characters. You'll see it as each person will get it before it goes."}}</p>
+  <textarea id="note-message" name="message" rows="3" maxlength="320" aria-describedby="note-help" required></textarea>
+  <label for="note-spanish">{{t $l "In Spanish"}} <span class="optional">{{t $l "optional"}}</span></label>
+  <textarea id="note-spanish" name="spanish" rows="3" maxlength="320" lang="es"></textarea>
+  <input type="hidden" name="action" value="preview">
+  <button class="button" type="submit">{{t $l "See how it will look"}}</button>
+</form>
+{{end}}
+{{end}}
+
 {{if .ID}}
 <form class="card form danger" method="post" action="/steward/days/{{.ID}}/delete">
   <h2>{{t $l "Remove this day"}}</h2>
   {{with .DeleteProblem}}<p class="problem" role="alert">{{say $l .}}</p>{{end}}
+  {{with .Cancel}}
+  <label class="check"><input type="checkbox" name="tell" value="yes" checked> {{t $l "Tell the people coming that it is cancelled"}}</label>
+  <details>
+    <summary>{{t $l "What they will get"}}</summary>
+    <div class="message-body"><p class="message-subject">{{.Subject}}</p><p class="prose">{{.Email}}</p></div>
+    <p class="help">{{if .Same}}{{t $l "The same words go by text."}}{{else}}{{.Text}}{{end}}</p>
+  </details>
+  {{end}}
   <label class="check"><input type="checkbox" name="confirm" value="yes"> {{t $l "Yes, take it off the calendar"}}</label>
   <button class="button button-quiet" type="submit">{{t $l "Remove"}}</button>
 </form>

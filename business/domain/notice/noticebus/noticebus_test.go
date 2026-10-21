@@ -104,6 +104,12 @@ func TestAShortEmailIsTheText(t *testing.T) {
 		t.Errorf("the text = %q", tx.Body)
 	}
 
+	// The hours' en dash and a curly quote go plain, so the text stays in
+	// the plain set; an accent stays.
+	if got := (noticebus.Notice{Email: "Sábado 8:00–11:00 am, “Planting” – don’t…"}).TextBody(); got != `Sábado 8:00-11:00 am, "Planting" - don't...` {
+		t.Errorf("TextBody = %q", got)
+	}
+
 	if noticebus.ShortEnough(strings.Repeat("a", noticebus.TextLimit+1)) {
 		t.Error("a body past the limit is short enough")
 	}
@@ -221,5 +227,70 @@ func TestTheHourlyCap(t *testing.T) {
 
 	if ok, _ := b.Claim(t.Context(), contact(t, "late@example.invalid", "")); !ok {
 		t.Error("the hourly cap did not lift after an hour")
+	}
+}
+
+func TestABatchReachesEachPersonOnce(t *testing.T) {
+	texts := &sms.Recorder{}
+	b, mails, _ := setup(t, texts)
+	b.Pace(0)
+
+	to := []noticebus.Recipient{
+		{Key: "ana", Contact: contact(t, "ana@example.invalid", "512 555 0123"), Lang: types.Spanish},
+		{Key: "luis", Contact: contact(t, "luis@example.invalid", ""), Lang: types.English},
+		{Key: "sam", Contact: contact(t, "", "512 555 0124"), Lang: types.English},
+	}
+
+	build := func(r noticebus.Recipient) noticebus.Notice {
+		return noticebus.Notice{Subject: "s", Email: "hola " + r.Key, Text: string(r.Lang) + " " + r.Key}
+	}
+
+	b.SendBatch(t.Context(), "announce:day1", to, build)
+	b.Wait()
+
+	if len(mails.Sent) != 2 || len(texts.Sent()) != 2 {
+		t.Fatalf("sent %d emails and %d texts, want 2 and 2", len(mails.Sent), len(texts.Sent()))
+	}
+
+	if tx := texts.Sent()[0]; tx.Body != "es ana" {
+		t.Errorf("each person's own notice: %q", tx.Body)
+	}
+
+	// Pressed again, and with someone new: only the new person.
+	to = append(to, noticebus.Recipient{Key: "pat", Contact: contact(t, "pat@example.invalid", ""), Lang: types.English})
+	b.SendBatch(t.Context(), "announce:day1", to, build)
+	b.Wait()
+
+	if len(mails.Sent) != 3 || len(texts.Sent()) != 2 {
+		t.Errorf("again: %d emails and %d texts, want 3 and 2", len(mails.Sent), len(texts.Sent()))
+	}
+
+	// A STOP is recorded as one, and a failure as one.
+	texts.Refuse = func(m sms.Message) error {
+		if m.To == "+15125550123" {
+			return sms.Refused{Code: 21610, Message: "stopped"}
+		}
+		return sms.Refused{Code: 21614, Message: "a landline"}
+	}
+
+	b.SendBatch(t.Context(), "note:day1:x", to, build)
+	b.Wait()
+
+	batches, err := b.Batches(t.Context(), "note:day1:")
+	if err != nil || len(batches) != 1 {
+		t.Fatalf("Batches: %+v %v", batches, err)
+	}
+
+	if got := batches[0]; got.Key != "note:day1:x" || got.Sent != 3 || got.Stopped != 1 || got.Failed != 1 || got.Sending != 0 {
+		t.Errorf("the note: %+v", got)
+	}
+
+	// The prefix is a prefix, not a pattern.
+	if all, _ := b.Batches(t.Context(), "announce:"); len(all) != 1 || all[0].Sent != 5 {
+		t.Errorf("announce: %+v", all)
+	}
+
+	if none, _ := b.Batches(t.Context(), "%"); len(none) != 0 {
+		t.Errorf("a %% matched: %+v", none)
 	}
 }
