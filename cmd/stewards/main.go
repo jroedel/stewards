@@ -29,6 +29,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/photo/stores/photofs"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/place/stores/placedb"
+	"github.com/jroedel/stewards/business/domain/rsvp/rsvpbus"
+	"github.com/jroedel/stewards/business/domain/rsvp/stores/rsvpdb"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/domain/species/stores/speciesdb"
 	"github.com/jroedel/stewards/business/domain/subscriber/stores/subscriberdb"
@@ -187,8 +189,11 @@ func run() error {
 	notices := noticebus.NewBusiness(noticedb.NewStore(db), sender, texts, nil)
 	subscribers := subscriberbus.NewBusiness(subscriberdb.NewStore(db), notices, nil)
 
+	rsvps := rsvpbus.NewBusiness(rsvpdb.NewStore(db), workdays, notices, nil)
+
 	// A number that replied STOP comes off every list that holds numbers.
 	notices.OnStopped(subscribers.Stopped)
+	notices.OnStopped(rsvps.Stopped)
 
 	go prune(ctx, log, users, notices, inbox)
 
@@ -209,6 +214,7 @@ func run() error {
 
 		Subscribers: subscribers,
 		Notices:     notices,
+		RSVPs:       rsvps,
 		BaseURL:     cfg.Server.BaseURL,
 		Mail:        sender,
 		Bootstrap:   cfg.Auth.BootstrapSecret,
@@ -277,6 +283,7 @@ func prepare(ctx context.Context, db *sql.DB) error {
 		{"the photo inbox", inboxdb.Init},
 		{"nursery stock", nurserydb.Init},
 		{"stewardship days", workdaydb.Init},
+		{"who is coming to each day", rsvpdb.Init},
 		{"the email list", subscriberdb.Init},
 		{"the caps on messages", noticedb.Init},
 		{"the translations", translationdb.Init},
@@ -307,6 +314,7 @@ func expectedSchema() sqldb.Expected {
 		inboxdb.Expected,
 		nurserydb.Expected,
 		workdaydb.Expected,
+		rsvpdb.Expected,
 		subscriberdb.Expected,
 		noticedb.Expected,
 		translationdb.Expected,

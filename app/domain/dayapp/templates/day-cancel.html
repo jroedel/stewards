@@ -1,0 +1,19 @@
+{{define "title"}}{{words .Lang .Data.Copy.Eyebrow}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow">{{say $l .Copy.Eyebrow}}</p>
+{{if .Off}}
+<h1>{{say $l .Copy.CancelledTitle}}</h1>
+<p class="lead">{{say $l .Copy.CancelledLead}}</p>
+{{else if .Gone}}
+<h1>{{say $l .Copy.CancelTitle}}</h1>
+<p class="lead">{{say $l .Copy.CancelGone}}</p>
+{{else}}
+<h1>{{say $l .Copy.CancelTitle}}</h1>
+<p class="lead">{{say $l .Lead}}</p>
+<form class="card form" method="post" action="/days/cancel">
+  <input type="hidden" name="t" value="{{.Token}}">
+  <button class="button" type="submit">{{say $l .Copy.CancelButton}}</button>
+</form>
+{{end}}
+<a class="onward" href="/"><span>{{say $l .Copy.SeeDays}}</span><span aria-hidden="true">›</span></a>
+{{end}}{{end}}

@@ -1,0 +1,40 @@
+{{define "title"}}{{words .Lang .Data.Copy.Eyebrow}} · {{words .Lang .Data.Title}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow"><a href="/">{{say $l .Copy.Eyebrow}}</a></p>
+<h1>{{say $l .Title}}</h1>
+<p class="day-when">{{say $l .Date}}<span class="day-hours">{{say $l .Hours}}</span></p>
+{{if .Details.Written}}<p class="prose">{{say $l .Details}}</p>{{end}}
+
+{{if .Done}}<p class="done" role="status">{{say $l .Copy.Done}}</p>{{end}}
+
+<h2>{{say $l .Copy.Coming}}</h2>
+{{if .Coming}}
+<ul class="coming">
+{{range .Coming}}<li>{{.}}</li>
+{{end}}</ul>
+{{else}}{{if not .Over}}
+<p class="help">{{say $l .Copy.NobodyYet}}</p>
+{{end}}{{end}}
+
+{{if .Over}}
+<div class="card empty"><p>{{say $l .Copy.Over}}</p></div>
+{{else}}
+<form class="card form" method="post" action="/days/{{.ID}}">
+  <h2>{{say $l .Copy.FormTitle}}</h2>
+  <p class="help">{{say $l .Copy.FormHelp}}</p>
+
+  <label for="rsvp-name">{{say $l .Copy.NameLabel}}</label>
+  <p class="help" id="rsvp-name-help">{{say $l .Copy.NameHelp}}</p>
+  {{with .NameProblem}}<p class="field-problem" role="alert">{{say $l .}}</p>{{end}}
+  <input id="rsvp-name" name="name" type="text" value="{{.Name}}" autocomplete="given-name" maxlength="40" required aria-describedby="rsvp-name-help">
+
+  {{template "contact-fields" (pass $l .Contact)}}
+
+  <label class="check"><input type="checkbox" name="list" value="yes"{{if .AlsoList}} checked{{end}}> {{say $l .Copy.AlsoList}}</label>
+
+  <button class="button" type="submit">{{say $l .Copy.Button}}</button>
+</form>
+{{end}}
+
+<a class="onward" href="/"><span>{{say $l .Copy.SeeDays}}</span><span aria-hidden="true">›</span></a>
+{{end}}{{end}}

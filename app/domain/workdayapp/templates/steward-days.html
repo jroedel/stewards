@@ -9,7 +9,7 @@
 <h2>{{t $l "Coming up"}}</h2>
 {{if .Upcoming}}
 <ul class="rows">
-{{range .Upcoming}}<li><a class="row" href="/steward/days/{{.ID}}/edit"><div><div class="row-name">{{say $l .Date}}</div><div class="row-note">{{say $l .Hours}} · {{say $l .Title}}</div></div><span class="row-go" aria-hidden="true">{{t $l "Edit"}} ›</span></a></li>
+{{range .Upcoming}}<li><a class="row" href="/steward/days/{{.ID}}/edit"><div><div class="row-name">{{say $l .Date}}</div><div class="row-note">{{say $l .Hours}} · {{say $l .Title}}{{if .Coming}} · {{if eq .Coming 1}}{{t $l "1 coming"}}{{else}}{{t $l "{n} coming" "n" .Coming}}{{end}}{{end}}</div></div><span class="row-go" aria-hidden="true">{{t $l "Edit"}} ›</span></a></li>
 {{end}}</ul>
 {{else}}
 <div class="card empty"><p>{{t $l "No days are scheduled. The home page says so, and asks people to check back."}}</p></div>

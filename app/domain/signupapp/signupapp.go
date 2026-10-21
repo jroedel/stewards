@@ -59,12 +59,14 @@ import (
 //go:embed templates
 var Templates embed.FS
 
-// The public addresses. FormPath is what the home page's form posts to.
+// The public addresses. FormPath is what the home page's form posts to, and
+// LeavePath is where a link off the list lands -- which a day's confirmation
+// carries too, for someone who ticked the box to join the list (dayapp).
 const (
 	FormPath    = "/subscribe"
 	sentPath    = "/subscribe/sent"
 	confirmPath = "/subscribe/confirm"
-	leavePath   = "/unsubscribe"
+	LeavePath   = "/unsubscribe"
 	stewardPath = "/steward/subscribers"
 )
 
@@ -105,8 +107,8 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 	mux.HandleFunc("POST "+FormPath, a.request)
 	mux.HandleFunc("GET "+sentPath, a.sent)
 	mux.HandleFunc("GET "+confirmPath, a.confirmGone)
-	mux.HandleFunc("GET "+leavePath, a.leaveForm)
-	mux.HandleFunc("POST "+leavePath, a.leave)
+	mux.HandleFunc("GET "+LeavePath, a.leaveForm)
+	mux.HandleFunc("POST "+LeavePath, a.leave)
 
 	mux.Handle("GET "+stewardPath, guard(http.HandlerFunc(a.list)))
 	mux.Handle("POST "+stewardPath+"/{id}/remove", guard(http.HandlerFunc(a.remove)))
@@ -268,7 +270,7 @@ func (a app) leave(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a app) leaveURL(token string) string {
-	return a.cfg.BaseURL + leavePath + "?t=" + url.QueryEscape(token)
+	return a.cfg.BaseURL + LeavePath + "?t=" + url.QueryEscape(token)
 }
 
 // ------------------------------------------------------------------ the welcome

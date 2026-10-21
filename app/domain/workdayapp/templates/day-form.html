@@ -37,6 +37,27 @@
   <button class="button" type="submit">{{t $l "Save"}}</button>
 </form>
 
+{{if and .ID .Signups}}
+<h2 id="coming">{{t $l "Who's coming"}}</h2>
+{{if .Removed}}<p class="done" role="status">{{t $l "Taken off the day."}}</p>{{end}}
+{{if .Coming}}
+<p class="help">{{t $l "The names are on the day's page for anyone to see; the email and phone are for the stewards only. Take a name off if it shouldn't be on a public page."}}</p>
+<ul class="rows">
+{{range .Coming}}<li class="row">
+  <div class="row-main-static">
+    <div class="row-name">{{.Name}}</div>
+    <div class="row-note">{{.Email}}{{if and .Email .Phone}} · {{end}}{{.Phone}}</div>
+  </div>
+  <form method="post" action="/steward/days/{{$.Data.ID}}/coming/{{.ID}}/remove">
+    <button class="button button-quiet button-small" type="submit">{{t $l "Take off"}}</button>
+  </form>
+</li>
+{{end}}</ul>
+{{else}}
+<div class="card empty"><p>{{t $l "Nobody has signed up yet. The day's page, with its form, is linked from the home page."}}</p></div>
+{{end}}
+{{end}}
+
 {{if .ID}}
 <form class="card form danger" method="post" action="/steward/days/{{.ID}}/delete">
   <h2>{{t $l "Remove this day"}}</h2>

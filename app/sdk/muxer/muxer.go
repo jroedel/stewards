@@ -13,6 +13,7 @@ import (
 
 	"github.com/jroedel/stewards/app/domain/apiapp"
 	"github.com/jroedel/stewards/app/domain/authapp"
+	"github.com/jroedel/stewards/app/domain/dayapp"
 	"github.com/jroedel/stewards/app/domain/homeapp"
 	"github.com/jroedel/stewards/app/domain/inboxapp"
 	"github.com/jroedel/stewards/app/domain/mcpapp"
@@ -28,6 +29,7 @@ import (
 	"github.com/jroedel/stewards/app/domain/workdayapp"
 	"github.com/jroedel/stewards/app/sdk/health"
 	"github.com/jroedel/stewards/app/sdk/mid"
+	"github.com/jroedel/stewards/app/sdk/notices"
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/inbox/inboxbus"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
@@ -35,6 +37,7 @@ import (
 	"github.com/jroedel/stewards/business/domain/nursery/nurserybus"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
 	"github.com/jroedel/stewards/business/domain/place/placebus"
+	"github.com/jroedel/stewards/business/domain/rsvp/rsvpbus"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/domain/subscriber/subscriberbus"
 	"github.com/jroedel/stewards/business/domain/translation/translationbus"
@@ -79,6 +82,10 @@ type Config struct {
 	// own to say (noticebus.Business.Texts).
 	Notices *noticebus.Business
 
+	// RSVPs is who is coming to each day. nil, or the sign-up off, means
+	// no day pages and no "I'll be there".
+	RSVPs *rsvpbus.Business
+
 	// BaseURL is the public origin. Empty means sign-in is off: its routes
 	// are not mounted, and with no other write in the app, the origin check
 	// then has nothing to let through.
@@ -115,7 +122,7 @@ const maxUpload = photobus.MaxBytes + 1<<20
 // template, through t, are found by the renderer instead.
 func words() page.Catalog {
 	var out page.Catalog
-	for _, c := range []page.Catalog{homeapp.Words, placeapp.Words, speciesapp.Words, signupapp.Words, authapp.Words, oauthapp.Words, stewardapp.Words, workdayapp.Words, translationapp.Words, nurseryapp.Words, photoapp.Words, inboxapp.Words, {page.CalendarWords, page.LanguageWords, page.ContactWords, signupapp.NoticeWords}} {
+	for _, c := range []page.Catalog{homeapp.Words, placeapp.Words, speciesapp.Words, signupapp.Words, authapp.Words, oauthapp.Words, stewardapp.Words, workdayapp.Words, translationapp.Words, nurseryapp.Words, photoapp.Words, inboxapp.Words, {page.CalendarWords, page.LanguageWords, page.ContactWords, signupapp.NoticeWords, dayapp.NoticeWords}, dayapp.Words} {
 		out = append(out, c...)
 	}
 
@@ -129,7 +136,7 @@ func New(cfg Config) (http.Handler, error) {
 
 	// One renderer holding every app's pages: the stylesheet has one hashed
 	// path, and net/http panics on a pattern registered twice.
-	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, inboxapp.Templates, nurseryapp.Templates, stewardapp.Templates, oauthapp.Templates, workdayapp.Templates, signupapp.Templates, noticeapp.Templates, translationapp.Templates)
+	render, err := page.NewRenderer(cfg.Log, homeapp.Templates, authapp.Templates, placeapp.Templates, speciesapp.Templates, photoapp.Templates, inboxapp.Templates, nurseryapp.Templates, stewardapp.Templates, oauthapp.Templates, workdayapp.Templates, signupapp.Templates, dayapp.Templates, noticeapp.Templates, translationapp.Templates)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +160,27 @@ func New(cfg Config) (http.Handler, error) {
 
 	signUp := cfg.BaseURL != "" && cfg.Mail != nil && cfg.Subscribers != nil && cfg.Notices != nil
 	texts := signUp && cfg.Notices.Texts()
-	homeapp.New(cfg.Log, render, cfg.Places, cfg.Workdays, homeapp.SignUp{On: signUp, Texts: texts}).Routes(mux)
+	rsvp := signUp && cfg.RSVPs != nil
+
+	home := homeapp.SignUp{On: signUp, Texts: texts}
+
+	// Assigned only when there is one, for the reason Inbox is below.
+	days := workdayapp.Config{Log: cfg.Log, Render: render, Days: cfg.Workdays}
+
+	var kinds []notices.Kind
+
+	if rsvp {
+		home.Coming, days.RSVPs = cfg.RSVPs, cfg.RSVPs
+
+		day := dayapp.Config{
+			Log: cfg.Log, Render: render, RSVPs: cfg.RSVPs, Days: cfg.Workdays, List: cfg.Subscribers,
+			Notices: cfg.Notices, BaseURL: cfg.BaseURL, LeavePath: signupapp.LeavePath,
+		}
+		dayapp.Routes(mux, day)
+		kinds = append(kinds, dayapp.Notices(day)...)
+	}
+
+	homeapp.New(cfg.Log, render, cfg.Places, cfg.Workdays, home).Routes(mux)
 	places := placeapp.Config{Log: cfg.Log, Render: render, Places: cfg.Places, Species: cfg.Species, Listings: cfg.Listings, Photos: cfg.Photos}
 	if cfg.Translations != nil {
 		places.Translations = cfg.Translations
@@ -208,7 +235,7 @@ func New(cfg Config) (http.Handler, error) {
 				nurseryapp.Routes(mux, nurseryapp.Config{Log: cfg.Log, Render: render, Stock: cfg.Nursery, Species: cfg.Species}, guard)
 			}
 		}
-		workdayapp.Routes(mux, workdayapp.Config{Log: cfg.Log, Render: render, Days: cfg.Workdays}, guard)
+		workdayapp.Routes(mux, days, guard)
 
 		if cfg.Translations != nil {
 			translationapp.Routes(mux, translationapp.Config{Log: cfg.Log, Render: render, Translations: cfg.Translations}, guard)
@@ -225,7 +252,7 @@ func New(cfg Config) (http.Handler, error) {
 			// kinds here.
 			noticeapp.Routes(mux, noticeapp.Config{
 				Log: cfg.Log, Render: render, Texts: texts,
-				Kinds: signupapp.Notices(signup),
+				Kinds: append(signupapp.Notices(signup), kinds...),
 			}, guard)
 		} else {
 			cfg.Log.Warn("the email sign-up is off: there is no [mail] relay")

@@ -224,6 +224,7 @@ h2 {
 .form .field-group > label:first-of-type { margin-top: 8px; }
 
 .form input[type="email"],
+.form input[type="tel"],
 .form input[type="password"],
 .form input[type="url"],
 .form input[type="text"] {
@@ -896,3 +897,9 @@ code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap
 }
 .message-subject { margin: 0 0 8px; font-weight: 700; }
 .message-text { max-width: 22em; }
+
+/* Who's coming to a day: the names people chose to show, as a quiet run of
+   tags rather than a list a stranger might read as a register. */
+.coming { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; padding: 0; list-style: none; }
+.coming li { padding: 6px 12px; border-radius: 999px; background: var(--sf-white); border: 1px solid var(--rule); }
+.day-coming { margin: 4px 0 0; font-size: 15px; color: var(--muted); }
