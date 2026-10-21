@@ -10,10 +10,12 @@
 package notices
 
 import (
+	"time"
 	"unicode/utf8"
 
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/notice/noticebus"
+	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
 	"github.com/jroedel/stewards/business/types"
 	"github.com/jroedel/stewards/foundation/sms"
 )
@@ -103,3 +105,20 @@ func PreviewOf(r *page.Renderer, l types.Lang, w Words, n noticebus.Notice) Prev
 
 	return p
 }
+
+// SampleDay is an invented day for the messages screen's samples: a
+// Saturday morning, planting. Its title is written in both languages, as a
+// steward's day is once Claude has translated it, so a Spanish sample shows
+// what a Spanish reader would get.
+func SampleDay() workdaybus.Day {
+	starts := time.Date(2026, time.November, 7, 8, 0, 0, 0, types.Garden)
+
+	return workdaybus.Day{
+		ID: sampleID, Starts: starts, Ends: starts.Add(3 * time.Hour),
+		Title:   types.Text{EN: "Planting the rain garden", ES: "Plantar el jardín de lluvia"},
+		Details: types.Text{EN: "Meet at the shrine. Bring gloves and water.", ES: "Nos vemos en el santuario. Trae guantes y agua."},
+	}
+}
+
+// sampleID is a day nobody scheduled, for the samples' links.
+var sampleID = types.NewID()

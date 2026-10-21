@@ -26,7 +26,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"time"
 
 	"github.com/jroedel/stewards/app/sdk/mid"
 	"github.com/jroedel/stewards/app/sdk/notices"
@@ -44,9 +43,10 @@ import (
 //go:embed templates
 var Templates embed.FS
 
-// The public addresses.
+// The public addresses. CancelPath is where the link that takes a name off
+// a day lands, which every message to the people coming carries.
 const (
-	cancelPath = "/days/cancel"
+	CancelPath = "/days/cancel"
 	honeypot   = "website"
 )
 
@@ -100,8 +100,8 @@ func Routes(mux *http.ServeMux, cfg Config) {
 
 	mux.HandleFunc("GET /days/{id}", a.page)
 	mux.HandleFunc("POST /days/{id}", a.request)
-	mux.HandleFunc("GET "+cancelPath, a.cancelForm)
-	mux.HandleFunc("POST "+cancelPath, a.cancel)
+	mux.HandleFunc("GET "+CancelPath, a.cancelForm)
+	mux.HandleFunc("POST "+CancelPath, a.cancel)
 }
 
 // ------------------------------------------------------------------ the words
@@ -399,7 +399,7 @@ func (a app) confirm(l types.Lang, d workdaybus.Day, r rsvpbus.RSVP, leave strin
 }
 
 func (a app) cancelURL(token string) string {
-	return a.cfg.BaseURL + cancelPath + "?t=" + url.QueryEscape(token)
+	return a.cfg.BaseURL + CancelPath + "?t=" + url.QueryEscape(token)
 }
 
 var confirmation = notices.Words{
@@ -429,7 +429,7 @@ func Notices(cfg Config) []notices.Kind {
 	return []notices.Kind{{
 		Name: confirmName, When: confirmWhen, Words: confirmation,
 		Sample: func(l types.Lang) noticebus.Notice {
-			d := SampleDay()
+			d := notices.SampleDay()
 			return a.confirm(l, d, rsvpbus.RSVP{Name: "Ana", Cancel: "sample"}, cfg.BaseURL+cfg.LeavePath+"?t=sample")
 		},
 	}}
@@ -445,22 +445,6 @@ var NoticeWords = page.Copy{
 	Where: "the stewards' screen of every message the app sends: a message's name, and when it is sent",
 	Words: []types.Text{confirmName, confirmWhen},
 }
-
-// SampleDay is an invented day for the messages screen: a Saturday morning,
-// planting. Its title is written in both languages here, as a steward's day
-// would be once Claude has translated it, so the sample shows the message
-// as a Spanish reader would get it.
-func SampleDay() workdaybus.Day {
-	starts := time.Date(2026, time.November, 7, 8, 0, 0, 0, types.Garden)
-
-	return workdaybus.Day{
-		ID: sampleID, Starts: starts, Ends: starts.Add(3 * time.Hour),
-		Title: types.Text{EN: "Planting the rain garden", ES: "Plantar el jardín de lluvia"},
-	}
-}
-
-// sampleID is a day nobody scheduled, for the sample's links.
-var sampleID = types.NewID()
 
 // ------------------------------------------------------------------ the parts
 

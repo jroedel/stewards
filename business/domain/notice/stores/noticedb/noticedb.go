@@ -6,6 +6,11 @@
 // rather than a subscriber's ID so that a cap can be claimed before there is
 // any row to point at -- see noticebus.Business.Claim.
 //
+// notice_sends is the other table: one row per recipient and channel of a
+// steward's message to many, claimed before it is sent, so that nobody gets
+// the same one twice (noticebus, "Sending to many"). It is kept, unlike the
+// claims, because it is also the record a steward reads of what went out.
+//
 // This replaced subscriber_mails, which counted emails only and which
 // subscriberdb now drops; it was a day's worth of counts, so nothing was
 // lost by starting this table empty.
@@ -34,6 +39,7 @@ var _ noticebus.Storer = (*Store)(nil)
 // Expected is what CheckSchema verifies at startup and on every /healthz.
 var Expected = sqldb.Expected{
 	"notice_claims": {"address", "sent_at"},
+	"notice_sends":  {"batch", "recipient", "channel", "status", "at"},
 }
 
 // Init creates the table. Idempotent, run at every startup.
@@ -46,10 +52,19 @@ CREATE TABLE IF NOT EXISTS notice_claims (
 
 CREATE INDEX IF NOT EXISTS notice_claims_address ON notice_claims (address, sent_at);
 CREATE INDEX IF NOT EXISTS notice_claims_sent ON notice_claims (sent_at);
+
+CREATE TABLE IF NOT EXISTS notice_sends (
+    batch      TEXT    NOT NULL,
+    recipient  TEXT    NOT NULL,
+    channel    TEXT    NOT NULL CHECK (channel IN ('email', 'text')),
+    status     TEXT    NOT NULL CHECK (status IN ('sending', 'sent', 'failed', 'stopped')),
+    at         INTEGER NOT NULL,
+    PRIMARY KEY (batch, recipient, channel)
+) STRICT;
 `
 
 	if _, err := db.ExecContext(ctx, schema); err != nil {
-		return fmt.Errorf("creating the notice_claims table: %w", err)
+		return fmt.Errorf("creating the notice tables: %w", err)
 	}
 
 	return nil
@@ -105,4 +120,69 @@ func (s *Store) Prune(ctx context.Context, before time.Time) error {
 	}
 
 	return nil
+}
+
+// ClaimSend is the single-use claim on one send, as one statement.
+func (s *Store) ClaimSend(ctx context.Context, batch, recipient, channel string, at time.Time) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `
+INSERT INTO notice_sends (batch, recipient, channel, status, at) VALUES (?, ?, ?, 'sending', ?)
+ON CONFLICT DO NOTHING`, batch, recipient, channel, at.UnixMilli())
+	if err != nil {
+		return false, fmt.Errorf("claiming a send: %w", err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("counting the rows changed: %w", err)
+	}
+
+	return n == 1, nil
+}
+
+// MarkSend sets what came of a send.
+func (s *Store) MarkSend(ctx context.Context, batch, recipient, channel, status string) error {
+	if _, err := s.db.ExecContext(ctx, `UPDATE notice_sends SET status = ? WHERE batch = ? AND recipient = ? AND channel = ?`,
+		status, batch, recipient, channel); err != nil {
+		return fmt.Errorf("recording a send: %w", err)
+	}
+
+	return nil
+}
+
+// Batches is every batch whose key starts with prefix, by substr rather
+// than LIKE, so that nothing in a key is read as a pattern.
+func (s *Store) Batches(ctx context.Context, prefix string) ([]noticebus.Batch, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT batch, min(at),
+       sum(status = 'sent'), sum(status = 'failed'), sum(status = 'stopped'), sum(status = 'sending')
+FROM notice_sends
+WHERE substr(batch, 1, length(?)) = ?
+GROUP BY batch
+ORDER BY min(at), batch`, prefix, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("reading what was sent: %w", err)
+	}
+	defer rows.Close()
+
+	var out []noticebus.Batch
+
+	for rows.Next() {
+		var (
+			b       noticebus.Batch
+			started int64
+		)
+
+		if err := rows.Scan(&b.Key, &started, &b.Sent, &b.Failed, &b.Stopped, &b.Sending); err != nil {
+			return nil, fmt.Errorf("reading what was sent: %w", err)
+		}
+
+		b.Started = time.UnixMilli(started).UTC()
+		out = append(out, b)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading what was sent: %w", err)
+	}
+
+	return out, nil
 }

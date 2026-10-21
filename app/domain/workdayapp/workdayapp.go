@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/jroedel/stewards/app/sdk/mid"
+	"github.com/jroedel/stewards/app/sdk/notices"
 	"github.com/jroedel/stewards/app/sdk/page"
 	"github.com/jroedel/stewards/business/domain/rsvp/rsvpbus"
 	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
@@ -49,6 +50,7 @@ type Days interface {
 	Create(ctx context.Context, f workdaybus.Fields) (workdaybus.Day, error)
 	Update(ctx context.Context, id types.ID, f workdaybus.Fields) (workdaybus.Day, error)
 	Delete(ctx context.Context, id types.ID) error
+	Now() time.Time
 }
 
 // RSVPs is what this app needs from the sign-up rules: who is coming, with
@@ -61,11 +63,21 @@ type RSVPs interface {
 
 // Config is what this app needs. RSVPs may be nil, when the sign-up is not
 // mounted, and the screens then say nothing of who is coming.
+//
+// Notices, List, Links and Background are for writing to many (messages.go),
+// and with any of them nil -- or RSVPs -- nothing is sent and no send screen
+// is offered. Background is the app's context, which a send outlives the
+// request that pressed its button on.
 type Config struct {
 	Log    *slog.Logger
 	Render *page.Renderer
 	Days   Days
 	RSVPs  RSVPs
+
+	Notices    Sender
+	List       List
+	Links      Links
+	Background context.Context
 }
 
 type app struct{ cfg Config }
@@ -83,6 +95,12 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 		"POST " + Path + "/{id}/delete": a.remove,
 
 		"POST " + Path + "/{id}/coming/{rsvp}/remove": a.removeComing,
+
+		"GET " + Path + "/{id}/announce":  a.announceForm,
+		"POST " + Path + "/{id}/announce": a.announceSend,
+		"GET " + Path + "/{id}/changed":   a.changedForm,
+		"POST " + Path + "/{id}/changed":  a.changedSend,
+		"POST " + Path + "/{id}/note":     a.noteSend,
 	} {
 		mux.Handle(pattern, guard(h))
 	}
@@ -213,6 +231,15 @@ type formView struct {
 	Coming  []coming
 	Signups bool
 	Removed bool
+
+	// Messaging is whether this day's screen offers the sends to many;
+	// Sent is what went out about it, Told whether the list has been told,
+	// and Sending that a send was pressed a moment ago.
+	Messaging bool
+	Sent      []sentRow
+	Told      bool
+	Sending   bool
+	Cancel    *notices.Preview
 }
 
 // coming is one person on a day, as a steward sees them: the name shown,
@@ -240,11 +267,12 @@ func (a app) editForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	v := viewOf(d, mid.LangFrom(r.Context()))
-	if !a.withComing(w, r, d.ID, &v) {
+	if !a.withComing(w, r, d.ID, &v) || !a.withSent(w, r, d, &v) {
 		return
 	}
 
 	v.Removed = r.URL.Query().Get("done") == "removed"
+	v.Sending = r.URL.Query().Get("done") == "sending"
 
 	a.cfg.Render.Render(w, r, http.StatusOK, "day-form", v)
 }
@@ -268,6 +296,30 @@ func (a app) withComing(w http.ResponseWriter, r *http.Request, day types.ID, v 
 			ID: rv.ID.String(), Name: rv.Name,
 			Email: rv.Contact.Email.String(), Phone: rv.Contact.Phone.National(),
 		})
+	}
+
+	return true
+}
+
+// withSent adds what went out about d, and the cancellation the delete form
+// would send, or answers 500 and reports false.
+func (a app) withSent(w http.ResponseWriter, r *http.Request, d workdaybus.Day, v *formView) bool {
+	if !a.messaging() {
+		return true
+	}
+
+	sent, told, err := a.sent(r.Context(), d)
+	if err != nil {
+		a.fail(w, r, "reading what was sent", err)
+
+		return false
+	}
+
+	v.Messaging, v.Sent, v.Told = true, sent, told
+
+	if len(v.Coming) > 0 {
+		p := a.cancelPreview(mid.LangFrom(r.Context()), d)
+		v.Cancel = &p
 	}
 
 	return true
@@ -343,6 +395,16 @@ func (a app) update(w http.ResponseWriter, r *http.Request) {
 	if len(v.Problems) == 0 {
 		_, err := a.cfg.Days.Update(r.Context(), d.ID, f)
 		if err == nil {
+			// A new time for a day people have signed up for: offer to
+			// tell them, with the message shown first.
+			if moved := !f.Starts.Equal(d.Starts) || !f.Ends.Equal(d.Ends); moved && a.messaging() {
+				if rs, err := a.cfg.RSVPs.ForDay(r.Context(), d.ID); err == nil && len(rs) > 0 {
+					http.Redirect(w, r, Path+"/"+d.ID.String()+"/changed", http.StatusSeeOther)
+
+					return
+				}
+			}
+
 			http.Redirect(w, r, Path+"?done=saved", http.StatusSeeOther)
 
 			return
@@ -371,7 +433,25 @@ func (a app) remove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.PostFormValue("confirm") == "yes" {
+		// Who was coming, read before the day goes and its sign-ups with
+		// it, so the people on them can still be told.
+		var coming []rsvpbus.RSVP
+
+		if a.messaging() && r.PostFormValue("tell") == "yes" && !a.over(d) {
+			rs, err := a.cfg.RSVPs.ForDay(r.Context(), d.ID)
+			if err != nil {
+				a.fail(w, r, "reading who is coming", err)
+
+				return
+			}
+
+			coming = rs
+		}
+
 		err := a.cfg.Days.Delete(r.Context(), d.ID)
+		if err == nil && len(coming) > 0 {
+			a.tellCancelled(r, d, coming)
+		}
 
 		switch {
 		case err == nil, errors.Is(err, workdaybus.ErrNotFound):
@@ -386,6 +466,10 @@ func (a app) remove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	v := viewOf(d, mid.LangFrom(r.Context()))
+	if !a.withComing(w, r, d.ID, &v) || !a.withSent(w, r, d, &v) {
+		return
+	}
+
 	v.DeleteProblem = words.Confirm
 
 	a.cfg.Render.Render(w, r, http.StatusUnprocessableEntity, "day-form", v)

@@ -19,6 +19,18 @@
 //
 // Rendering the words is the app layer's: a Notice arrives already in the
 // recipient's language.
+//
+// # Sending to many
+//
+// A steward's message to the list, or to the people coming to a day, and the
+// reminder the evening before, go through [Business.SendBatch]. It runs in
+// the background, since forty texts at Twilio's pace for one number is most
+// of a minute, and it claims each recipient and channel in notice_sends
+// before sending, with one INSERT … ON CONFLICT DO NOTHING. So a button
+// pressed twice, a reminder tick that runs again, or a restart in the
+// middle never sends anybody the same message twice: what is claimed is
+// never claimed again, and a send cut off by a restart is left as "sending"
+// rather than tried a second time, since whether it went is not known.
 package noticebus
 
 import (
@@ -69,18 +81,31 @@ type Notice struct {
 }
 
 // TextBody is what goes by text: Text if the notice has one, or else the
-// email's body.
+// email's body, with typographic punctuation made plain.
 func (n Notice) TextBody() string {
+	body := n.Email
 	if n.Text != "" {
-		return n.Text
+		body = n.Text
 	}
 
-	return n.Email
+	return plain.Replace(strings.TrimSpace(body))
 }
+
+// plain swaps the punctuation the pages use -- the en dash in "8:00–11:00
+// am", curly quotes -- for its plain-character twin in a text. Any one
+// character outside the plain text set sends the whole text in UCS-2, at 70
+// characters a segment rather than 160 (sms.Segments), and the dash in the
+// hours would otherwise do that to every text about a day. Accented letters
+// are left alone: they are the words.
+var plain = strings.NewReplacer(
+	"–", "-", "—", "-", "‘", "'", "’", "'", "“", `"`, "”", `"`, "…", "...", "\u00a0", " ", "\u202f", " ",
+)
 
 // Same reports whether the text is the email word for word, which is what a
 // preview shows once rather than twice.
-func (n Notice) Same() bool { return strings.TrimSpace(n.TextBody()) == strings.TrimSpace(n.Email) }
+func (n Notice) Same() bool {
+	return n.Text == "" || strings.TrimSpace(n.Text) == strings.TrimSpace(n.Email)
+}
 
 // ShortEnough reports whether an email body may go as the text unchanged.
 func ShortEnough(body string) bool {
@@ -101,8 +126,18 @@ type Result struct {
 // Reached reports whether either half arrived at its provider.
 func (r Result) Reached() bool { return r.Mailed || r.Texted }
 
-// Storer is what the caps need from storage.
+// Storer is what the caps and the sends to many need from storage.
 type Storer interface {
+	// ClaimSend records that batch is sending to recipient by channel, as
+	// one statement, and reports false when it has been claimed before.
+	ClaimSend(ctx context.Context, batch, recipient, channel string, at time.Time) (bool, error)
+
+	// MarkSend sets what came of a claimed send.
+	MarkSend(ctx context.Context, batch, recipient, channel, status string) error
+
+	// Batches is every batch whose key starts with prefix, earliest first.
+	Batches(ctx context.Context, prefix string) ([]Batch, error)
+
 	// Claim records one message to each address at now, all or none, and
 	// only if fewer than perAddress went to each since since and fewer than
 	// perHour went to anybody since hourSince. It reports whether they may
@@ -122,7 +157,18 @@ type Business struct {
 
 	mu      sync.Mutex
 	stopped []func(context.Context, types.Phone) error
+
+	// pace is the gap between two texts in a batch; wg is the batches
+	// running.
+	pace time.Duration
+	wg   sync.WaitGroup
 }
+
+// TextPace is the gap between texts in a batch. A US long-code number sends
+// about one message a second, and Twilio queues anything faster; pacing
+// here keeps the queue -- and the moment a STOP comes back -- in step with
+// what has been sent.
+const TextPace = time.Second
 
 // NewBusiness constructs one. Either sender may be nil, and that channel is
 // then off: a contact's half for it is skipped, and the forms do not ask
@@ -132,8 +178,11 @@ func NewBusiness(store Storer, m mail.Sender, t sms.Sender, now func() time.Time
 		now = time.Now
 	}
 
-	return &Business{store: store, mail: m, texts: t, now: now}
+	return &Business{store: store, mail: m, texts: t, now: now, pace: TextPace}
 }
+
+// Pace sets the gap between texts in a batch; a test sets none.
+func (b *Business) Pace(d time.Duration) { b.pace = d }
 
 // Texts reports whether texts can be sent, which is whether a form should
 // offer a phone field at all: nobody is asked for a number nothing can text.
@@ -189,25 +238,145 @@ func (b *Business) Send(ctx context.Context, c types.Contact, n Notice) Result {
 	var r Result
 
 	if !c.Email.Zero() && b.mail != nil {
-		// CRLF, which is what a mail body's lines end with on the wire.
-		err := b.mail.Send(ctx, mail.Message{
-			To: c.Email.String(), Subject: n.Subject,
-			Text: strings.ReplaceAll(strings.ReplaceAll(n.Email, "\r\n", "\n"), "\n", "\r\n"),
-		})
-		r.Mailed, r.MailErr = err == nil, err
+		r.MailErr = b.sendEmail(ctx, c.Email, n)
+		r.Mailed = r.MailErr == nil
 	}
 
 	if !c.Phone.Zero() && b.texts != nil {
-		_, err := b.texts.Send(ctx, sms.Message{To: c.Phone.String(), Body: strings.TrimSpace(n.TextBody())})
-		r.Texted, r.TextErr = err == nil, err
-
-		if errors.Is(err, sms.ErrOptedOut) {
-			r.Stopped = true
-			r.TextErr = errors.Join(err, b.stop(ctx, c.Phone))
-		}
+		r.Stopped, r.TextErr = b.sendText(ctx, c.Phone, n)
+		r.Texted = r.TextErr == nil
 	}
 
 	return r
+}
+
+func (b *Business) sendEmail(ctx context.Context, to types.Email, n Notice) error {
+	// CRLF, which is what a mail body's lines end with on the wire.
+	return b.mail.Send(ctx, mail.Message{
+		To: to.String(), Subject: n.Subject,
+		Text: strings.ReplaceAll(strings.ReplaceAll(n.Email, "\r\n", "\n"), "\n", "\r\n"),
+	})
+}
+
+// sendText sends the text, and on a STOP tells every list.
+func (b *Business) sendText(ctx context.Context, to types.Phone, n Notice) (stopped bool, err error) {
+	_, err = b.texts.Send(ctx, sms.Message{To: to.String(), Body: n.TextBody()})
+	if errors.Is(err, sms.ErrOptedOut) {
+		return true, errors.Join(err, b.stop(ctx, to))
+	}
+
+	return false, err
+}
+
+// Recipient is one person a batch goes to. Key is what the batch remembers
+// them by -- a subscriber's or a sign-up's ID -- so that the same person is
+// never sent the same batch twice, whatever their contact has become since.
+type Recipient struct {
+	Key     string
+	Contact types.Contact
+	Lang    types.Lang
+}
+
+// The channels and statuses notice_sends holds.
+const (
+	Email = "email"
+	Text  = "text"
+
+	Sending = "sending"
+	Sent    = "sent"
+	Failed  = "failed"
+	Stopped = "stopped"
+)
+
+// Batch is how a batch went, for the steward who sent it.
+type Batch struct {
+	Key     string
+	Started time.Time
+
+	Sent, Failed, Stopped, Sending int
+}
+
+// SendBatch sends to each of to, in the background on ctx, the notice build
+// makes for them; see the package comment. Key names the batch: the same key
+// is the same batch, and reaches nobody twice. It returns at once; Batches
+// says how it is going, and Wait waits for it.
+//
+// ctx is the app's, not a request's: the request that pressed the button is
+// over long before the last text goes.
+func (b *Business) SendBatch(ctx context.Context, key string, to []Recipient, build func(Recipient) Notice) {
+	b.wg.Go(func() {
+		for _, r := range to {
+			if ctx.Err() != nil {
+				return
+			}
+
+			b.sendOne(ctx, key, r, build)
+		}
+	})
+}
+
+// sendOne claims and sends each half of r's message, and records each.
+func (b *Business) sendOne(ctx context.Context, key string, r Recipient, build func(Recipient) Notice) {
+	var n *Notice
+
+	notice := func() Notice {
+		if n == nil {
+			built := build(r)
+			n = &built
+		}
+
+		return *n
+	}
+
+	if !r.Contact.Email.Zero() && b.mail != nil && b.claim(ctx, key, r.Key, Email) {
+		status := Sent
+		if err := b.sendEmail(ctx, r.Contact.Email, notice()); err != nil {
+			status = Failed
+		}
+
+		b.mark(ctx, key, r.Key, Email, status)
+	}
+
+	if !r.Contact.Phone.Zero() && b.texts != nil && b.claim(ctx, key, r.Key, Text) {
+		status := Sent
+
+		switch stopped, err := b.sendText(ctx, r.Contact.Phone, notice()); {
+		case stopped:
+			status = Stopped
+		case err != nil:
+			status = Failed
+		}
+
+		b.mark(ctx, key, r.Key, Text, status)
+
+		select {
+		case <-ctx.Done():
+		case <-time.After(b.pace):
+		}
+	}
+}
+
+// claim reports whether this send is this batch's to make. A store that
+// cannot answer is a no: an unclaimed send might be a second copy.
+func (b *Business) claim(ctx context.Context, batch, recipient, channel string) bool {
+	ok, err := b.store.ClaimSend(ctx, batch, recipient, channel, b.now())
+	return err == nil && ok
+}
+
+// mark records what came of a send. A failure to record it leaves the row
+// at "sending", which the steward's screen shows as not known.
+func (b *Business) mark(ctx context.Context, batch, recipient, channel, status string) {
+	_ = b.store.MarkSend(context.WithoutCancel(ctx), batch, recipient, channel, status)
+}
+
+// Wait waits for every batch running to finish: for a test, and for a
+// shutdown that would rather finish a send than leave it unknown.
+func (b *Business) Wait() { b.wg.Wait() }
+
+// Batches is how every batch whose key starts with prefix went, earliest
+// first: "announce:<day>" is one, "note:<day>:" every note about a day.
+func (b *Business) Batches(ctx context.Context, prefix string) ([]Batch, error) {
+	return b.store.Batches(ctx, prefix)
 }
 
 // stop tells every list that p has replied STOP.
