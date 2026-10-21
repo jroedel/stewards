@@ -1,0 +1,26 @@
+{{define "title"}}{{plain .Lang "Messages"}} · {{plain .Lang "Garden stewards"}}{{end}}
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<p class="eyebrow"><a href="/steward">{{t $l "Places"}}</a></p>
+<h1>{{t $l "Messages"}}</h1>
+<p class="lead">{{t $l "Everything the app sends to volunteers, as it goes by email and as it goes by text, in English and in Spanish. Each person gets it in the language they signed up in, by whichever ways they gave."}}</p>
+{{if not .Texts}}<p class="aside">{{t $l "Texts are off: the app has no Twilio key, so nobody is asked for a phone number and only the emails go."}}</p>{{end}}
+
+{{range .Kinds}}
+<section class="card message">
+  <h2>{{say $l .Name}}</h2>
+  <p class="help">{{say $l .When}}</p>
+  {{range .Previews}}
+  <h3>{{say $l .Lang}}</h3>
+  {{if .Waiting}}<p class="field-problem">{{t $l "Waiting for its translation: until Claude translates it, this goes in English."}}</p>{{end}}
+  <p class="message-label">{{t $l "Email"}}</p>
+  <div class="message-body">
+    <p class="message-subject">{{.Subject}}</p>
+    <p class="prose">{{.Email}}</p>
+  </div>
+  <p class="message-label">{{t $l "Text"}} <span class="quiet">{{if eq .Segments 1}}{{t $l "{chars} characters, one text" "chars" .Chars}}{{else}}{{t $l "{chars} characters, sent as {n} texts" "chars" .Chars "n" .Segments}}{{end}}{{if .Unicode}} · {{t $l "accented letters make each text shorter"}}{{end}}</span></p>
+  {{if .Same}}<p class="help">{{t $l "The same words as the email."}}</p>
+  {{else}}<div class="message-body message-text"><p class="prose">{{.Text}}</p></div>{{end}}
+  {{end}}
+</section>
+{{end}}
+{{end}}{{end}}

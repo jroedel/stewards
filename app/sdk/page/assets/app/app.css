@@ -882,3 +882,17 @@ code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap
 .translation-more { margin-top: 8px; border-top: 1px solid var(--rule); }
 .translation-more summary { display: flex; align-items: center; min-height: 48px; color: var(--sf-blue); font-weight: 700; cursor: pointer; }
 .translation-more .form { margin-top: 0; }
+
+/* ---------------------------------------------------------------- messages */
+
+/* A message as it will arrive: the stewards' messages screen, and the
+   preview before a message goes to many. Set apart from the page's own
+   words by a quiet panel, so a steward reads it as the volunteer will. */
+.message h3 { margin: 20px 0 4px; }
+.message-label { margin: 12px 0 4px; font: 700 15px var(--font-body); }
+.message-body {
+  padding: 12px 14px; border-radius: 10px; background: var(--sf-neutral);
+  overflow-wrap: anywhere;
+}
+.message-subject { margin: 0 0 8px; font-weight: 700; }
+.message-text { max-width: 22em; }

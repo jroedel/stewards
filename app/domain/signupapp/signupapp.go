@@ -1,10 +1,11 @@
-// Package signupapp is the email list for stewardship days: the form on the
-// home page posts here, the confirmation and unsubscribe links land here, and
-// the stewards see who is on the list here.
+// Package signupapp is the list for stewardship days, by email, text or
+// both: the form on the home page posts here, the unsubscribe links land
+// here, and the stewards see who is on the list here.
 //
 // The rules -- one step to sign up, the caps, a page that says the same
 // thing whoever is asking -- are subscriberbus's; see there for why each one
-// is. What this package adds is the welcome email and the pages around it.
+// is. What this package adds is the welcome -- an email and a text, sent
+// through noticebus to whichever the person gave -- and the pages around it.
 //
 // # The honeypot
 //
@@ -45,10 +46,11 @@ import (
 	"strings"
 
 	"github.com/jroedel/stewards/app/sdk/mid"
+	"github.com/jroedel/stewards/app/sdk/notices"
 	"github.com/jroedel/stewards/app/sdk/page"
+	"github.com/jroedel/stewards/business/domain/notice/noticebus"
 	"github.com/jroedel/stewards/business/domain/subscriber/subscriberbus"
 	"github.com/jroedel/stewards/business/types"
-	"github.com/jroedel/stewards/foundation/mail"
 	"github.com/jroedel/stewards/foundation/web"
 )
 
@@ -71,20 +73,26 @@ const Honeypot = "website"
 
 // List is what this app needs from the subscriber rules.
 type List interface {
-	Request(ctx context.Context, email types.Email, lang types.Lang) (subscriberbus.Request, error)
+	Request(ctx context.Context, c types.Contact, lang types.Lang) (subscriberbus.Request, error)
 	Unsubscribe(ctx context.Context, token string) error
 	Remove(ctx context.Context, id types.ID) error
 	All(ctx context.Context) ([]subscriberbus.Subscriber, error)
 }
 
-// Config is what this app needs. Mail is required: the welcome is what tells
-// a person they are on the list and how to leave it, so main mounts this app
-// only when a relay is configured.
+// Sender is what this app needs to write to people: noticebus.
+type Sender interface {
+	Send(ctx context.Context, c types.Contact, n noticebus.Notice) noticebus.Result
+	Texts() bool
+}
+
+// Config is what this app needs. Notices is required: the welcome is what
+// tells a person they are on the list and how to leave it, so main mounts
+// this app only when a mail relay is configured.
 type Config struct {
 	Log     *slog.Logger
 	Render  *page.Renderer
 	List    List
-	Mail    mail.Sender
+	Notices Sender
 	BaseURL string
 }
 
@@ -109,7 +117,7 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 type wording struct {
 	Eyebrow types.Text
 
-	FormTitle, FormHelp, FormLabel, FormButton, NotAnEmail types.Text
+	FormTitle, FormHelp, FormHelpTexts, FormButton types.Text
 
 	SentTitle, SentLead, SentSpam types.Text
 
@@ -123,31 +131,31 @@ type wording struct {
 // Words is this app's copy held in Go, for the catalog the translation
 // memory lists.
 var Words = page.Catalog{
-	{Where: "signing up for emails about stewardship days, and stopping them: read by a newcomer", Words: words},
-	{Where: "the email a newcomer is sent on signing up for stewardship days, in plain text", Words: []types.Text{welcomeSubject, welcomeText}},
+	{Where: "signing up to hear about stewardship days by email or text, and stopping it: read by a newcomer", Words: words},
+	welcome.Catalog("the welcome a newcomer is sent on signing up for stewardship days: an email in plain text, and a text message, " +
+		"which is short and has its two links on lines of their own"),
 }
 
 var words = wording{
 	Eyebrow: types.Text{EN: "Stewardship days"},
 
-	FormTitle:  types.Text{EN: "Hear about the next day"},
-	FormHelp:   types.Text{EN: "Leave your email and we'll write when a stewardship day is scheduled. Nothing else, and you can stop any time."},
-	FormLabel:  types.Text{EN: "Your email"},
-	FormButton: types.Text{EN: "Keep me posted"},
-	NotAnEmail: types.Text{EN: "That doesn't look like an email address. Check it for a typo."},
+	FormTitle:     types.Text{EN: "Hear about the next day"},
+	FormHelp:      types.Text{EN: "Leave your email and we'll write when a stewardship day is scheduled. Nothing else, and you can stop any time."},
+	FormHelpTexts: types.Text{EN: "Leave your email or mobile number and we'll let you know when a stewardship day is scheduled. Nothing else, and you can stop any time."},
+	FormButton:    types.Text{EN: "Keep me posted"},
 
 	SentTitle: types.Text{EN: "You're on the list"},
-	SentLead:  types.Text{EN: "Thank you. We'll email you when a stewardship day is scheduled, and we've sent you a welcome now with a link to stop the emails any time."},
-	SentSpam:  types.Text{EN: "If the welcome isn't there in a few minutes, look in your spam folder, or check the address for a typo and sign up again."},
+	SentLead:  types.Text{EN: "Thank you. We'll let you know when a stewardship day is scheduled, and we've sent you a welcome now with a link to stop any time."},
+	SentSpam:  types.Text{EN: "If the welcome isn't there in a few minutes, look in your spam folder, or check what you typed and sign up again."},
 
 	OldLinkTitle: types.Text{EN: "No need to confirm any more"},
 	OldLinkLead:  types.Text{EN: "Signing up is one step now. If you're not on the list yet, sign up from the home page and you'll be on it straight away."},
 
-	LeaveTitle:  types.Text{EN: "Stop these emails?"},
-	LeaveLead:   types.Text{EN: "Press the button and we won't email you about stewardship days any more."},
-	LeaveButton: types.Text{EN: "Stop the emails"},
+	LeaveTitle:  types.Text{EN: "Stop these messages?"},
+	LeaveLead:   types.Text{EN: "Press the button and we won't write to you about stewardship days any more, by email or by text."},
+	LeaveButton: types.Text{EN: "Stop the messages"},
 	OffTitle:    types.Text{EN: "You're off the list"},
-	OffLead:     types.Text{EN: "We won't email you about stewardship days any more. You're welcome on the trail any time."},
+	OffLead:     types.Text{EN: "We won't write to you about stewardship days any more. You're welcome on the trail any time."},
 
 	SeeDays: types.Text{EN: "See the days scheduled"},
 }
@@ -156,8 +164,11 @@ var words = wording{
 
 type formView struct {
 	Copy    wording
-	Email   string
-	Problem types.Text
+	Contact page.ContactFields
+}
+
+func (a app) form() formView {
+	return formView{Copy: words, Contact: page.ContactFields{ID: "signup", Texts: a.cfg.Notices.Texts()}}
 }
 
 func (a app) request(w http.ResponseWriter, r *http.Request) {
@@ -175,18 +186,26 @@ func (a app) request(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	typed := r.PostFormValue("email")
+	v := a.form()
+	v.Contact.Email = r.PostFormValue("email")
 
-	email, err := types.ParseEmail(typed)
+	// A phone typed into a form that did not offer the field -- an old page
+	// open since before texts were turned off -- is not one we can text.
+	if v.Contact.Texts {
+		v.Contact.Phone = r.PostFormValue("phone")
+	}
+
+	c, err := types.ParseContact(v.Contact.Email, v.Contact.Phone)
 	if err != nil {
-		a.cfg.Render.Render(w, r, http.StatusUnprocessableEntity, "signup-form", formView{Copy: words, Email: typed, Problem: words.NotAnEmail})
+		v.Contact.ContactProblem(err)
+		a.cfg.Render.Render(w, r, http.StatusUnprocessableEntity, "signup-form", v)
 
 		return
 	}
 
 	lang := mid.LangFrom(r.Context())
 
-	req, err := a.cfg.List.Request(r.Context(), email, lang)
+	req, err := a.cfg.List.Request(r.Context(), c, lang)
 	if err != nil {
 		a.fail(w, r, "signing up", err)
 
@@ -198,19 +217,19 @@ func (a app) request(w http.ResponseWriter, r *http.Request) {
 
 	// They are on the list whether or not the welcome goes; a failure is
 	// logged for a steward to see, and not shown, since signing up again
-	// would only find them on the list already and send nothing.
+	// would only find them on the list already and send nothing. The
+	// welcome goes to what is new: a person adding a phone to their email
+	// is welcomed by text alone.
 	if req.Outcome == subscriberbus.Added {
-		if err := a.cfg.Mail.Send(r.Context(), a.welcome(lang, req.Subscriber.Email, a.leaveURL(req.Subscriber.Unsubscribe))); err != nil {
-			a.cfg.Log.ErrorContext(r.Context(), "a welcome could not be sent", "request_id", web.RequestIDFrom(r.Context()),
-				"subscriber_id", req.Subscriber.ID.String(), "error", err)
-		}
+		res := a.cfg.Notices.Send(r.Context(), req.New, a.welcome(lang, req.Subscriber.Unsubscribe))
+		a.logSent(r, "welcome", req.Subscriber.ID, res)
 	}
 
 	http.Redirect(w, r, sentPath, http.StatusSeeOther)
 }
 
 func (a app) sent(w http.ResponseWriter, r *http.Request) {
-	a.cfg.Render.Render(w, r, http.StatusOK, "signup-sent", formView{Copy: words})
+	a.cfg.Render.Render(w, r, http.StatusOK, "signup-sent", a.form())
 }
 
 // ------------------------------------------------------------------ old confirm links
@@ -252,41 +271,90 @@ func (a app) leaveURL(token string) string {
 	return a.cfg.BaseURL + leavePath + "?t=" + url.QueryEscape(token)
 }
 
-// ------------------------------------------------------------------ the emails
+// ------------------------------------------------------------------ the welcome
 
-// welcome is the one email a stranger can cause -- anybody can type
-// anybody's address -- so besides the thanks it says plainly what to do if
+// welcome is a message a stranger can cause -- anybody can type anybody's
+// address or number -- so besides the thanks it says plainly what to do if
 // it was not wanted, and the link off the list is in it from the first day.
-// The emails a steward writes by hand carry no such link, which is another
-// reason this one must.
 //
-// It is in the language of the page the address was given on, which is the
-// language the list keeps for it.
-func (a app) welcome(l types.Lang, to types.Email, leave string) mail.Message {
-	text := a.cfg.Render.Plain(l, page.Put(welcomeText, "days", a.cfg.BaseURL+"/", "leave", leave))
+// It is in the language of the page the person signed up on, which is the
+// language the list keeps for them.
+func (a app) welcome(l types.Lang, token string) noticebus.Notice {
+	return notices.Build(a.cfg.Render, l, welcome, "days", a.cfg.BaseURL+"/", "leave", a.leaveURL(token))
+}
 
-	return mail.Message{
-		To:      to.String(),
-		Subject: a.cfg.Render.Plain(l, welcomeSubject),
-		Text:    strings.ReplaceAll(text, "\n", "\r\n"),
-	}
+// The email is long enough that the text is its own, shorter thing. The
+// text says STOP as well as giving the link: replying STOP is what anyone
+// who has had a text from a business expects to work, and it does -- though
+// the reply goes to the number's other user, eumaeus, the next text here is
+// refused and the number taken off (noticebus).
+var welcome = notices.Words{
+	Subject: types.Text{EN: "Thank you for signing up for stewardship days"},
+	Email: types.Text{EN: "Thank you for signing up to receive notifications about future stewardship days on the Schoenstatt Fathers' Trail of the Saints.\n\n" +
+		"You don't need any experience or special skills.\n\n" +
+		"The days already scheduled are here:\n{days}\n\n" +
+		"If you did not sign up for this, or want to stop hearing from us at any time, unsubscribe here:\n{leave}\n\n" +
+		"-- The garden stewards\n"},
+	Text: types.Text{EN: "Trail of the Saints garden stewards: thank you for signing up. We'll text you when a stewardship day is scheduled.\n" +
+		"Days: {days}\n" +
+		"To stop: {leave} or reply STOP"},
+}
+
+// Notices is this app's messages, for the stewards' screen that shows every
+// message before it goes out.
+func Notices(cfg Config) []notices.Kind {
+	a := app{cfg: cfg}
+
+	return []notices.Kind{{
+		Name:  welcomeName,
+		When:  welcomeWhen,
+		Words: welcome,
+		Sample: func(l types.Lang) noticebus.Notice {
+			return a.welcome(l, strings.Repeat("0", 64))
+		},
+	}}
 }
 
 var (
-	welcomeSubject = types.Text{EN: "Thank you for signing up for stewardship days"}
-	welcomeText    = types.Text{EN: "Thank you for signing up to receive notifications about future stewardship days on the Schoenstatt Fathers' Trail of the Saints.\n\n" +
-		"You don't need any experience or special skills.\n\n" +
-		"The days already scheduled are here:\n{days}\n\n" +
-		"If you did not sign up for this, or want to stop these emails at any time, unsubscribe here:\n{leave}\n\n" +
-		"-- The garden stewards\n"}
+	welcomeName = types.Text{EN: "Welcome to the list"}
+	welcomeWhen = types.Text{EN: "Sent at once to someone who signs up on the home page, to the email and phone they gave. If they add a phone later, the phone gets it then."}
 )
+
+// NoticeWords is the copy of Notices' names, for the catalog.
+var NoticeWords = page.Copy{
+	Where: "the stewards' screen of every message the app sends: a message's name, and when it is sent",
+	Words: []types.Text{welcomeName, welcomeWhen},
+}
+
+// logSent records what came of a message, half by half, by the
+// subscriber's ID and never their address or number.
+func (a app) logSent(r *http.Request, what string, id types.ID, res noticebus.Result) {
+	attrs := []any{"request_id", web.RequestIDFrom(r.Context()), "subscriber_id", id.String(),
+		"mailed", res.Mailed, "texted", res.Texted, "stopped", res.Stopped}
+
+	if res.MailErr != nil || res.TextErr != nil {
+		a.cfg.Log.ErrorContext(r.Context(), "a "+what+" did not all go", append(attrs, "mail_error", errText(res.MailErr), "text_error", errText(res.TextErr))...)
+
+		return
+	}
+
+	a.cfg.Log.InfoContext(r.Context(), what+" sent", attrs...)
+}
+
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	return err.Error()
+}
 
 // ------------------------------------------------------------------ the stewards' list
 
 type stewardRow struct {
-	ID, Email string
-	Since     page.Phrase
-	Lang      types.Text
+	ID, Email, Phone string
+	Since            page.Phrase
+	Lang             types.Text
 }
 
 type stewardView struct {
@@ -309,10 +377,13 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 
 	for _, s := range on {
 		v.Rows = append(v.Rows, stewardRow{
-			ID: s.ID.String(), Email: s.Email.String(), Lang: page.Language(s.Lang),
-			Since: page.Date(s.CreatedAt),
+			ID: s.ID.String(), Email: s.Contact.Email.String(), Phone: s.Contact.Phone.National(),
+			Lang: page.Language(s.Lang), Since: page.Date(s.CreatedAt),
 		})
-		all = append(all, s.Email.String())
+
+		if !s.Contact.Email.Zero() {
+			all = append(all, s.Contact.Email.String())
+		}
 	}
 
 	v.All = strings.Join(all, ", ")

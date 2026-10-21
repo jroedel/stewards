@@ -20,6 +20,8 @@ import (
 	"github.com/jroedel/stewards/business/domain/inbox/stores/inboxdb"
 	"github.com/jroedel/stewards/business/domain/listing/listingbus"
 	"github.com/jroedel/stewards/business/domain/listing/stores/listingdb"
+	"github.com/jroedel/stewards/business/domain/notice/noticebus"
+	"github.com/jroedel/stewards/business/domain/notice/stores/noticedb"
 	"github.com/jroedel/stewards/business/domain/nursery/nurserybus"
 	"github.com/jroedel/stewards/business/domain/nursery/stores/nurserydb"
 	"github.com/jroedel/stewards/business/domain/photo/photobus"
@@ -39,6 +41,7 @@ import (
 	"github.com/jroedel/stewards/business/domain/workday/workdaybus"
 	"github.com/jroedel/stewards/foundation/logger"
 	"github.com/jroedel/stewards/foundation/mail"
+	"github.com/jroedel/stewards/foundation/sms"
 	"github.com/jroedel/stewards/foundation/sqldb"
 	"github.com/jroedel/stewards/foundation/web"
 )
@@ -146,6 +149,21 @@ func run() error {
 		sender = smtp
 	}
 
+	// The same for texts: nil when there is no [sms], and then nobody is
+	// asked for a phone number.
+	var texts sms.Sender
+	if cfg.SMS.AccountSID != "" {
+		twilio, err := sms.NewTwilio(sms.Config{
+			AccountSID: cfg.SMS.AccountSID, KeySID: cfg.SMS.APIKeySID,
+			KeySecret: cfg.SMS.APIKeySecret, From: cfg.SMS.From,
+		})
+		if err != nil {
+			return fmt.Errorf("%s [sms]: %w", *configPath, err)
+		}
+
+		texts = twilio
+	}
+
 	translations, err := translationbus.NewBusiness(ctx, translationdb.NewStore(db), nil)
 	if err != nil {
 		return err
@@ -166,8 +184,13 @@ func run() error {
 
 	nursery := nurserybus.NewBusiness(nurserydb.NewStore(db), nil)
 	inbox := inboxbus.NewBusiness(inboxdb.NewStore(db), inboxFiles, inboxbus.Deps{Photos: photos, Listings: listings, Stock: nursery}, nil)
-	subscribers := subscriberbus.NewBusiness(subscriberdb.NewStore(db), nil)
-	go prune(ctx, log, users, subscribers, inbox)
+	notices := noticebus.NewBusiness(noticedb.NewStore(db), sender, texts, nil)
+	subscribers := subscriberbus.NewBusiness(subscriberdb.NewStore(db), notices, nil)
+
+	// A number that replied STOP comes off every list that holds numbers.
+	notices.OnStopped(subscribers.Stopped)
+
+	go prune(ctx, log, users, notices, inbox)
 
 	handler, err := muxer.New(muxer.Config{
 		Log:      log,
@@ -185,6 +208,7 @@ func run() error {
 		Translations: translations,
 
 		Subscribers: subscribers,
+		Notices:     notices,
 		BaseURL:     cfg.Server.BaseURL,
 		Mail:        sender,
 		Bootstrap:   cfg.Auth.BootstrapSecret,
@@ -254,6 +278,7 @@ func prepare(ctx context.Context, db *sql.DB) error {
 		{"nursery stock", nurserydb.Init},
 		{"stewardship days", workdaydb.Init},
 		{"the email list", subscriberdb.Init},
+		{"the caps on messages", noticedb.Init},
 		{"the translations", translationdb.Init},
 	} {
 		if err := step.init(ctx, db); err != nil {
@@ -283,6 +308,7 @@ func expectedSchema() sqldb.Expected {
 		nurserydb.Expected,
 		workdaydb.Expected,
 		subscriberdb.Expected,
+		noticedb.Expected,
 		translationdb.Expected,
 	} {
 		maps.Copy(expected, store)
@@ -323,12 +349,12 @@ func moveTranslations(ctx context.Context, log *slog.Logger, domains ...interfac
 	return nil
 }
 
-// prune clears expired sign-in links and sessions, sign-ups to the email list
-// left unconfirmed by its first version, and nursery stock photos past
-// inboxbus.StockKept, at startup and then every six hours.
+// prune clears expired sign-in links and sessions, the record of messages
+// the caps no longer count, and nursery stock photos past inboxbus.StockKept,
+// at startup and then every six hours.
 // Housekeeping: nothing depends on it for correctness, since every check
 // reads the expiry, so a failure is logged and the next round tries again.
-func prune(ctx context.Context, log *slog.Logger, users *userbus.Business, subscribers *subscriberbus.Business, inbox *inboxbus.Business) {
+func prune(ctx context.Context, log *slog.Logger, users *userbus.Business, notices *noticebus.Business, inbox *inboxbus.Business) {
 	tick := time.NewTicker(6 * time.Hour)
 	defer tick.Stop()
 
@@ -337,8 +363,8 @@ func prune(ctx context.Context, log *slog.Logger, users *userbus.Business, subsc
 			log.Warn("expired sign-ins could not be pruned", "error", err)
 		}
 
-		if err := subscribers.Prune(ctx); err != nil && ctx.Err() == nil {
-			log.Warn("the email list could not be pruned", "error", err)
+		if err := notices.Prune(ctx); err != nil && ctx.Err() == nil {
+			log.Warn("the record of messages sent could not be pruned", "error", err)
 		}
 
 		if err := inbox.PruneStock(ctx); err != nil && ctx.Err() == nil {

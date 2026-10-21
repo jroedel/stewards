@@ -1,38 +1,40 @@
 // Package subscriberdb stores the people who want to hear about stewardship
-// days, and a record of the welcome mail sent to them.
+// days: an email address, a phone number, or both.
 //
-// # Two tables
+// # One row per person, either half unique
 //
-// subscribers is one row per address, unique. subscriber_mails is one row per
-// welcome sent, kept a day, and is what the caps count. It holds the address
-// rather than a subscriber's ID so that the cap can be claimed before any
-// subscriber row exists; see subscriberbus.Business.Request for why that
-// order matters.
+// A person who gave both is one row, so that one link takes them off the
+// list entirely and a steward sees them once. Either half is UNIQUE on its
+// own, so an address or a number can be on the list only once however it was
+// paired; the CHECK keeps a row from holding neither.
 //
-// # What is left of the double opt-in
+// # The rebuild of 2026-10-21
 //
-// The first version of the list asked people to confirm from an email before
-// they were on it, and kept a pending row with the confirmation's hash until
-// they did. That was dropped (subscriberbus says why), and three things
-// remain of it here, each on purpose:
+// Until then the list was email only, and email was NOT NULL. SQLite has no
+// ALTER that drops a NOT NULL, so Init rebuilds the table once -- a new table
+// in the new shape, the rows copied, the old one dropped and the new one
+// renamed, in one transaction -- when it finds a subscribers table with no
+// phone column. That is the sqlite_master lookup CLAUDE.md asks for: on every
+// startup after the first it finds the phone column and does nothing.
 //
-//   - confirm_hash and confirm_expires_at stay in the CREATE, unwritten.
-//     Every database made by that version has them and SQLite cannot drop a
-//     column cheaply, so a fresh database gets them too, rather than two
-//     shapes of the same table in the wild.
-//   - confirmed_at is when the address went on the list; NULL is a pending
-//     row from that version, and only such a row can be NULL. A pending
-//     address that signs up again goes on the list then (Add), and one that
-//     never does is deleted by Prune once its old link has expired.
-//   - All reads only rows with confirmed_at set, so a pending row is never
-//     on the list without its owner having asked a second time.
+// The rebuild also lets go of what was left of the double opt-in the first
+// version had (subscriberbus says why it was dropped): confirm_hash,
+// confirm_expires_at and confirmed_at go, and so does any pending row, which
+// was never on the list and whose link expired long ago. The welcome-mail
+// record, subscriber_mails, is dropped too: the caps live in noticedb now,
+// counting texts and emails alike, and it only ever held a day.
+//
+// A binary from before the rebuild, rolled back onto a rebuilt database,
+// finds confirmed_at missing and reports unhealthy, which is what /healthz is
+// for; going back past this release means restoring the backup the deploy
+// took.
 //
 // # The unsubscribe token is kept as it is
 //
-// Every email the stewards send must carry it, long after the subscriber
-// signed up, so it has to be readable when the mail is written; and all it
-// can do is take one address off the list, which is what its holder may do
-// anyway. Hashing it would mean a new token in every email and every older
+// Every message the stewards send must carry it, long after the subscriber
+// signed up, so it has to be readable when the message is written; and all it
+// can do is take one person off the list, which is what its holder may do
+// anyway. Hashing it would mean a new token in every message and every older
 // link dead, which is the wrong way round for a link whose whole job is to
 // work whenever it is clicked.
 package subscriberdb
@@ -42,6 +44,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jroedel/stewards/business/domain/subscriber/subscriberbus"
@@ -61,65 +64,118 @@ var _ subscriberbus.Storer = (*Store)(nil)
 
 // Expected is what CheckSchema verifies at startup and on every /healthz.
 var Expected = sqldb.Expected{
-	"subscribers":      {"id", "email", "lang", "unsubscribe", "confirmed_at", "created_at"},
-	"subscriber_mails": {"email", "sent_at"},
+	"subscribers": {"id", "email", "phone", "lang", "unsubscribe", "created_at"},
 }
 
-// Init creates the tables. Idempotent, run at every startup.
+// table is the shape of subscribers, written once for the CREATE and once
+// for the rebuild's new table, so that the two cannot drift.
+const table = ` (
+    id           TEXT    PRIMARY KEY,
+    email        TEXT    UNIQUE,
+    phone        TEXT    UNIQUE,
+    lang         TEXT    NOT NULL,
+    unsubscribe  TEXT    NOT NULL UNIQUE,
+    created_at   INTEGER NOT NULL,
+    CHECK (email IS NOT NULL OR phone IS NOT NULL)
+) STRICT`
+
+// Init creates the table, or rebuilds the email-only one. Idempotent, run at
+// every startup.
 func Init(ctx context.Context, db *sql.DB) error {
-	const schema = `
-CREATE TABLE IF NOT EXISTS subscribers (
-    id                  TEXT    PRIMARY KEY,
-    email               TEXT    NOT NULL UNIQUE,
-    lang                TEXT    NOT NULL,
-    unsubscribe         TEXT    NOT NULL UNIQUE,
+	if err := rebuild(ctx, db); err != nil {
+		return err
+	}
 
-    -- Left from the double opt-in, and no longer written; see above.
-    confirm_hash        BLOB,
-    confirm_expires_at  INTEGER,
+	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS subscribers`+table); err != nil {
+		return fmt.Errorf("creating the subscribers table: %w", err)
+	}
 
-    -- When the address went on the list. NULL only on a pending row left
-    -- from the double opt-in.
-    confirmed_at        INTEGER,
-    created_at          INTEGER NOT NULL
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS subscriber_mails (
-    email    TEXT    NOT NULL,
-    sent_at  INTEGER NOT NULL
-) STRICT;
-
-CREATE INDEX IF NOT EXISTS subscriber_mails_email ON subscriber_mails (email, sent_at);
-CREATE INDEX IF NOT EXISTS subscriber_mails_sent ON subscriber_mails (sent_at);
-`
-
-	if _, err := db.ExecContext(ctx, schema); err != nil {
-		return fmt.Errorf("creating the subscriber tables: %w", err)
+	if _, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS subscriber_mails`); err != nil {
+		return fmt.Errorf("dropping the old welcome-mail record: %w", err)
 	}
 
 	return nil
 }
 
-// ByEmail is the row for an address on the list. A pending row left from
-// the double opt-in is not found, so that signing up again reaches Add,
-// which puts it on the list.
-func (s *Store) ByEmail(ctx context.Context, email types.Email) (subscriberbus.Subscriber, error) {
-	return s.one(ctx, `WHERE email = ? AND confirmed_at IS NOT NULL`, email.String())
+// rebuild brings an email-only subscribers table to the shape above. See the
+// package comment.
+func rebuild(ctx context.Context, db *sql.DB) error {
+	var ddl string
+
+	err := db.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'subscribers'`).Scan(&ddl)
+
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil // a fresh database: the CREATE makes it
+	case err != nil:
+		return fmt.Errorf("reading the subscribers table's shape: %w", err)
+	case strings.Contains(ddl, "phone"):
+		return nil // rebuilt already
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("starting the subscribers rebuild: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, stmt := range []string{
+		`CREATE TABLE subscribers_rebuilt` + table,
+		`INSERT INTO subscribers_rebuilt (id, email, phone, lang, unsubscribe, created_at)
+		 SELECT id, email, NULL, lang, unsubscribe, created_at FROM subscribers WHERE confirmed_at IS NOT NULL`,
+		`DROP TABLE subscribers`,
+		`ALTER TABLE subscribers_rebuilt RENAME TO subscribers`,
+	} {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("rebuilding the subscribers table: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("finishing the subscribers rebuild: %w", err)
+	}
+
+	return nil
 }
 
-// ClaimMail is one INSERT … SELECT … WHERE, so two requests at the same
-// moment cannot both pass a count that only one of them should.
-func (s *Store) ClaimMail(ctx context.Context, email types.Email, now, addressSince time.Time, perAddress int, hourSince time.Time, perHour int) (bool, error) {
+// ByContact is every row holding either half of c: none, one, or -- when the
+// address is one person's and the number another's -- two.
+func (s *Store) ByContact(ctx context.Context, c types.Contact) ([]subscriberbus.Subscriber, error) {
+	return s.list(ctx, `WHERE email = ? OR phone = ? ORDER BY created_at, id`, nullable(c.Email.String()), nullable(c.Phone.String()))
+}
+
+// Add inserts the row. A half already on the list, from another request at
+// the same moment, is a UNIQUE conflict, reported as false.
+func (s *Store) Add(ctx context.Context, sub subscriberbus.Subscriber) (bool, error) {
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO subscribers (id, email, phone, lang, unsubscribe, created_at)
+VALUES (?, ?, ?, ?, ?, ?)`,
+		sub.ID.String(), nullable(sub.Contact.Email.String()), nullable(sub.Contact.Phone.String()),
+		string(sub.Lang), sub.Unsubscribe, sub.CreatedAt.UnixMilli())
+
+	switch {
+	case sqldb.IsUniqueViolation(err):
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("adding to the list: %w", err)
+	}
+
+	return true, nil
+}
+
+// Extend fills in the halves of c that the row has empty, as one statement:
+// COALESCE keeps a half the row already has. A half taken by another row in
+// the meantime is a UNIQUE conflict, reported as false.
+func (s *Store) Extend(ctx context.Context, id types.ID, c types.Contact) (bool, error) {
 	res, err := s.db.ExecContext(ctx, `
-INSERT INTO subscriber_mails (email, sent_at)
-SELECT ?, ?
-WHERE (SELECT count(*) FROM subscriber_mails WHERE email = ? AND sent_at > ?) < ?
-  AND (SELECT count(*) FROM subscriber_mails WHERE sent_at > ?) < ?`,
-		email.String(), now.UnixMilli(),
-		email.String(), addressSince.UnixMilli(), perAddress,
-		hourSince.UnixMilli(), perHour)
-	if err != nil {
-		return false, fmt.Errorf("claiming a confirmation mail: %w", err)
+UPDATE subscribers SET email = COALESCE(email, ?), phone = COALESCE(phone, ?) WHERE id = ?`,
+		nullable(c.Email.String()), nullable(c.Phone.String()), id.String())
+
+	switch {
+	case sqldb.IsUniqueViolation(err):
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("adding to a subscriber: %w", err)
 	}
 
 	n, err := res.RowsAffected()
@@ -130,37 +186,18 @@ WHERE (SELECT count(*) FROM subscriber_mails WHERE email = ? AND sent_at > ?) < 
 	return n == 1, nil
 }
 
-// Add inserts the row, already on the list. On an existing address it
-// changes nothing -- unless the row is pending from the double opt-in, which
-// it puts on the list then, keeping its ID and unsubscribe token: they asked
-// twice. The WHERE on the upsert is what leaves a row on the list alone, in
-// the same statement.
-func (s *Store) Add(ctx context.Context, sub subscriberbus.Subscriber) (subscriberbus.Subscriber, bool, error) {
-	res, err := s.db.ExecContext(ctx, `
-INSERT INTO subscribers (id, email, lang, unsubscribe, confirmed_at, created_at)
-VALUES (?, ?, ?, ?, ?, ?)
-ON CONFLICT (email) DO UPDATE SET
-    confirmed_at = excluded.confirmed_at,
-    confirm_hash = NULL, confirm_expires_at = NULL,
-    lang = excluded.lang
-WHERE confirmed_at IS NULL`,
-		sub.ID.String(), sub.Email.String(), string(sub.Lang), sub.Unsubscribe,
-		sub.CreatedAt.UnixMilli(), sub.CreatedAt.UnixMilli())
+// ByID is one row.
+func (s *Store) ByID(ctx context.Context, id types.ID) (subscriberbus.Subscriber, error) {
+	rows, err := s.list(ctx, `WHERE id = ?`, id.String())
 	if err != nil {
-		return subscriberbus.Subscriber{}, false, fmt.Errorf("adding the address: %w", err)
+		return subscriberbus.Subscriber{}, err
 	}
 
-	n, err := res.RowsAffected()
-	if err != nil {
-		return subscriberbus.Subscriber{}, false, fmt.Errorf("counting the rows changed: %w", err)
+	if len(rows) == 0 {
+		return subscriberbus.Subscriber{}, subscriberbus.ErrNotFound
 	}
 
-	got, err := s.ByEmail(ctx, sub.Email)
-	if err != nil {
-		return subscriberbus.Subscriber{}, false, err
-	}
-
-	return got, n == 1, nil
+	return rows[0], nil
 }
 
 // Unsubscribe deletes the row with the token.
@@ -197,10 +234,32 @@ func (s *Store) Remove(ctx context.Context, id types.ID) error {
 	return nil
 }
 
-// All is every row on the list, earliest first; a pending row left from the
-// double opt-in is not on it.
+// Stopped takes the number off its row, and the row off the list when the
+// number was all it had: a row with no email and no phone is nobody the list
+// can reach. Two statements, and in this order, because the CHECK refuses a
+// row with neither half -- so the phone-only row goes first, and the UPDATE
+// then finds only rows that keep their email.
+func (s *Store) Stopped(ctx context.Context, p types.Phone) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM subscribers WHERE phone = ? AND email IS NULL`, p.String()); err != nil {
+		return fmt.Errorf("removing a stopped number: %w", err)
+	}
+
+	if _, err := s.db.ExecContext(ctx, `UPDATE subscribers SET phone = NULL WHERE phone = ?`, p.String()); err != nil {
+		return fmt.Errorf("removing a stopped number: %w", err)
+	}
+
+	return nil
+}
+
+// All is every row on the list, earliest first.
 func (s *Store) All(ctx context.Context) ([]subscriberbus.Subscriber, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+columns+` FROM subscribers WHERE confirmed_at IS NOT NULL ORDER BY confirmed_at, id`)
+	return s.list(ctx, `ORDER BY created_at, id`)
+}
+
+const columns = `id, email, phone, lang, unsubscribe, created_at`
+
+func (s *Store) list(ctx context.Context, rest string, args ...any) ([]subscriberbus.Subscriber, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+columns+` FROM subscribers `+rest, args...)
 	if err != nil {
 		return nil, fmt.Errorf("reading the list: %w", err)
 	}
@@ -224,43 +283,15 @@ func (s *Store) All(ctx context.Context) ([]subscriberbus.Subscriber, error) {
 	return out, nil
 }
 
-// Prune deletes old mail records, and pending rows from the double opt-in
-// whose link has expired.
-func (s *Store) Prune(ctx context.Context, now, mailsBefore time.Time) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM subscribers WHERE confirmed_at IS NULL AND confirm_expires_at <= ?`, now.UnixMilli()); err != nil {
-		return fmt.Errorf("pruning expired sign-ups: %w", err)
-	}
-
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM subscriber_mails WHERE sent_at < ?`, mailsBefore.UnixMilli()); err != nil {
-		return fmt.Errorf("pruning the mail record: %w", err)
-	}
-
-	return nil
-}
-
-const columns = `id, email, lang, unsubscribe, created_at`
-
-func (s *Store) one(ctx context.Context, where string, args ...any) (subscriberbus.Subscriber, error) {
-	sub, err := scan(s.db.QueryRowContext(ctx, `SELECT `+columns+` FROM subscribers `+where, args...))
-	if errors.Is(err, sql.ErrNoRows) {
-		return subscriberbus.Subscriber{}, subscriberbus.ErrNotFound
-	}
-
-	return sub, err
-}
-
 func scan(row interface{ Scan(...any) error }) (subscriberbus.Subscriber, error) {
 	var (
-		sub             subscriberbus.Subscriber
-		id, email, lang string
-		created         int64
+		sub          subscriberbus.Subscriber
+		id, lang     string
+		email, phone sql.NullString
+		created      int64
 	)
 
-	if err := row.Scan(&id, &email, &lang, &sub.Unsubscribe, &created); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return sub, err
-		}
-
+	if err := row.Scan(&id, &email, &phone, &lang, &sub.Unsubscribe, &created); err != nil {
 		return sub, fmt.Errorf("reading a subscriber: %w", err)
 	}
 
@@ -269,8 +300,16 @@ func scan(row interface{ Scan(...any) error }) (subscriberbus.Subscriber, error)
 		return sub, fmt.Errorf("a stored subscriber has a bad id: %w", err)
 	}
 
-	if sub.Email, err = types.ParseEmail(email); err != nil {
-		return sub, fmt.Errorf("a stored subscriber has a bad address: %w", err)
+	if email.Valid {
+		if sub.Contact.Email, err = types.ParseEmail(email.String); err != nil {
+			return sub, fmt.Errorf("a stored subscriber has a bad address: %w", err)
+		}
+	}
+
+	if phone.Valid {
+		if sub.Contact.Phone, err = types.ParsePhone(phone.String); err != nil {
+			return sub, fmt.Errorf("a stored subscriber has a bad number: %w", err)
+		}
 	}
 
 	if sub.Lang, err = types.ParseLang(lang); err != nil {
@@ -280,4 +319,14 @@ func scan(row interface{ Scan(...any) error }) (subscriberbus.Subscriber, error)
 	sub.CreatedAt = time.UnixMilli(created).UTC()
 
 	return sub, nil
+}
+
+// nullable is NULL for an empty half, so that UNIQUE -- which never counts
+// two NULLs as equal -- lets any number of rows lack one.
+func nullable(s string) any {
+	if s == "" {
+		return nil
+	}
+
+	return s
 }

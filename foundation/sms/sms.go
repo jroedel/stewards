@@ -307,3 +307,62 @@ func (r *Recorder) Last() (Message, bool) {
 
 	return r.sent[len(r.sent)-1], true
 }
+
+// gsm is the GSM 03.38 basic character set, which a text is sent in when
+// every character of it is here: 160 to a segment. One character outside it
+// -- á, í, ó or ú, which Spanish is full of, or an emoji -- and the whole
+// text goes as UCS-2 instead, 70 to a segment. ñ, é and ü are in it; the
+// other Spanish vowels are not.
+const gsm = "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?" +
+	"¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà"
+
+// gsmExtended are in the set by an escape, and count as two.
+const gsmExtended = "^{}\\[~]|€"
+
+// Segments is how many text messages body goes as, and whether it needs
+// UCS-2 to do it. Each segment is billed, and a long text arrives in pieces
+// on an old phone, so a steward writing one is shown the count. Twilio's
+// own rule: one segment up to 160 GSM characters or 70 UCS-2 units, and
+// beyond that 153 or 67 to a segment, the rest being the header that joins
+// them.
+func Segments(body string) (n int, unicode bool) {
+	units := 0
+
+	for _, r := range body {
+		switch {
+		case strings.ContainsRune(gsm, r):
+			units++
+		case strings.ContainsRune(gsmExtended, r):
+			units += 2
+		default:
+			unicode = true
+		}
+	}
+
+	if unicode {
+		// UTF-16 code units: an emoji outside the basic plane is two.
+		units = 0
+		for _, r := range body {
+			if r > 0xFFFF {
+				units += 2
+			} else {
+				units++
+			}
+		}
+
+		return segmentsOf(units, 70, 67), true
+	}
+
+	return segmentsOf(units, 160, 153), false
+}
+
+func segmentsOf(units, single, multi int) int {
+	switch {
+	case units == 0:
+		return 0
+	case units <= single:
+		return 1
+	default:
+		return (units + multi - 1) / multi
+	}
+}

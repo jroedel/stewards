@@ -1,0 +1,26 @@
+{{/*
+  contact-fields: the email and mobile number a volunteer leaves on a form
+  that will write back to them, called with (pass $l .Contact) and a
+  page.ContactFields. The email list and a stewardship day's sign-up both
+  draw it, so the two ask the same way.
+
+  Neither field is required in the markup when the phone is offered, since
+  either will do; the server says so when both are blank. With no phone
+  field the email is required, as the form always was.
+
+  The honeypot is here too: every form a stranger can post that writes back
+  to them needs one, and a form that forgot it would be the one a bot finds.
+*/}}
+{{define "contact-fields"}}{{$l := .Lang}}{{with .Data}}
+{{if and .Problem.Written (eq .Field "")}}<p class="field-problem" role="alert">{{say $l .Problem}}</p>{{end}}
+<label for="{{.ID}}-email">{{t $l "Your email"}}</label>
+{{if eq .Field "email"}}<p class="field-problem" role="alert">{{say $l .Problem}}</p>{{end}}
+<input id="{{.ID}}-email" name="email" type="email" value="{{.Email}}" autocomplete="email" inputmode="email"{{if not .Texts}} required{{end}}>
+{{if .Texts}}
+<label for="{{.ID}}-phone">{{t $l "Your mobile number"}}</label>
+{{if eq .Field "phone"}}<p class="field-problem" role="alert">{{say $l .Problem}}</p>{{end}}
+<input id="{{.ID}}-phone" name="phone" type="tel" value="{{.Phone}}" autocomplete="tel" inputmode="tel" aria-describedby="{{.ID}}-phone-help">
+<p class="help" id="{{.ID}}-phone-help">{{t $l "Either one, or both: we'll write to whichever you give. A number from outside the US starts with + and its country code, like +52. By leaving a number you agree to texts about stewardship days; message and data rates may apply, and you can reply STOP at any time."}}</p>
+{{end}}
+<div class="honeypot" aria-hidden="true"><label for="{{.ID}}-website">Leave this empty</label><input id="{{.ID}}-website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
+{{end}}{{end}}

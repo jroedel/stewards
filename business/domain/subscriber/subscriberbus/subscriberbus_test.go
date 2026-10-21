@@ -2,13 +2,19 @@ package subscriberbus_test
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/jroedel/stewards/business/domain/notice/noticebus"
+	"github.com/jroedel/stewards/business/domain/notice/stores/noticedb"
 	"github.com/jroedel/stewards/business/domain/subscriber/stores/subscriberdb"
 	"github.com/jroedel/stewards/business/domain/subscriber/subscriberbus"
 	"github.com/jroedel/stewards/business/types"
+	"github.com/jroedel/stewards/foundation/mail"
+	"github.com/jroedel/stewards/foundation/sms"
 	"github.com/jroedel/stewards/foundation/sqldb"
 )
 
@@ -27,6 +33,7 @@ func setup(t *testing.T) (*subscriberbus.Business, *time.Time) {
 		func() error { return sqldb.Init(t.Context(), db) },
 		func() error { return subscriberdb.Init(t.Context(), db) },
 		func() error { return subscriberdb.Init(t.Context(), db) }, // at every startup
+		func() error { return noticedb.Init(t.Context(), db) },
 	} {
 		if err := init(); err != nil {
 			t.Fatal(err)
@@ -39,18 +46,24 @@ func setup(t *testing.T) (*subscriberbus.Business, *time.Time) {
 
 	clock := time.Date(2026, 10, 4, 10, 0, 0, 0, time.UTC)
 
-	return subscriberbus.NewBusiness(subscriberdb.NewStore(db), func() time.Time { return clock }), &clock
+	now := func() time.Time { return clock }
+	notices := noticebus.NewBusiness(noticedb.NewStore(db), &mail.Recorder{}, &sms.Recorder{}, now)
+
+	return subscriberbus.NewBusiness(subscriberdb.NewStore(db), notices, now), &clock
 }
 
-func addr(t *testing.T, s string) types.Email {
+// addr is an email-only contact; contact is either or both.
+func addr(t *testing.T, s string) types.Contact { return contact(t, s, "") }
+
+func contact(t *testing.T, email, phone string) types.Contact {
 	t.Helper()
 
-	e, err := types.ParseEmail(s)
+	c, err := types.ParseContact(email, phone)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return e
+	return c
 }
 
 func TestSigningUpPutsTheAddressOnTheListAtOnce(t *testing.T) {
@@ -62,7 +75,7 @@ func TestSigningUpPutsTheAddressOnTheListAtOnce(t *testing.T) {
 	}
 
 	s := req.Subscriber
-	if s.Email.String() != "walker@example.org" || s.Lang != types.Spanish || s.Unsubscribe == "" || s.ID.Zero() {
+	if s.Contact.Email.String() != "walker@example.org" || s.Lang != types.Spanish || s.Unsubscribe == "" || s.ID.Zero() {
 		t.Errorf("added %+v", s)
 	}
 
@@ -83,7 +96,7 @@ func TestTheCapsStopTheMail(t *testing.T) {
 
 	// One address, leaving and coming back: PerAddress welcomes in a day,
 	// then nothing -- and not on the list -- until a day has passed.
-	for i := range subscriberbus.PerAddress {
+	for i := range noticebus.PerAddress {
 		req, _ := list.Request(t.Context(), addr(t, "walker@example.org"), types.English)
 		if req.Outcome != subscriberbus.Added {
 			t.Fatalf("welcome %d: %s", i+1, req.Outcome)
@@ -111,8 +124,8 @@ func TestTheCapsStopTheMail(t *testing.T) {
 	// Every address together: PerHour, then nothing, and no new rows.
 	*clock = clock.Add(2 * time.Hour)
 
-	for i := range subscriberbus.PerHour {
-		e := addr(t, "visitor"+string(rune('a'+i%26))+string(rune('a'+i/26))+"@example.org")
+	for i := range noticebus.PerHour {
+		e := addr(t, fmt.Sprintf("visitor%d@example.org", i))
 		if req, _ := list.Request(t.Context(), e, types.English); req.Outcome != subscriberbus.Added {
 			t.Fatalf("welcome %d of the hour: %s", i+1, req.Outcome)
 		}
@@ -161,5 +174,63 @@ func TestAStewardRemovesSomebody(t *testing.T) {
 
 	if err := list.Remove(t.Context(), req.Subscriber.ID); !errors.Is(err, subscriberbus.ErrNotFound) {
 		t.Errorf("removing twice: %v, want ErrNotFound", err)
+	}
+}
+
+func TestAPhoneJoinsItsPersonOrStandsAlone(t *testing.T) {
+	list, _ := setup(t)
+
+	first, _ := list.Request(t.Context(), addr(t, "ana@example.invalid"), types.Spanish)
+
+	// Ana again, with her phone: one row, the phone added, welcomed alone.
+	both, err := list.Request(t.Context(), contact(t, "ana@example.invalid", "512 555 0123"), types.English)
+	if err != nil || both.Outcome != subscriberbus.Added || both.Subscriber.ID != first.Subscriber.ID {
+		t.Fatalf("adding a phone: %+v %v", both, err)
+	}
+
+	if !both.New.Email.Zero() || both.New.Phone.String() != "+15125550123" {
+		t.Errorf("the welcome goes to %+v, want the phone alone", both.New)
+	}
+
+	if both.Subscriber.Contact.Phone.Zero() || both.Subscriber.Lang != types.Spanish {
+		t.Errorf("the row is %+v; want the phone on it and its language kept", both.Subscriber)
+	}
+
+	// The same again: nothing new.
+	if again, _ := list.Request(t.Context(), contact(t, "ana@example.invalid", "512 555 0123"), types.English); again.Outcome != subscriberbus.AlreadyOn {
+		t.Errorf("again: %+v", again)
+	}
+
+	// Somebody else's address beside Ana's phone: the address is new, but
+	// Ana's row has an address already, so it is a row of its own and
+	// Ana's is untouched.
+	luis, _ := list.Request(t.Context(), contact(t, "luis@example.invalid", "512 555 0123"), types.English)
+	if luis.Outcome != subscriberbus.Added || luis.Subscriber.ID == first.Subscriber.ID || !luis.New.Phone.Zero() {
+		t.Errorf("luis: %+v", luis)
+	}
+
+	if ana, _ := list.All(t.Context()); len(ana) != 2 || !slices.ContainsFunc(ana, func(s subscriberbus.Subscriber) bool {
+		return s.ID == first.Subscriber.ID && s.Contact.Phone.String() == "+15125550123"
+	}) {
+		t.Errorf("the list: %+v", ana)
+	}
+
+	// A phone alone.
+	solo, _ := list.Request(t.Context(), contact(t, "", "512 555 0124"), types.English)
+	if solo.Outcome != subscriberbus.Added || !solo.Subscriber.Contact.Email.Zero() {
+		t.Errorf("phone only: %+v", solo)
+	}
+
+	// STOP: the phone-only row goes, and Ana keeps her email.
+	for _, p := range []string{"512 555 0123", "512 555 0124"} {
+		phone, _ := types.ParsePhone(p)
+		if err := list.Stopped(t.Context(), phone); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	all, _ := list.All(t.Context())
+	if len(all) != 2 || slices.ContainsFunc(all, func(s subscriberbus.Subscriber) bool { return !s.Contact.Phone.Zero() }) {
+		t.Errorf("after STOP: %+v", all)
 	}
 }

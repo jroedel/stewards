@@ -317,6 +317,13 @@ func (rn *Renderer) Plain(l types.Lang, v any) string {
 	return s
 }
 
+// PlainShown is Plain, and the language the words came out in: l, or the
+// other one while the translation waits. A preview of a message says which.
+func (rn *Renderer) PlainShown(l types.Lang, v any) (string, types.Lang) {
+	s, shown, _ := compose(rn, l, v, false)
+	return s, shown
+}
+
 // languages is each language's name, as a screen names it: "Spanish, by
 // Claude", "Since … · Spanish".
 var languages = map[types.Lang]types.Text{
