@@ -26,7 +26,7 @@
 <h2 id="planned-h">{{say $l .Copy.PlannedHere}}</h2>
 <p class="help">{{say $l .Copy.PlannedHelp}}</p>
 {{if .Planned}}<ul class="rows">
-{{range $line := .Planned}}<li><a class="row{{if .Thumb}} row-photo{{end}}" href="/plants/{{.Slug}}">{{with .Thumb}}<img class="row-thumb" src="/photos/{{.}}/small.jpg" width="64" height="64" alt="" loading="lazy">{{end}}<div>
+{{range $line := .Planned}}<li><a class="row{{if .Thumb}} row-photo{{end}}" href="/plants/{{.Slug}}">{{with .Thumb}}<img class="row-thumb" src="/photos/{{.}}/thumb.jpg" width="64" height="64" alt="" loading="lazy">{{end}}<div>
   <div class="row-name">{{say $l .Name}}</div>
   {{if .Scientific}}<div class="row-note"><i>{{.Scientific}}</i></div>{{end}}
   {{with .Size}}<div class="row-note">{{say $l .}}</div>{{end}}

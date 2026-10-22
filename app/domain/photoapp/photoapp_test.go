@@ -253,7 +253,7 @@ func TestAStewardAddsAPhotoAndChecksIt(t *testing.T) {
 		t.Errorf("a steward's view of an unchecked photo: %d %q", w.Code, w.Header().Get("Cache-Control"))
 	}
 
-	for _, file := range []string{"small.jpg", "large.jpg", "full.jpg", "original.jpg", "original"} {
+	for _, file := range []string{"small.jpg", "large.jpg", "thumb.jpg", "full.jpg", "original.jpg", "original"} {
 		if w := s.get("/photos/"+id+"/"+file, false); w.Code != http.StatusNotFound {
 			t.Errorf("signed out, %s of an unchecked photo: %d", file, w.Code)
 		}
@@ -287,8 +287,13 @@ func TestAStewardAddsAPhotoAndChecksIt(t *testing.T) {
 		t.Fatalf("checking it: %d\n%s", w.Code, w.Body.String())
 	}
 
+	// Kept a day, and for a week after that shown from the phone while it
+	// asks whether it still stands: what keeps a card's pictures coming
+	// under the trees.
+	const kept = "public, max-age=86400, stale-while-revalidate=604800"
+
 	w = s.get("/photos/"+id+"/large.jpg", false)
-	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/jpeg" || w.Header().Get("Cache-Control") != "public, max-age=86400" {
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/jpeg" || w.Header().Get("Cache-Control") != kept {
 		t.Fatalf("signed out, the checked photo: %d %q %q", w.Code, w.Header().Get("Content-Type"), w.Header().Get("Cache-Control"))
 	}
 
@@ -299,12 +304,22 @@ func TestAStewardAddsAPhotoAndChecksIt(t *testing.T) {
 	// And at full size, under the same rule: the original's pixels, and
 	// as a JPEG, so not under the name a PNG's would have.
 	w = s.get("/photos/"+id+"/full.jpg", false)
-	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/jpeg" || w.Header().Get("Cache-Control") != "public, max-age=86400" {
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/jpeg" || w.Header().Get("Cache-Control") != kept {
 		t.Fatalf("signed out, the checked photo at full size: %d %q %q", w.Code, w.Header().Get("Content-Type"), w.Header().Get("Cache-Control"))
 	}
 
 	if img, err := jpeg.Decode(w.Body); err != nil || img.Bounds().Dx() != 900 {
 		t.Errorf("the full picture: %v, %v", err, img)
+	}
+
+	// And as a thumbnail, square, under the same rule.
+	w = s.get("/photos/"+id+"/thumb.jpg", false)
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/jpeg" || w.Header().Get("Cache-Control") != kept {
+		t.Fatalf("signed out, the checked photo's thumbnail: %d %q %q", w.Code, w.Header().Get("Content-Type"), w.Header().Get("Cache-Control"))
+	}
+
+	if img, err := jpeg.Decode(w.Body); err != nil || img.Bounds().Dx() != 192 || img.Bounds().Dy() != 192 {
+		t.Errorf("the thumbnail: %v, %v", err, img)
 	}
 
 	if w := s.get("/photos/"+id+"/full.png", true); w.Code != http.StatusNotFound {
@@ -501,9 +516,14 @@ func TestThePlaceCardShowsAPlannedPlantsFlower(t *testing.T) {
 
 	id := photoID.FindStringSubmatch(s.get(s.photosPath(), true).Body.String())[1]
 
+	// As the thumbnail, which a signed-out phone can fetch.
 	card := s.get("/places/rain-garden", false).Body.String()
-	if !strings.Contains(card, `class="row-thumb" src="/photos/`+id+`/small.jpg"`) {
+	if !strings.Contains(card, `class="row-thumb" src="/photos/`+id+`/thumb.jpg"`) {
 		t.Error("the planned plant's flower is not on the place card")
+	}
+
+	if w := s.get("/photos/"+id+"/thumb.jpg", false); w.Code != http.StatusOK {
+		t.Errorf("signed out, the card's thumbnail: %d", w.Code)
 	}
 
 	// And the plant card says where ours was taken.

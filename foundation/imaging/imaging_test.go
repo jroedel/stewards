@@ -225,6 +225,64 @@ func TestASmallTransparentPNGIsNotEnlargedOrBlackened(t *testing.T) {
 	}
 }
 
+// framed is a w×h image, green in its middle square and red in the margins
+// either side of it: a thumbnail cut from the middle has no red in it.
+func framed(w, h int) *image.RGBA {
+	side := min(w, h)
+	x0, y0 := (w-side)/2, (h-side)/2
+
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := range h {
+		for x := range w {
+			c := color.RGBA{255, 0, 0, 255}
+			if x >= x0 && x < x0+side && y >= y0 && y < y0+side {
+				c = color.RGBA{0, 160, 0, 255}
+			}
+			img.Set(x, y, c)
+		}
+	}
+
+	return img
+}
+
+// A thumbnail is the middle square of the small picture, ThumbSide across,
+// whichever way the picture is turned: what a list showed before by cropping
+// it in the page.
+func TestAThumbnailIsTheMiddleSquare(t *testing.T) {
+	for name, size := range map[string]image.Point{"landscape": {800, 600}, "portrait": {600, 800}} {
+		t.Run(name, func(t *testing.T) {
+			p, err := Thumbnail(jpegOf(t, framed(size.X, size.Y)))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if p.Width != ThumbSide || p.Height != ThumbSide {
+				t.Fatalf("got %d×%d, want %d square", p.Width, p.Height, ThumbSide)
+			}
+
+			img := decode(t, p.JPEG)
+			for _, at := range []image.Point{{1, 1}, {ThumbSide - 2, 1}, {1, ThumbSide - 2}, {ThumbSide - 2, ThumbSide - 2}} {
+				if isRed(img.At(at.X, at.Y)) {
+					t.Errorf("the corner at %v is the margin's red: not cut from the middle", at)
+				}
+			}
+		})
+	}
+}
+
+// A small picture smaller than a thumbnail -- a borrowed photo just over
+// MinSide -- is cut square and not blown up.
+func TestASmallThumbnailIsNotEnlarged(t *testing.T) {
+	p, err := Thumbnail(jpegOf(t, framed(150, 120)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if p.Width != 120 || p.Height != 120 {
+		t.Errorf("got %d×%d, want 120 square", p.Width, p.Height)
+	}
+}
+
 func TestWhatIsNotAPhotoIsRefused(t *testing.T) {
 	var gif bytes.Buffer
 	gif.WriteString("GIF89a")
