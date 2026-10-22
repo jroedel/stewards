@@ -220,3 +220,36 @@ func TestListGivesTheNewestFirstWithWhereEachIsRead(t *testing.T) {
 		t.Errorf("unchecked: %+v", unchecked)
 	}
 }
+
+// The glossary keeps terms as well as names: a short original already
+// translated -- a heading, a button -- is there, so the next night's batch
+// says the same; a sentence is not, nor one with a {placeholder}.
+func TestTheGlossaryKeepsTheScreensTerms(t *testing.T) {
+	b := setup(t).open(t)
+	b.ReadFrom(origins{
+		{Text: types.Text{EN: "Pull"}, Where: "the place card (Pull)"},
+		{Text: types.Text{EN: "Stewardship day"}, Where: "the home page (Day)"},
+		{Text: types.Text{EN: "Take these out, root and all."}, Where: "the place card (PullHelp)"},
+		{Text: types.Text{EN: "{count} to pull"}, Where: "the place card (ToPull)"},
+		{Text: types.Text{EN: "Mulch"}, Where: "the home page (Waiting)"},
+	})
+
+	w := waiting(t, b, 10)
+	uploads := []translationbus.Upload{}
+	for _, p := range w.Pending {
+		if p.Source != "Mulch" {
+			uploads = append(uploads, translationbus.Upload{Key: p.Key, From: types.English, Translated: "es: " + p.Source})
+		}
+	}
+	translate(t, b, uploads...)
+
+	var got []string
+	for _, g := range waiting(t, b, 10).Glossary {
+		got = append(got, g.EN)
+	}
+
+	slices.Sort(got)
+	if want := []string{"Pull", "Stewardship day"}; !slices.Equal(got, want) {
+		t.Errorf("glossary %q, want %q", got, want)
+	}
+}
