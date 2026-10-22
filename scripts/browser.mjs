@@ -99,8 +99,16 @@ export async function launch() {
   });
   const tail = () => (said.trim() ? `\nChrome said, at the end:\n${said.trim()}` : "\nChrome said nothing.");
 
+  // The first Chrome of a run on a GitHub runner takes 7 to 9 s to say it is
+  // listening, and once took more than the 20 s this used to allow; the
+  // later ones take half a second. A minute is still a limit.
+  //
+  // A Chrome that is given up on is killed here: nothing else holds it, and
+  // its stderr, piped to this process, kept Node from ever exiting. That run
+  // sat silent until the job's 10-minute limit, and the failure's message,
+  // which Node prints at the end, was never printed.
   const url = await new Promise((done, fail) => {
-    const timer = setTimeout(() => fail(new Error(`Chrome did not start in 20 s${tail()}`)), 20_000);
+    const timer = setTimeout(() => fail(new Error(`Chrome did not start in 60 s${tail()}`)), 60_000);
     const ready = () => {
       const m = /DevTools listening on (ws:\/\/\S+)/.exec(said);
       if (m) {
@@ -114,6 +122,10 @@ export async function launch() {
       clearTimeout(timer);
       fail(new Error(`Chrome exited (${code}) before it was ready${tail()}`));
     });
+  }).catch((err) => {
+    proc.kill("SIGKILL");
+    rmSync(profile, { recursive: true, force: true });
+    throw err;
   });
 
   const cdp = await connect(url, tail);
