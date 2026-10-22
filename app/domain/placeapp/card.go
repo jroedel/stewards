@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -197,10 +198,35 @@ type plantLine struct {
 
 	// Thumb is the id of the plant's flower photo, or its full-size one,
 	// for the To plant list: a planter imagining the bed needs to see what is
-	// going in. Empty when it has neither checked yet. Shown as a square,
-	// cropped by the stylesheet, so its own size is not needed.
-	Thumb string
+	// going in. Empty when it has neither checked yet.
+	//
+	// LeafThumb is the one beside it in Protect, Pull and Careful, which a
+	// weeder reads with a plant in front of them: its leaf, which is what
+	// tells it apart most of the year, and failing that whatever checked
+	// photo it has (weedKinds). Empty when it has none, and the row says so.
+	//
+	// Both are served as thumbnails, square and the same size whatever the
+	// photo was, so their own sizes are not needed.
+	Thumb, LeafThumb string
+
+	// PlantURL and WeedURL open the plant's card at Planting, from To plant,
+	// and at Weeding, from a panel: a weeder with a seedling at their feet
+	// wants the young plant and the leaf first, not the flower. Both say
+	// which place they came from, so that the plant's back link comes back
+	// here rather than to the list of places.
+	PlantURL, WeedURL string
 }
+
+// plantKinds is the photo beside a plant on the To plant list, in the order
+// they are looked for, and weedKinds the one beside it in a panel. A weeder's
+// list falls back through every kind, because any picture of the plant is
+// better than none when deciding whether to pull it; a planter's does not,
+// because a seedling or a bare winter stem says nothing about how the bed
+// will look.
+var (
+	plantKinds = []photobus.Kind{photobus.Flower, photobus.Mature}
+	weedKinds  = []photobus.Kind{photobus.Leaf, photobus.Young, photobus.Flower, photobus.Fruit, photobus.Mature, photobus.Winter}
+)
 
 type cardView struct {
 	Copy cardWording
@@ -382,13 +408,27 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 	v.Listed = len(listed) > 0
 	v.Months = page.Months()
 
+	// Every photo, in one read rather than one per plant: with a picture
+	// beside every plant in the panels, a place of twenty plants was
+	// twenty queries.
+	var photos map[types.ID][]photobus.Photo
+	if v.Listed {
+		if photos, err = a.photos.BySpecies(ctx); err != nil {
+			a.fail(w, r, "reading the photos for a card", err)
+
+			return
+		}
+	}
+
 	for _, l := range listed {
 		sp, ok := species[l.SpeciesID]
 		if !ok {
 			continue // removed between the two reads; the reference makes it rare
 		}
 
-		line := lineOf(sp, l)
+		line := lineOf(sp, l, p.Slug)
+		line.Thumb = thumbOf(photos[sp.ID], plantKinds)
+		line.LeafThumb = thumbOf(photos[sp.ID], weedKinds)
 
 		// A planned plant is always protected (listingbus.Set), so it is in
 		// the Protect panel as well as on the To plant list: the panel is
@@ -404,12 +444,6 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if l.Planned {
-			if line, err = a.withThumb(r, line, sp); err != nil {
-				a.fail(w, r, "reading a planned plant's photos", err)
-
-				return
-			}
-
 			v.Planned = append(v.Planned, line)
 		}
 
@@ -453,11 +487,15 @@ func (a app) speciesByID(r *http.Request) (map[types.ID]speciesbus.Species, erro
 	return out, nil
 }
 
-func lineOf(sp speciesbus.Species, l listingbus.Listing) plantLine {
+// lineOf is a listing as the card shows it, from the place whose slug is
+// from.
+func lineOf(sp speciesbus.Species, l listingbus.Listing, from string) plantLine {
 	line := plantLine{
 		SpeciesID: sp.ID.String(), Action: l.Action,
 		Slug: sp.Slug, Name: sp.Common, Scientific: sp.Scientific, Note: l.Note,
 		Bloom: make([]bool, 12), BloomWords: page.Run(sp.Bloom),
+		PlantURL: "/plants/" + sp.Slug + "?" + url.Values{"from": {from}}.Encode(),
+		WeedURL:  "/plants/" + sp.Slug + "?" + url.Values{"from": {from}, "view": {"weeding"}}.Encode(),
 	}
 
 	if len(sp.Swatches) > 0 {
@@ -514,21 +552,15 @@ func summary(listed []listingbus.Listing) page.List {
 	return out
 }
 
-// withThumb adds the picture a planter is shown beside a planned plant: its
-// flower if it has a checked one, else the grown plant.
-func (a app) withThumb(r *http.Request, line plantLine, sp speciesbus.Species) (plantLine, error) {
-	photos, err := a.photos.ForSpecies(r.Context(), sp.ID)
-	if err != nil {
-		return line, err
-	}
-
-	for _, k := range []photobus.Kind{photobus.Flower, photobus.Mature} {
+// thumbOf is the id of the photo shown beside a plant: the best checked one
+// of the first of kinds it has, or "" for none. Checked only, as everywhere a
+// volunteer looks; an unchecked photo is a steward's alone (photobus.Lead).
+func thumbOf(photos []photobus.Photo, kinds []photobus.Kind) string {
+	for _, k := range kinds {
 		if p, ok := photobus.Best(photos, k); ok {
-			line.Thumb = p.ID.String()
-
-			break
+			return p.ID.String()
 		}
 	}
 
-	return line, nil
+	return ""
 }

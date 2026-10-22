@@ -166,7 +166,7 @@ The phase 1 mockups are at <https://claude.ai/artifact/EZV9C92thqqWH5drvW2AQr>.
 | Screen | Its job | Key components |
 |---|---|---|
 | **Map (home)** | Where are you working? | Logo header · the "Today" work-day banner (blue, yellow eyebrow) · schematic map with tappable places · list of places (the map's accessible twin) · bottom nav |
-| **Place** | What's here, what do I do? | Photo point with date · condition chips (sun, water, purpose) · today's job, English and Spanish · zone layout · "Planned here" rows · Protect and Pull panels · bloom calendar, after the panels so a weeder need not scroll past it (2026-10-21) |
+| **Place** | What's here, what do I do? | Photo point with date · condition chips (sun, water, purpose) · today's job, English and Spanish · zone layout · "Planned here" rows · Protect, Pull and Careful panels, each plant with its leaf · bloom calendar, after the panels so a weeder need not scroll past it (2026-10-21) |
 | **Species** | What is it, and will it look right here? | Planting and Weeding tabs on one record · close-up and in-context photos · color, bloom strip, mature size against a person, light · weeding: seedling photo, look-alikes, action for this place |
 | **A photo, closer** | Is that the hairy stem, or the smooth one? | Tapping a card's photo (a magnifying glass in its corner) opens it on a page of its own at the size it was sent, up to 4096 px · the large picture first, the full one over it when it arrives · the credit as on the card · *Pinch to zoom in*: the phone's own zoom, no script · *Open the photo by itself* for a laptop · back to the card's same view. The inbox's *Sort a photo* zooms the same way |
 | **What is this?** | I'm not sure | Photo · place picker (from the map) · "I don't know / It's one of ours / Something to fix" · note · Send (yellow) · "Your photos" with ID status and the stewards' reply |
@@ -192,7 +192,8 @@ The phase 1 mockups are at <https://claude.ai/artifact/EZV9C92thqqWH5drvW2AQr>.
 - **Chip:** a tinted pill with an icon and a short fact ("Part shade · 4–5 h morning sun").
 - **Place row:** photo-point thumbnail, name, one-line location, and a status tag ("Today", "Planted Sep 22").
 - **Bloom strip:** twelve month cells with filled flower-color swatches, plus markers for key dates (for example, Feb 6).
-- **Protect and Pull panels:** a pair, always side by side, always with icon and word.
+- **Protect, Pull and Careful panels:** always with icon and word, one under another. Each plant is a row: its leaf photo as a thumbnail (failing that, the young plant, flower, fruit, grown plant or winter, checked photos only), its name and note, and the whole row opens the plant at Weeding. A plant with no checked photo has a drawn leaf and says "No photo yet". They were a pair side by side until 2026-10-21, when the stewards chose the photo rows: half a phone's width had room for a name and nothing else.
+- **Back to where you came from:** a plant opened from a place goes back to that place ("‹ Switchbacks"), through both its views and its photos' own pages, so a volunteer working through a bed returns to the bed after each plant.
 - **Empty state:** the isotype watermark with one sentence and one action.
 - **Plant picker:** wherever a steward chooses one of our plants from the whole list, a box with a magnifying glass rather than a long list. Any part of any word finds it, common, scientific or Spanish ("drum" finds the Turk's caps), the part typed marked on each match, the scientific name under the common one, and a tap chooses. Without its script it is the plain list it replaced.
 

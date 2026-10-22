@@ -1,18 +1,18 @@
 {{define "title"}}{{.Data.Name.In .Lang}} · Garden stewards{{end}}
-{{define "masthead"}}<a class="back" href="/places"><span>‹ {{say .Lang .Data.Copy.Back}}</span></a>{{end}}
+{{define "masthead"}}<a class="back" href="{{.Data.BackURL}}"><span>‹ {{say .Lang .Data.Back}}</span></a>{{end}}
 {{define "content"}}{{$l := .Lang}}{{with .Data}}
 <h1>{{say $l .Name}}</h1>
 {{if .Scientific}}<p class="scientific"><i>{{.Scientific}}</i></p>{{end}}
 <p class="row-tags">{{if .Status.Written}}<span class="tag{{if .Invasive}} tag-off{{end}}">{{say $l .Status}}</span>{{end}}{{if not .Confirmed}}<span class="tag tag-open">{{say $l .Copy.NotConfirmed}}</span>{{end}}</p>
 
 <nav class="views" aria-label="View">
-  <a href="/plants/{{.Slug}}"{{if not .Weeding}} aria-current="page"{{end}}>{{say $l .Copy.Planting}}</a>
-  <a href="/plants/{{.Slug}}?view=weeding"{{if .Weeding}} aria-current="page"{{end}}>{{say $l .Copy.Weeding}}</a>
+  <a href="{{.PlantingURL}}"{{if not .Weeding}} aria-current="page"{{end}}>{{say $l .Copy.Planting}}</a>
+  <a href="{{.WeedingURL}}"{{if .Weeding}} aria-current="page"{{end}}>{{say $l .Copy.Weeding}}</a>
 </nav>
 
 {{range .Figures}}
 <figure class="photo">
-  <a class="photo-zoom" href="/plants/{{$.Data.Slug}}/photos/{{.ID}}{{if $.Data.Weeding}}?view=weeding{{end}}"><span class="sr-only">{{say $l $.Data.Copy.ZoomIn}}</span>
+  <a class="photo-zoom" href="{{.Zoom}}"><span class="sr-only">{{say $l $.Data.Copy.ZoomIn}}</span>
   <img src="/photos/{{.ID}}/small.jpg" srcset="/photos/{{.ID}}/small.jpg {{.SmallW}}w, /photos/{{.ID}}/large.jpg {{.LargeW}}w" sizes="(max-width: 640px) 100vw, 600px" width="{{.Width}}" height="{{.Height}}" alt="{{words $l .Alt}}"{{if gt (len $.Data.Figures) 1}} loading="lazy"{{end}}></a>
   <figcaption><strong>{{say $l .Kind}}</strong>
     <span class="photo-credit">{{if .SourceURL}}{{say $l $.Data.Copy.PhotoBy}} {{say $l .Credit}}, {{.License}} · <a href="{{.SourceURL}}" rel="noopener">{{say $l $.Data.Copy.Source}}</a>{{else}}{{say $l .Credit}}{{if .Where.Written}} · {{say $l .Where}}{{end}}{{end}}{{with .When}} · {{say $l .}}{{end}}</span>

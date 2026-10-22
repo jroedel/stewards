@@ -1,11 +1,17 @@
 package placeapp_test
 
 import (
+	"bytes"
+	"image"
+	"image/jpeg"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/jroedel/stewards/business/domain/photo/photobus"
+	"github.com/jroedel/stewards/business/types"
 )
 
 // plant adds a species the way a steward would, on its own screen, and
@@ -174,7 +180,7 @@ func TestTheCardSaysWhatToProtectAndWhatToPull(t *testing.T) {
 	for _, want := range []string{
 		"To plant",
 		"the note says how many more",
-		`href="/plants/brazos-penstemon"`,
+		`href="/plants/brazos-penstemon?from=rain-garden-inflow"`,
 		"Six around the pipe outlets",
 		"When it flowers",
 		`fill="#b0418f"`,
@@ -182,7 +188,7 @@ func TestTheCardSaysWhatToProtectAndWhatToPull(t *testing.T) {
 		"Take these out, root and all.",
 		"Pull before it seeds",
 		"Wear gloves near these.",
-		`href="/plants/bull-nettle"`,
+		`href="/plants/bull-nettle?from=rain-garden-inflow&amp;view=weeding"`,
 		"Not sure what something is? Leave it.",
 	} {
 		if !strings.Contains(body, want) {
@@ -256,5 +262,97 @@ func TestAListedPlaceOrPlantCannotBeRemoved(t *testing.T) {
 
 	if w := s.post("/steward/places/"+middle+"/delete", confirm); w.Code != http.StatusSeeOther {
 		t.Errorf("removing the place once its list is empty: %d", w.Code)
+	}
+}
+
+// photo adds a photo of a plant, drawn here rather than taken (CLAUDE.md:
+// never a real photo), and gives its id.
+func (s *site) photo(speciesID string, k photobus.Kind, checked bool) string {
+	s.t.Helper()
+
+	id, err := types.ParseID(speciesID)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+
+	// A different shade each time, so no two photos are the same file:
+	// photobus refuses the same picture twice for one plant.
+	s.shade += 37
+
+	img := image.NewRGBA(image.Rect(0, 0, 400, 300))
+	for i := range img.Pix {
+		img.Pix[i] = s.shade
+	}
+
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, nil); err != nil {
+		s.t.Fatal(err)
+	}
+
+	p, err := s.photos.Add(s.t.Context(), id, photobus.Fields{Kind: k, Source: photobus.Ours, Checked: checked}, buf.Bytes())
+	if err != nil {
+		s.t.Fatal(err)
+	}
+
+	return p.ID.String()
+}
+
+// Each plant in a panel has its picture beside it: its leaf, which a weeder
+// tells it apart by, or failing that whatever checked photo it has, and never
+// one nobody has checked. The row opens the plant at Weeding, saying which
+// place it came from.
+func TestAPanelShowsEachPlantsLeaf(t *testing.T) {
+	s := serve(t)
+	s.pilot()
+
+	inflow := s.place("rain-garden-inflow").ID.String()
+
+	sedge := s.plant("cherokee-sedge", "Cherokee sedge", "#6B8E4E")
+	johnson := s.plant("johnsongrass", "Johnsongrass", "#7A8B3C")
+	nettle := s.plant("bull-nettle", "Bull nettle", "#FFFFFF")
+
+	s.list(inflow, sedge, "protect", false, "")
+	s.list(inflow, johnson, "pull", false, "")
+	s.list(inflow, nettle, "careful", false, "Gloves")
+
+	flower := s.photo(sedge, photobus.Flower, true)
+	leaf := s.photo(sedge, photobus.Leaf, true)
+	young := s.photo(johnson, photobus.Young, true)
+	waiting := s.photo(johnson, photobus.Leaf, false)
+	nettleWaiting := s.photo(nettle, photobus.Leaf, false)
+
+	body := s.getAs("/places/rain-garden-inflow", "").Body.String()
+	panel := func(name, next string) string {
+		i := strings.Index(body, "panel-"+name)
+		j := strings.Index(body[i:], next)
+		if i < 0 || j < 0 {
+			t.Fatalf("no %s panel", name)
+		}
+
+		return body[i : i+j]
+	}
+
+	protect := panel("protect", "panel-pull")
+	if !strings.Contains(protect, `src="/photos/`+leaf+`/thumb.jpg"`) || strings.Contains(protect, flower) {
+		t.Error("the sedge's row does not show its leaf, or shows its flower")
+	}
+
+	if !strings.Contains(protect, `href="/plants/cherokee-sedge?from=rain-garden-inflow&amp;view=weeding"`) {
+		t.Error("the sedge's row does not open it at Weeding, from here")
+	}
+
+	pull := panel("pull", "panel-careful")
+	if !strings.Contains(pull, `src="/photos/`+young+`/thumb.jpg"`) || strings.Contains(pull, waiting) {
+		t.Error("the johnsongrass row does not fall back to its young plant, or shows a photo nobody has checked")
+	}
+
+	careful := panel("careful", "not-sure")
+	if strings.Contains(careful, nettleWaiting) || strings.Contains(careful, "<img") || !strings.Contains(careful, "No photo yet") || !strings.Contains(careful, "Gloves") {
+		t.Error("the nettle, with no checked photo, does not say so, or loses its note")
+	}
+
+	// The calendar's rows are words, not pictures: nothing above changes it.
+	if strings.Count(body, "thumb.jpg") != 2 {
+		t.Errorf("%d thumbnails on the card, want 2", strings.Count(body, "thumb.jpg"))
 	}
 }

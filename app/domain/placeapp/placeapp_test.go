@@ -37,8 +37,10 @@ type site struct {
 	h       http.Handler
 	places  *placebus.Business
 	species *speciesbus.Business
+	photos  *photobus.Business
 	memory  *translationbus.Business
 	cookie  *http.Cookie
+	shade   uint8 // the last photo's, so each is a new picture (photo)
 }
 
 // Through the muxer, signed in as a steward, so every request passes the same
@@ -88,6 +90,7 @@ func serveAt(t *testing.T, baseURL string) *site {
 		t:       t,
 		places:  placebus.NewBusiness(placedb.NewStore(db), memory, nil),
 		species: speciesbus.NewBusiness(speciesdb.NewStore(db), memory, nil),
+		photos:  photos(t, db),
 		memory:  memory,
 	}
 
@@ -99,7 +102,7 @@ func serveAt(t *testing.T, baseURL string) *site {
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
 		Places: s.places, Users: users,
 		Workdays: workdays,
-		Species:  s.species, Listings: listings, Photos: photos(t, db),
+		Species:  s.species, Listings: listings, Photos: s.photos,
 		Translations: memory,
 		BaseURL:      baseURL, Mail: &mail.Recorder{},
 	}); err != nil {

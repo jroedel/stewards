@@ -1,5 +1,5 @@
 {{define "title"}}{{.Data.Name.In .Lang}}: {{words .Lang .Data.Figure.Kind}} · Garden stewards{{end}}
-{{define "masthead"}}<a class="back" href="/plants/{{.Data.Slug}}{{if .Data.Weeding}}?view=weeding{{end}}"><span>‹ {{say .Lang .Data.Name}}</span></a>{{end}}
+{{define "masthead"}}<a class="back" href="{{.Data.BackURL}}"><span>‹ {{say .Lang .Data.Name}}</span></a>{{end}}
 {{define "content"}}{{$l := .Lang}}{{with .Data}}
 <h1>{{say $l .Name}}</h1>
 {{if .NotChecked}}<p class="row-tags"><span class="tag tag-open">{{t $l "Not checked: volunteers don't see it"}}</span></p>{{end}}

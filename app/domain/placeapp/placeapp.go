@@ -60,10 +60,10 @@ type SpeciesReader interface {
 }
 
 // PhotoReader is what these screens need from the photo rules: a picture
-// beside each plant on a place card's "To plant" list, and on the stewards'
-// front page how many photos wait to be checked.
+// beside each plant on a place card, and on the stewards' front page how many
+// photos wait to be checked.
 type PhotoReader interface {
-	ForSpecies(ctx context.Context, speciesID types.ID) ([]photobus.Photo, error)
+	BySpecies(ctx context.Context) (map[types.ID][]photobus.Photo, error)
 	Unchecked(ctx context.Context) ([]photobus.Photo, error)
 }
 
