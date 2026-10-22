@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"time"
@@ -187,12 +188,19 @@ type cardView struct {
 	Grows   []grows
 
 	Slug, EditURL, PhotosURL string
+
+	// Back and BackURL are the masthead's back link: the place the card was
+	// opened from, or the list of places (see backTo). PlantingURL and
+	// WeedingURL are the two views, which keep where it was opened from.
+	Back                             types.Text
+	BackURL, PlantingURL, WeedingURL string
 }
 
 // figure is one photo on the card, with what a volunteer is told about it.
 type figure struct {
 	ID                 string
-	Width, Height      int // the small picture's, which reserves the space
+	Zoom               string // its page of its own, on the card; "" on that page
+	Width, Height      int    // the small picture's, which reserves the space
 	SmallW, LargeW     int
 	Kind               types.Text
 	Alt                page.Phrase
@@ -297,7 +305,64 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 		v.PhotosURL = "/steward/species/" + sp.ID.String() + "/photos"
 	}
 
+	back, backURL, from := backTo(places, r.URL.Query().Get("from"))
+	v.Back, v.BackURL = back, backURL
+	v.PlantingURL = cardURL(sp.Slug, false, from)
+	v.WeedingURL = cardURL(sp.Slug, true, from)
+
+	for i := range v.Figures {
+		v.Figures[i].Zoom = "/plants/" + sp.Slug + "/photos/" + v.Figures[i].ID + query(v.Weeding, from)
+	}
+
 	a.render.Render(w, r, http.StatusOK, "plant", v)
+}
+
+// backTo is where a plant's card goes back to: the place it was opened from,
+// by the slug a place card gives its plants' links (?from=), or the list of
+// places. A volunteer working through a bed's plants one by one comes back
+// to the bed each time rather than to the list, which had them choose the
+// bed again and scroll to its plants again for every plant.
+//
+// Only the slug of a place there is counts, and it is the place's own slug
+// that goes into the links, never the address's: anything else is the list
+// of places, as it was before there was a from.
+func backTo(places []placebus.Place, from string) (back types.Text, backURL, slug string) {
+	if from != "" {
+		for _, p := range places {
+			if p.Slug == from {
+				return p.Name, "/places/" + p.Slug, p.Slug
+			}
+		}
+	}
+
+	return cardWords.Back, "/places", ""
+}
+
+// cardURL is a plant's card at one of its views, keeping the place it was
+// opened from.
+func cardURL(slug string, weeding bool, from string) string {
+	return "/plants/" + slug + query(weeding, from)
+}
+
+// query is the part of a card's address after its path: the view, and the
+// place it was opened from, when either is set. Nothing at all for the
+// Planting view opened from the list, so that the card's plain address is
+// still the one every other page links to.
+func query(weeding bool, from string) string {
+	q := url.Values{}
+	if weeding {
+		q.Set("view", "weeding")
+	}
+
+	if from != "" {
+		q.Set("from", from)
+	}
+
+	if len(q) == 0 {
+		return ""
+	}
+
+	return "?" + q.Encode()
 }
 
 // where is every place the species is listed, with what to do there, in the
@@ -408,8 +473,7 @@ func figureOf(p photobus.Photo, sp speciesbus.Species, names map[types.ID]types.
 type photoView struct {
 	Copy    cardWording
 	Name    types.Text
-	Slug    string
-	Weeding bool // which view of the card to go back to
+	BackURL string // the card at the view it came from, still knowing its place
 
 	Figure     figure
 	LargeW     int
@@ -446,10 +510,15 @@ func (a app) photo(w http.ResponseWriter, r *http.Request) {
 
 	weeding := r.URL.Query().Get("view") == "weeding"
 
-	back := "/plants/" + sp.Slug
-	if weeding {
-		back += "?view=weeding"
+	places, err := a.places.All(ctx)
+	if err != nil {
+		a.fail(w, r, "listing places for a photo", err)
+
+		return
 	}
+
+	_, _, from := backTo(places, r.URL.Query().Get("from"))
+	back := cardURL(sp.Slug, weeding, from)
 
 	photos, err := a.photos.ForSpecies(ctx, sp.ID)
 	if err != nil {
@@ -469,15 +538,8 @@ func (a app) photo(w http.ResponseWriter, r *http.Request) {
 
 	p := photos[i]
 
-	places, err := a.places.All(ctx)
-	if err != nil {
-		a.fail(w, r, "listing places for a photo", err)
-
-		return
-	}
-
 	v := photoView{
-		Copy: cardWords, Name: sp.Common, Slug: sp.Slug, Weeding: weeding,
+		Copy: cardWords, Name: sp.Common, BackURL: back,
 		Figure: figureOf(p, sp, placeNames(places)),
 		LargeW: p.Large.Width, LargeH: p.Large.Height,
 		Full:       photobus.ServedName(photobus.Full, p.Format),

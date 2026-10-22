@@ -220,3 +220,52 @@ func TestAVolunteerSeesItsFruit(t *testing.T) {
 		t.Error("the weeding view does not show the fruit")
 	}
 }
+
+// Opened from a place card, the plant's card goes back to that place rather
+// than to the list of places, and keeps knowing where it came from through
+// its two views and its photos' pages of their own. A volunteer working
+// through a bed's plants comes back to the bed after each.
+func TestAPlantOpenedFromAPlaceGoesBackThere(t *testing.T) {
+	s := serve(t)
+	s.post("/steward/species", penstemon())
+	s.at("rain-garden", "Rain garden", "", "", false)
+	s.at("rain-garden-inflow", "Inflow band", "rain-garden", "protect", false)
+
+	sp, _ := s.species.BySlug(t.Context(), "brazos-penstemon")
+	leaf, err := s.photos.Add(t.Context(), sp.ID, photobus.Fields{Kind: photobus.Leaf, Source: photobus.Ours, Checked: true}, picture(t, 90))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	body := s.do(http.MethodGet, "/plants/brazos-penstemon?view=weeding&from=rain-garden-inflow", nil, false).Body.String()
+
+	for _, want := range []string{
+		`<a class="back" href="/places/rain-garden-inflow"><span>‹ Inflow band</span></a>`,
+		`<a href="/plants/brazos-penstemon?from=rain-garden-inflow">Planting</a>`,
+		`href="/plants/brazos-penstemon?from=rain-garden-inflow&amp;view=weeding" aria-current="page">Weeding`,
+		`href="/plants/brazos-penstemon/photos/` + leaf.ID.String() + `?from=rain-garden-inflow&amp;view=weeding"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("opened from the inflow band, the card does not have %q", want)
+		}
+	}
+
+	zoom := s.do(http.MethodGet, "/plants/brazos-penstemon/photos/"+leaf.ID.String()+"?from=rain-garden-inflow&view=weeding", nil, false).Body.String()
+	if !strings.Contains(zoom, `<a class="back" href="/plants/brazos-penstemon?from=rain-garden-inflow&amp;view=weeding">`) {
+		t.Error("the photo's own page does not go back to the card it came from, still knowing the place")
+	}
+
+	// A from that is no place -- mistyped, or written to make a link go
+	// somewhere else -- is the list of places, as if there were none, and
+	// the card's own links leave it out. (The language switch keeps the
+	// whole address, as it does on every page, escaped.)
+	for _, from := range []string{"nowhere", `"><script>alert(1)</script>`, "//example.org"} {
+		body := s.do(http.MethodGet, "/plants/brazos-penstemon?from="+url.QueryEscape(from), nil, false).Body.String()
+		if !strings.Contains(body, `<a class="back" href="/places"><span>‹ All places</span></a>`) ||
+			!strings.Contains(body, `<a href="/plants/brazos-penstemon" aria-current="page">Planting</a>`) ||
+			!strings.Contains(body, `<a href="/plants/brazos-penstemon?view=weeding">Weeding</a>`) ||
+			strings.Contains(body, "<script>alert") {
+			t.Errorf("from=%q: the card does not go back to the list of places, or keeps it in its links", from)
+		}
+	}
+}

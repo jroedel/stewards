@@ -476,24 +476,46 @@ main > h1:first-child { margin-top: 20px; }
 .calendar td { height: 22px; padding: 0; border-radius: 3px; background: var(--sf-neutral); vertical-align: middle; }
 .calendar td svg { display: block; }
 
-/* Protect and Pull: a pair, always side by side, always an icon and the word
-   (design.md). The colour is a third way of saying it, never the only one. */
-.panels { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.panel { padding: 14px; border-radius: 14px; border: 1.5px solid; min-width: 0; }
-.panel h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 20px; }
-.panel ul { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
-.panel li a { display: inline-block; padding: 8px 0; font-weight: 700; color: var(--sf-ink); overflow-wrap: anywhere; }
+/* Protect, Pull and Careful: always an icon and the word (design.md). The
+   colour is a third way of saying it, never the only one. One under another,
+   each plant a row with its picture (the stewards, 2026-10-21): side by side,
+   as they were, half a phone had room for a name and nothing else. */
+.panels { display: flex; flex-direction: column; gap: 10px; }
+.panel { padding: 14px; border-radius: 14px; border: 1.5px solid; border-color: var(--panel); min-width: 0; }
+.panel h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 20px; color: var(--panel); }
 .panel-help { margin: 4px 0 0; font-size: 15px; }
-.panel-note { display: block; margin-top: -4px; font-size: 15px; color: var(--muted); }
+.panel-note { display: block; margin-top: 2px; font-size: 15px; color: var(--muted); }
 .panel-none { margin: 8px 0 0; font-size: 15px; color: var(--muted); }
 .icon { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
-.panel-protect { background: var(--tos-protect-tint); border-color: var(--tos-protect); }
-.panel-protect h2 { color: var(--tos-protect); }
-.panel-pull { background: var(--tos-pull-tint); border-color: var(--tos-pull); }
-.panel-pull h2 { color: var(--tos-pull); }
-.panel-careful { margin-top: 10px; background: var(--tos-sun-tint); border-color: var(--tos-sun); }
-.panel-careful h2 { color: var(--tos-sun); }
+.panel-protect { --panel: var(--tos-protect); background: var(--tos-protect-tint); }
+.panel-pull    { --panel: var(--tos-pull);    background: var(--tos-pull-tint); }
+.panel-careful { --panel: var(--tos-sun);     background: var(--tos-sun-tint); }
+
+/* A plant in a panel: its picture, its name and note, the whole row one
+   target. The rule between rows is the panel's own colour, faded; a phone
+   too old for color-mix draws the plain grey one before it. */
+.plant-rows { margin: 6px 0 0; padding: 0; list-style: none; }
+
+.plant-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 8px 0;
+  border-top: 1px solid var(--rule);
+  border-top-color: color-mix(in srgb, var(--panel) 28%, transparent);
+  color: var(--sf-ink);
+  text-decoration: none;
+}
+
+.plant-rows li:first-child .plant-row { border-top: 0; }
+
+.plant-thumb { flex: none; display: block; width: 56px; height: 56px; border-radius: 8px; object-fit: cover; background: var(--sf-white); }
+.plant-thumb-none { display: grid; place-items: center; border: 1.5px dashed var(--panel); color: var(--panel); }
+.plant-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.plant-row-name { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+.plant-row .row-go { flex: none; color: var(--panel); font-size: 22px; }
 
 .not-sure { margin: 16px 0 0; padding: 12px 14px; border-radius: 12px; background: var(--sf-white); border: 1px solid var(--rule); font-weight: 700; text-align: center; }
 

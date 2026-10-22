@@ -26,7 +26,7 @@
 <h2 id="planned-h">{{say $l .Copy.PlannedHere}}</h2>
 <p class="help">{{say $l .Copy.PlannedHelp}}</p>
 {{if .Planned}}<ul class="rows">
-{{range $line := .Planned}}<li><a class="row{{if .Thumb}} row-photo{{end}}" href="/plants/{{.Slug}}">{{with .Thumb}}<img class="row-thumb" src="/photos/{{.}}/thumb.jpg" width="64" height="64" alt="" loading="lazy">{{end}}<div>
+{{range $line := .Planned}}<li><a class="row{{if .Thumb}} row-photo{{end}}" href="{{.PlantURL}}">{{with .Thumb}}<img class="row-thumb" src="/photos/{{.}}/thumb.jpg" width="64" height="64" alt="" loading="lazy">{{end}}<div>
   <div class="row-name">{{say $l .Name}}</div>
   {{if .Scientific}}<div class="row-note"><i>{{.Scientific}}</i></div>{{end}}
   {{with .Size}}<div class="row-note">{{say $l .}}</div>{{end}}
@@ -42,32 +42,34 @@
 {{with .Adds}}{{template "card-add" (pass $l .Planned)}}{{end}}
 {{end}}
 
+{{/* One panel under another rather than Protect and Pull side by side
+     (the stewards, 2026-10-21): each plant has its picture beside it, which
+     half a phone's width has no room for. */}}
 <div class="panels card-gap">
   <section class="panel panel-protect" aria-labelledby="protect-h">
     <h2 id="protect-h"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>{{say $l .Copy.Protect}}</h2>
     <p class="panel-help">{{say $l .Copy.ProtectHelp}}</p>
-    {{if .Protect}}<ul>{{range .Protect}}<li><a href="/plants/{{.Slug}}">{{say $l .Name}}</a>{{if .Note.Written}}<span class="panel-note">{{say $l .Note}}</span>{{end}}</li>{{end}}</ul>
+    {{if .Protect}}{{template "plant-rows" (pass $l .Protect)}}
     {{else}}<p class="panel-none">{{say $l $.Data.Copy.NothingHere}}</p>{{end}}
     {{with .Adds}}{{template "card-add" (pass $l .Protect)}}{{end}}
   </section>
   <section class="panel panel-pull" aria-labelledby="pull-h">
     <h2 id="pull-h"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v14"/><path d="M6 12l6 6 6-6"/></svg>{{say $l .Copy.Pull}}</h2>
     <p class="panel-help">{{say $l .Copy.PullHelp}}</p>
-    {{if .Pull}}<ul>{{range .Pull}}<li><a href="/plants/{{.Slug}}">{{say $l .Name}}</a>{{if .Note.Written}}<span class="panel-note">{{say $l .Note}}</span>{{end}}</li>{{end}}</ul>
+    {{if .Pull}}{{template "plant-rows" (pass $l .Pull)}}
     {{else}}<p class="panel-none">{{say $l $.Data.Copy.NothingHere}}</p>{{end}}
     {{with .Adds}}{{template "card-add" (pass $l .Pull)}}{{end}}
   </section>
-</div>
-
 {{if or .Careful .Adds}}
-<section class="panel panel-careful" aria-labelledby="careful-h">
-  <h2 id="careful-h"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17v.5"/></svg>{{say $l .Copy.Careful}}</h2>
-  <p class="panel-help">{{say $l .Copy.CarefulHelp}}</p>
-  {{if .Careful}}<ul>{{range .Careful}}<li><a href="/plants/{{.Slug}}">{{say $l .Name}}</a>{{if .Note.Written}}<span class="panel-note">{{say $l .Note}}</span>{{end}}</li>{{end}}</ul>
-  {{else}}<p class="panel-none">{{say $l $.Data.Copy.NothingHere}}</p>{{end}}
-  {{with .Adds}}{{template "card-add" (pass $l .Careful)}}{{end}}
-</section>
+  <section class="panel panel-careful" aria-labelledby="careful-h">
+    <h2 id="careful-h"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17v.5"/></svg>{{say $l .Copy.Careful}}</h2>
+    <p class="panel-help">{{say $l .Copy.CarefulHelp}}</p>
+    {{if .Careful}}{{template "plant-rows" (pass $l .Careful)}}
+    {{else}}<p class="panel-none">{{say $l $.Data.Copy.NothingHere}}</p>{{end}}
+    {{with .Adds}}{{template "card-add" (pass $l .Careful)}}{{end}}
+  </section>
 {{end}}
+</div>
 
 <p class="not-sure">{{say $l .Copy.NotSure}}</p>
 
@@ -104,6 +106,21 @@
 {{with .EditURL}}<a class="onward" href="{{.}}"><span>{{say $l $.Data.Copy.Edit}}</span><span aria-hidden="true">›</span></a>{{end}}
 {{with .Adds}}<script type="module" src="{{$.Script "find.mjs"}}"></script>{{end}}
 {{end}}{{end}}
+
+{{/* A panel's plants, each a row with its picture: the leaf, or whatever
+     checked photo it has (weedKinds), as a thumbnail. The picture's alt is
+     empty because the plant's name is beside it in the same link, and a
+     screen reader would otherwise say the name twice. A plant with no
+     checked photo has a leaf drawn in its place and says so, which is also
+     the stewards' list of photos still to take. Called with
+     (pass $l .Protect). */}}
+{{define "plant-rows"}}{{$l := .Lang}}<ul class="plant-rows">
+{{range .Data}}<li><a class="plant-row" href="{{.WeedURL}}">
+  {{if .LeafThumb}}<img class="plant-thumb" src="/photos/{{.LeafThumb}}/thumb.jpg" width="56" height="56" alt="" loading="lazy">{{else}}<span class="plant-thumb plant-thumb-none"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19c0-8 5-13 14-14-1 9-6 14-14 14z"/><path d="M5 19l7-7"/></svg></span>{{end}}
+  <span class="plant-row-text"><span class="plant-row-name">{{say $l .Name}}</span>{{if .Note.Written}}<span class="panel-note">{{say $l .Note}}</span>{{end}}{{if not .LeafThumb}}<span class="panel-note">{{t $l "No photo yet"}}</span>{{end}}</span>
+  <span class="row-go" aria-hidden="true">›</span>
+</a></li>
+{{end}}</ul>{{end}}
 
 {{/* A list's "+ Add", for a signed-in steward only: see cardAdd. A
      volunteer never sees it. The plant select leaves out what is already
