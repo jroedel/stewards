@@ -139,9 +139,22 @@ type Waiting struct {
 	// Remaining is how many are waiting, Pending included.
 	Remaining int
 
-	// Glossary is every name in use that has its translation, so a batch
-	// says "Jardín de lluvia" where the last one did.
+	// Glossary is every name in use that has its translation, and every
+	// term -- a short original, three words or fewer -- so a batch says
+	// "Jardín de lluvia" where the last one did, and "Arrancar" for Pull
+	// wherever the screens already say it. Terms as well as names because
+	// the translating is done every night by a run that remembers nothing of
+	// the night before (the stewards, 2026-10-22): the words the screens
+	// already use are the only memory it has of what it chose.
 	Glossary []types.Text
+}
+
+// term is whether an original is short enough to be a term, kept the same
+// wherever it is used: a heading, a button, a word in a sentence ("Pull",
+// "Stewardship day", "Not sure? Leave it"). One with a {placeholder} is a
+// sentence however short, and is not.
+func term(source string) bool {
+	return len(strings.Fields(source)) <= 3 && !strings.Contains(source, "{")
 }
 
 // Waiting is the first limit originals that have no translation, and the
@@ -164,7 +177,7 @@ func (b *Business) Waiting(ctx context.Context, limit int) (Waiting, error) {
 
 		if tr, ok := b.Lookup(u.source); ok {
 			if tr.Note == "" {
-				if u.name {
+				if u.name || term(u.source) {
 					glossary = append(glossary, tr.Pair())
 				}
 
