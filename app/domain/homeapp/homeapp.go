@@ -4,10 +4,11 @@
 // The home page is where the QR code on the trail's signs leads, so it is
 // written for someone standing on the path who has never been here and is
 // wondering whether they could help. It says they are welcome without any
-// skills, lists the stewardship days coming up, and offers the trail itself
-// to explore. The days are workdaybus's; the stewards schedule them on their
-// own screen (workdayapp), and the email sign-up near the top posts to
-// signupapp.
+// skills, offers the trail itself -- to explore, its foundation text, and the
+// way to its prayers -- then lists the stewardship days coming up, and last
+// the sign-up for when no day suits, in the order the stewards chose on
+// 2026-10-21. The days are workdaybus's; the stewards schedule them on their
+// own screen (workdayapp), and the sign-up posts to signupapp.
 //
 // The list of places at /places is the Map screen, "Where are you working?"
 // (design.md, section 6): the schematic map, drawn over the public trail
