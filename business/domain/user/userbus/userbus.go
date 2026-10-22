@@ -119,6 +119,10 @@ type User struct {
 	// -- what comes back beside every error here -- cannot sign in.
 	Enabled bool
 
+	// DayNotices is what they want to be told about the stewardship days
+	// (daynotices.go). Set on its own, never through UpdateUser.
+	DayNotices DayNotices
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -156,6 +160,10 @@ type Storer interface {
 	UserByID(ctx context.Context, id types.ID) (User, error)
 	UserByEmail(ctx context.Context, email types.Email) (User, error)
 	Users(ctx context.Context) ([]User, error)
+
+	// SetDayNotices sets an account's DayNotices and nothing else, so it
+	// cannot undo a change to the rest made at the same moment.
+	SetDayNotices(ctx context.Context, id types.ID, n DayNotices, at time.Time) error
 
 	// CreateToken records a link unless the account already has limit live
 	// ones, and reports whether it did.
@@ -229,10 +237,15 @@ func (b *Business) Create(ctx context.Context, email types.Email, name string) (
 
 	now := b.now()
 	u := User{
-		ID:        types.NewID(),
-		Email:     email,
-		Name:      name,
-		Enabled:   true,
+		ID:      types.NewID(),
+		Email:   email,
+		Name:    name,
+		Enabled: true,
+
+		// Nothing about the days until they ask; English until they
+		// choose on a screen in another language.
+		DayNotices: DayNotices{SignUps: SignUpsOff, Lang: types.English},
+
 		CreatedAt: now,
 		UpdatedAt: now,
 	}

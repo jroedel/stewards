@@ -85,6 +85,12 @@ type Request struct {
 	// New is what the confirmation goes to: the halves not on the day
 	// before.
 	New types.Contact
+
+	// Joined is a name new to the day, rather than a phone or an email
+	// added to someone already on it. It is what the stewards who asked
+	// are told about: the same person giving a second way to reach them is
+	// not one more person coming.
+	Joined bool
 }
 
 // Invalid is a sign-up refused for what was typed. Field is "name"; Kind is
@@ -280,7 +286,7 @@ func (b *Business) Request(ctx context.Context, day types.ID, name string, c typ
 		return Request{Outcome: AlreadyOn}, nil
 	}
 
-	return Request{Outcome: Added, RSVP: row, New: fresh}, nil
+	return Request{Outcome: Added, RSVP: row, New: fresh, Joined: true}, nil
 }
 
 func fits(row, fresh types.Contact) bool {
@@ -345,23 +351,31 @@ func (b *Business) ByCancel(ctx context.Context, token string) (RSVP, error) {
 	return b.store.ByCancel(ctx, token)
 }
 
-// Cancel takes whoever holds token off their day. A token that matches
-// nobody is not an error: they are off it either way.
-func (b *Business) Cancel(ctx context.Context, token string) error {
+// Cancel takes whoever holds token off their day, and gives back the
+// sign-up it took off, for the stewards who asked to be told. A token that
+// matches nobody is not an error -- they are off it either way -- and gives
+// back the zero RSVP, as does the second of two presses: only the press
+// whose delete removed the row has someone to tell the stewards about.
+func (b *Business) Cancel(ctx context.Context, token string) (RSVP, error) {
 	r, err := b.ByCancel(ctx, token)
 
 	switch {
 	case errors.Is(err, ErrNotFound):
-		return nil
+		return RSVP{}, nil
 	case err != nil:
-		return err
+		return RSVP{}, err
 	}
 
-	if _, err := b.store.Delete(ctx, r.ID); err != nil {
-		return fmt.Errorf("cancelling: %w", err)
+	off, err := b.store.Delete(ctx, r.ID)
+	if err != nil {
+		return RSVP{}, fmt.Errorf("cancelling: %w", err)
 	}
 
-	return nil
+	if !off {
+		return RSVP{}, nil
+	}
+
+	return r, nil
 }
 
 // Remove is a steward taking a sign-up off a day: a name that should not be

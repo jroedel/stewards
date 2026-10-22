@@ -86,7 +86,7 @@ func TestSigningUpForADay(t *testing.T) {
 	f := setup(t)
 
 	req, err := f.rsvps.Request(t.Context(), f.day.ID, "  Ana   María ", contact(t, "ana@example.invalid", ""), types.Spanish)
-	if err != nil || req.Outcome != rsvpbus.Added {
+	if err != nil || req.Outcome != rsvpbus.Added || !req.Joined {
 		t.Fatalf("Request: %+v %v", req, err)
 	}
 
@@ -101,9 +101,10 @@ func TestSigningUpForADay(t *testing.T) {
 		t.Errorf("again: %+v %v", again, err)
 	}
 
-	// Her phone added: one row, the confirmation to the phone alone.
+	// Her phone added: one row, the confirmation to the phone alone, and
+	// nobody new joined.
 	phone, err := f.rsvps.Request(t.Context(), f.day.ID, "Ana", contact(t, "ana@example.invalid", "512 555 0123"), types.Spanish)
-	if err != nil || phone.Outcome != rsvpbus.Added || phone.RSVP.ID != req.RSVP.ID || !phone.New.Email.Zero() || phone.New.Phone.Zero() {
+	if err != nil || phone.Outcome != rsvpbus.Added || phone.Joined || phone.RSVP.ID != req.RSVP.ID || !phone.New.Email.Zero() || phone.New.Phone.Zero() {
 		t.Errorf("adding a phone: %+v %v", phone, err)
 	}
 
@@ -125,10 +126,16 @@ func TestSigningUpForADay(t *testing.T) {
 		t.Errorf("counts: %v", counts)
 	}
 
-	// Cancelling by the link, twice and with nonsense, is never an error.
-	for _, token := range []string{req.RSVP.Cancel, req.RSVP.Cancel, "nonsense", ""} {
-		if err := f.rsvps.Cancel(t.Context(), token); err != nil {
+	// Cancelling by the link, twice and with nonsense, is never an error,
+	// and only the first press gives back who it took off.
+	for i, token := range []string{req.RSVP.Cancel, req.RSVP.Cancel, "nonsense", ""} {
+		off, err := f.rsvps.Cancel(t.Context(), token)
+		if err != nil {
 			t.Errorf("Cancel(%q): %v", token, err)
+		}
+
+		if want := i == 0; off.ID.Zero() == want || want && off.Name != "Ana" {
+			t.Errorf("Cancel(%q) took off %+v", token, off)
 		}
 	}
 
@@ -222,7 +229,7 @@ func TestTheCapStopsConfirmations(t *testing.T) {
 			t.Fatalf("sign-up %d: %s", i+1, req.Outcome)
 		}
 
-		f.rsvps.Cancel(t.Context(), req.RSVP.Cancel)
+		_, _ = f.rsvps.Cancel(t.Context(), req.RSVP.Cancel)
 	}
 
 	if req, _ := f.rsvps.Request(t.Context(), f.day.ID, "Ana", contact(t, "ana@example.invalid", ""), types.English); req.Outcome != rsvpbus.Capped {

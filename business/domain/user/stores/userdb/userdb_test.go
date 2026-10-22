@@ -47,7 +47,10 @@ func steward(t *testing.T, s *userdb.Store, addr string) userbus.User {
 		t.Fatal(err)
 	}
 
-	u := userbus.User{ID: types.NewID(), Email: email, Name: "A Steward", Enabled: true, CreatedAt: now, UpdatedAt: now}
+	u := userbus.User{
+		ID: types.NewID(), Email: email, Name: "A Steward", Enabled: true,
+		DayNotices: userbus.DayNotices{Lang: types.English}, CreatedAt: now, UpdatedAt: now,
+	}
 	if err := s.CreateUser(t.Context(), u); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
@@ -402,5 +405,87 @@ func TestAGrantIsSpentOnce(t *testing.T) {
 
 	if _, err := s.GrantByID(t.Context(), types.NewID()); !errors.Is(err, userbus.ErrNotFound) {
 		t.Errorf("a missing grant: %v", err)
+	}
+}
+
+// The users table as it stood before a steward could choose what they are
+// told about the days: what the server has now. Written out, as beforeClient
+// is, so that changing Init cannot change what this test starts from.
+const beforeDayNotices = `
+CREATE TABLE users (
+    id          TEXT    PRIMARY KEY,
+    email       TEXT    NOT NULL UNIQUE,
+    name        TEXT    NOT NULL DEFAULT '',
+    enabled     INTEGER NOT NULL,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+) STRICT;
+
+INSERT INTO users (id, email, enabled, created_at, updated_at)
+VALUES ('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'steward@example.org', 1, 1, 1);
+`
+
+// An account from before is told nothing until its steward asks, and can
+// then ask.
+func TestInitBringsTheUsersTableForward(t *testing.T) {
+	db, err := sqldb.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if _, err := db.ExecContext(t.Context(), beforeDayNotices); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 2 { // and at the next startup
+		if err := userdb.Init(t.Context(), db); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := sqldb.CheckSchema(t.Context(), db, userdb.Expected); err != nil {
+		t.Fatal(err)
+	}
+
+	s := userdb.NewStore(db)
+	id, _ := types.ParseID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+
+	u, err := s.UserByID(t.Context(), id)
+	if err != nil || !u.Enabled || u.DayNotices != (userbus.DayNotices{SignUps: userbus.SignUpsOff, Lang: types.English}) {
+		t.Fatalf("the steward from before is %+v, %v", u, err)
+	}
+
+	if err := s.SetDayNotices(t.Context(), id, userbus.DayNotices{SignUps: userbus.SignUpsEach, Lang: types.Spanish}, now); err != nil {
+		t.Fatal(err)
+	}
+
+	if u, _ := s.UserByID(t.Context(), id); u.DayNotices.SignUps != userbus.SignUpsEach || u.DayNotices.Lang != types.Spanish {
+		t.Errorf("after choosing: %+v", u.DayNotices)
+	}
+}
+
+// Setting the choice touches nothing else: a steward turned off at the same
+// moment stays off.
+func TestChoosingTheNotesChangesNothingElse(t *testing.T) {
+	_, s := open(t)
+	u := steward(t, s, "steward@example.org")
+
+	u.Enabled = false
+	if err := s.UpdateUser(t.Context(), u); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.SetDayNotices(t.Context(), u.ID, userbus.DayNotices{SignUps: userbus.SignUpsEach, Lang: types.English}, now); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.UserByID(t.Context(), u.ID)
+	if err != nil || got.Enabled || got.Name != "A Steward" || got.DayNotices.SignUps != userbus.SignUpsEach {
+		t.Errorf("after choosing: %+v, %v", got, err)
+	}
+
+	if err := s.SetDayNotices(t.Context(), types.NewID(), userbus.DayNotices{}, now); !errors.Is(err, userbus.ErrNotFound) {
+		t.Errorf("choosing for nobody: %v, want ErrNotFound", err)
 	}
 }

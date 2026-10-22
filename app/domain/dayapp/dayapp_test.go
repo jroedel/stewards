@@ -1,6 +1,7 @@
 package dayapp_test
 
 import (
+	"context"
 	"database/sql"
 	"log/slog"
 	"net/http"
@@ -43,6 +44,7 @@ type site struct {
 	h      http.Handler
 	list   *subscriberbus.Business
 	rsvps  *rsvpbus.Business
+	notes  *noticebus.Business
 	day    workdaybus.Day
 	clock  *time.Time
 	mail   *mail.Recorder
@@ -52,12 +54,15 @@ type site struct {
 }
 
 // Through the muxer, with a recorded mailbox and phone and a log the test
-// can read. Texts are on; serveNoTexts is the app with no Twilio.
-func serve(t *testing.T) *site { return serveWith(t, true) }
+// can read. Texts are on; serveNoTexts is the app with no Twilio, and
+// serveTelling the app with a background to tell the stewards from.
+func serve(t *testing.T) *site { return serveWith(t, true, false) }
 
-func serveNoTexts(t *testing.T) *site { return serveWith(t, false) }
+func serveNoTexts(t *testing.T) *site { return serveWith(t, false, false) }
 
-func serveWith(t *testing.T, withTexts bool) *site {
+func serveTelling(t *testing.T) *site { return serveWith(t, true, true) }
+
+func serveWith(t *testing.T, withTexts, telling bool) *site {
 	t.Helper()
 
 	db, err := sqldb.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -96,6 +101,7 @@ func serveWith(t *testing.T, withTexts bool) *site {
 
 	days := workdaybus.NewBusiness(workdaydb.NewStore(db), nil, now)
 	notices := noticebus.NewBusiness(noticedb.NewStore(db), s.mail, texts, now)
+	s.notes = notices
 	s.list = subscriberbus.NewBusiness(subscriberdb.NewStore(db), notices, now)
 	s.rsvps = rsvpbus.NewBusiness(rsvpdb.NewStore(db), days, notices, now)
 	notices.OnStopped(s.list.Stopped)
@@ -112,6 +118,15 @@ func serveWith(t *testing.T, withTexts bool) *site {
 	log := slog.New(slog.NewTextHandler(s.log, nil))
 	users := userbus.NewBusiness(log, userdb.NewStore(db), nil)
 
+	// The background also starts the reminder loop, which reads the clock;
+	// a test that moves the clock uses serve.
+	var background context.Context
+	if telling {
+		ctx, cancel := context.WithCancel(t.Context())
+		t.Cleanup(func() { cancel(); notices.Wait() })
+		background = ctx
+	}
+
 	if s.h, err = muxer.New(muxer.Config{
 		Log: log, DB: db, Expected: sqldb.Infrastructure,
 		Places:      placebus.NewBusiness(placedb.NewStore(db), nil, nil),
@@ -123,6 +138,7 @@ func serveWith(t *testing.T, withTexts bool) *site {
 		Subscribers: s.list,
 		Notices:     notices,
 		RSVPs:       s.rsvps,
+		Background:  background,
 		BaseURL:     "https://stewards.example.invalid", Mail: s.mail,
 	}); err != nil {
 		t.Fatal(err)
@@ -473,5 +489,115 @@ func TestTheMessagesScreenShowsTheWelcomeBothWays(t *testing.T) {
 		if !strings.Contains(page, want) {
 			t.Errorf("the messages screen does not say %q", want)
 		}
+	}
+}
+
+// to is every email sent to addr so far, once the background has sent what
+// it was given.
+func (s *site) to(addr string) []mail.Message {
+	s.t.Helper()
+	s.notes.Wait()
+
+	var out []mail.Message
+	for _, m := range s.mail.Sent {
+		if m.To == addr {
+			out = append(out, m)
+		}
+	}
+
+	return out
+}
+
+// A steward who asks is told of each new name on a day, and each name taken
+// off, once, without the volunteer's address; and told nothing once they
+// stop asking.
+func TestAStewardWhoAskedIsToldOfEachSignUp(t *testing.T) {
+	s := serveTelling(t)
+	const me = "steward@example.org"
+
+	page := s.do(http.MethodGet, "/steward/stewards", nil, true).Body.String()
+	if !strings.Contains(page, `id="day-notices"`) || !strings.Contains(page, `value="" checked`) {
+		t.Fatalf("the stewards screen does not offer the choice, set to nothing:\n%s", page)
+	}
+
+	w := s.do(http.MethodPost, "/steward/stewards/day-notices", url.Values{"signups": {"each"}}, true)
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/steward/stewards?done=each#day-notices" {
+		t.Fatalf("choosing: %d %s", w.Code, w.Header().Get("Location"))
+	}
+
+	if page := s.do(http.MethodGet, "/steward/stewards?done=each", nil, true).Body.String(); !strings.Contains(page, `value="each" checked`) || !strings.Contains(page, "each time someone signs up") {
+		t.Errorf("after choosing:\n%s", page)
+	}
+
+	if w := s.do(http.MethodPost, "/steward/stewards/day-notices", url.Values{"signups": {"hourly"}}, true); w.Code != http.StatusBadRequest {
+		t.Errorf("a choice the form does not have: %d", w.Code)
+	}
+
+	// Ana signs up: the steward is told, with the count and the stewards'
+	// screen for the day, and not how to reach her.
+	s.do(http.MethodPost, s.dayPath(), url.Values{"name": {"Ana"}, "email": {"ana@example.invalid"}}, false)
+
+	told := s.to(me)
+	if len(told) != 1 {
+		t.Fatalf("the steward got %d notes", len(told))
+	}
+
+	m := told[0]
+	for _, want := range []string{"Ana signed up", "Planting the rain garden", "Coming now: 1",
+		"https://stewards.example.invalid/steward/days/" + s.day.ID.String() + "/edit",
+		"https://stewards.example.invalid/steward/stewards#day-notices"} {
+		if !strings.Contains(m.Text, want) {
+			t.Errorf("the note does not say %q:\n%s", want, m.Text)
+		}
+	}
+
+	if !strings.Contains(m.Subject, "Ana is coming on") || strings.Contains(m.Text, "ana@example.invalid") {
+		t.Errorf("the note: %s\n%s", m.Subject, m.Text)
+	}
+
+	if len(s.to("ana@example.invalid")) != 1 {
+		t.Error("Ana did not get her own confirmation")
+	}
+
+	// Her phone added is not one more person coming.
+	s.do(http.MethodPost, s.dayPath(), url.Values{"name": {"Ana"}, "email": {"ana@example.invalid"}, "phone": {"512 555 0123"}}, false)
+	if n := len(s.to(me)); n != 1 {
+		t.Errorf("adding a phone told the steward again: %d notes", n)
+	}
+
+	// She cancels, pressing twice: one note.
+	rows, _ := s.rsvps.ForDay(t.Context(), s.day.ID)
+	for range 2 {
+		s.do(http.MethodPost, "/days/cancel", url.Values{"t": {rows[0].Cancel}}, false)
+	}
+
+	if told := s.to(me); len(told) != 2 || !strings.Contains(told[1].Subject, "Ana can't come on") || !strings.Contains(told[1].Text, "Coming now: 0") {
+		t.Errorf("after cancelling: %d notes, the last %+v", len(told), told[len(told)-1])
+	}
+
+	// Asked to stop: Luis signs up, and the steward hears nothing.
+	s.do(http.MethodPost, "/steward/stewards/day-notices", url.Values{"signups": {""}}, true)
+	s.do(http.MethodPost, s.dayPath(), url.Values{"name": {"Luis"}, "email": {"luis@example.invalid"}}, false)
+
+	if n := len(s.to(me)); n != 2 {
+		t.Errorf("after stopping: %d notes", n)
+	}
+
+	if page := s.do(http.MethodGet, "/steward/messages", nil, true).Body.String(); !strings.Contains(page, "To the stewards: someone signed up") || !strings.Contains(page, "To the stewards: someone cancelled") {
+		t.Error("the messages screen does not show the notes to the stewards")
+	}
+}
+
+// With no background to send from, the choice is not offered, rather than
+// offered and doing nothing.
+func TestWithNothingToSendFromThereIsNoChoice(t *testing.T) {
+	s := serve(t)
+
+	if page := s.do(http.MethodGet, "/steward/stewards", nil, true).Body.String(); strings.Contains(page, "day-notices") {
+		t.Error("the stewards screen offers a choice that would do nothing")
+	}
+
+	if w := s.do(http.MethodPost, "/steward/stewards/day-notices", url.Values{"signups": {"each"}}, true); w.Code == http.StatusSeeOther {
+		t.Errorf("the form saved anyway: %d", w.Code)
 	}
 }

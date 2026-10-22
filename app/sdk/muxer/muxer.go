@@ -172,6 +172,12 @@ func New(cfg Config) (http.Handler, error) {
 	texts := signUp && cfg.Notices.Texts()
 	rsvp := signUp && cfg.RSVPs != nil
 
+	// Telling the stewards who asked about each sign-up: something to send
+	// from in the background, mail to send by, and a sign-in for the links
+	// in the note to land behind. The choice on the stewards screen is
+	// offered on the same terms, so that it never does nothing.
+	tellStewards := rsvp && cfg.Background != nil && cfg.Mail != nil && cfg.BaseURL != ""
+
 	home := homeapp.SignUp{On: signUp, Texts: texts}
 
 	// Assigned only when there is one, for the reason Inbox is below.
@@ -199,6 +205,13 @@ func New(cfg Config) (http.Handler, error) {
 			Log: cfg.Log, Render: render, RSVPs: cfg.RSVPs, Days: cfg.Workdays, List: cfg.Subscribers,
 			Notices: cfg.Notices, BaseURL: cfg.BaseURL, LeavePath: signupapp.LeavePath,
 		}
+
+		if tellStewards {
+			day.Stewards, day.Background = cfg.Users, cfg.Background
+			day.StewardDay = func(id types.ID) string { return cfg.BaseURL + workdayapp.Path + "/" + id.String() + "/edit" }
+			day.Settings = cfg.BaseURL + stewardapp.DayNoticesPath
+		}
+
 		dayapp.Routes(mux, day)
 		kinds = append(kinds, dayapp.Notices(day)...)
 
@@ -290,6 +303,8 @@ func New(cfg Config) (http.Handler, error) {
 			Users:   cfg.Users,
 			Mail:    cfg.Mail,
 			BaseURL: cfg.BaseURL,
+
+			DayNotices: tellStewards,
 		}, guard)
 
 		// How Claude on claude.ai gets a key: the steward agrees on a page

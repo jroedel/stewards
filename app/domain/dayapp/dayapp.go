@@ -60,7 +60,7 @@ type RSVPs interface {
 	Upcoming(ctx context.Context, day types.ID) (workdaybus.Day, error)
 	Coming(ctx context.Context, day types.ID) ([]string, error)
 	ByCancel(ctx context.Context, token string) (rsvpbus.RSVP, error)
-	Cancel(ctx context.Context, token string) error
+	Cancel(ctx context.Context, token string) (rsvpbus.RSVP, error)
 }
 
 // Days reads a day for the cancel page, which may be for a day now over.
@@ -76,6 +76,7 @@ type List interface {
 // Sender writes to people: noticebus.
 type Sender interface {
 	Send(ctx context.Context, c types.Contact, n noticebus.Notice) noticebus.Result
+	SendBatch(ctx context.Context, key string, to []noticebus.Recipient, build func(noticebus.Recipient) noticebus.Notice)
 	Texts() bool
 }
 
@@ -90,6 +91,18 @@ type Config struct {
 	Notices   Sender
 	BaseURL   string
 	LeavePath string
+
+	// Stewards is who asked to be told of each sign-up (stewards.go), and
+	// Background the app's context their notes go out on. Either nil, and
+	// no steward is told.
+	Stewards   Stewards
+	Background context.Context
+
+	// StewardDay is the full address of a day's stewards screen
+	// (workdayapp's), and Settings of the screen where a steward makes the
+	// choice (stewardapp's): the two links in a note to the stewards.
+	StewardDay func(types.ID) string
+	Settings   string
 }
 
 type app struct{ cfg Config }
@@ -160,6 +173,10 @@ var Words = page.Catalog{
 	confirmation.Catalog("the note sent to someone who says they'll come to a stewardship day: an email in plain text, and a text message, " +
 		"which is short and has its two links on lines of their own"),
 	{Where: "the line in that note for someone who also asked to hear about future days", Words: []types.Text{alsoOnList}},
+	joinedNote.Catalog("the email to a garden steward who asked to be told of each person who signs up for a stewardship day, " +
+		"in plain text; {name} is the name the volunteer chose to show, and {day} a link to the stewards' screen for the day"),
+	leftNote.Catalog("the email to a garden steward who asked to be told when someone takes their name off a stewardship day, in plain text"),
+	{Where: "the end of those two emails: why the steward is getting them, and the link to change it", Words: []types.Text{whyEach}},
 }
 
 // ------------------------------------------------------------------ the page
@@ -324,6 +341,10 @@ func (a app) request(w http.ResponseWriter, r *http.Request) {
 			res := a.cfg.Notices.Send(r.Context(), req.New, a.confirm(lang, d, req.RSVP, leave))
 			a.logSent(r, req.RSVP.ID, res)
 		}
+
+		if req.Joined {
+			a.tellStewards(r, "stewards-joined", joinedNote, req.RSVP)
+		}
 	}
 
 	http.Redirect(w, r, done, http.StatusSeeOther)
@@ -372,13 +393,19 @@ func (a app) cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := a.cfg.RSVPs.Cancel(r.Context(), r.PostFormValue("t")); err != nil {
+	off, err := a.cfg.RSVPs.Cancel(r.Context(), r.PostFormValue("t"))
+	if err != nil {
 		a.fail(w, r, "cancelling a sign-up", err)
 
 		return
 	}
 
-	a.cfg.Log.InfoContext(r.Context(), "a day's sign-up cancelled", "request_id", web.RequestIDFrom(r.Context()))
+	a.cfg.Log.InfoContext(r.Context(), "a day's sign-up cancelled", "request_id", web.RequestIDFrom(r.Context()), "rsvp_id", idOrNone(off.ID))
+
+	if !off.ID.Zero() {
+		a.tellStewards(r, "stewards-left", leftNote, off)
+	}
+
 	a.cfg.Render.Render(w, r, http.StatusOK, "day-cancel", cancelView{Copy: words, Off: true})
 }
 
@@ -426,13 +453,13 @@ func dayName(d workdaybus.Day) page.Phrase {
 func Notices(cfg Config) []notices.Kind {
 	a := app{cfg: cfg}
 
-	return []notices.Kind{{
+	return append([]notices.Kind{{
 		Name: confirmName, When: confirmWhen, Words: confirmation,
 		Sample: func(l types.Lang) noticebus.Notice {
 			d := notices.SampleDay()
 			return a.confirm(l, d, rsvpbus.RSVP{Name: "Ana", Cancel: "sample"}, cfg.BaseURL+cfg.LeavePath+"?t=sample")
 		},
-	}}
+	}}, a.stewardKinds()...)
 }
 
 var (
@@ -443,7 +470,7 @@ var (
 // NoticeWords is the copy of Notices' names, for the catalog.
 var NoticeWords = page.Copy{
 	Where: "the stewards' screen of every message the app sends: a message's name, and when it is sent",
-	Words: []types.Text{confirmName, confirmWhen},
+	Words: []types.Text{confirmName, confirmWhen, joinedName, joinedWhen, leftName, leftWhen},
 }
 
 // ------------------------------------------------------------------ the parts

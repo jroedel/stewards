@@ -20,6 +20,18 @@
 </li>
 {{end}}</ul>
 
+{{if .DayNotices}}<h2 id="day-notices">{{t $l "When someone signs up for a day"}}</h2>
+<form class="card form" method="post" action="/steward/stewards/day-notices">
+  <fieldset>
+    <legend>{{t $l "Email me"}}</legend>
+    <label class="check"><input type="radio" name="signups" value="each"{{if eq .SignUps "each"}} checked{{end}}> {{t $l "Each time someone signs up or cancels"}}</label>
+    <label class="check"><input type="radio" name="signups" value=""{{if eq .SignUps ""}} checked{{end}}> {{t $l "Not at all"}}</label>
+  </fieldset>
+  <p class="help">{{t $l "Only you get these, at your address here. Each steward chooses for themselves."}}</p>
+  <button class="button" type="submit">{{t $l "Save"}}</button>
+</form>
+{{end}}
+
 <h2>{{t $l "Add a steward"}}</h2>
 <form class="card form" method="post" action="/steward/stewards">
   <label for="email">{{t $l "Their email address"}}</label>
