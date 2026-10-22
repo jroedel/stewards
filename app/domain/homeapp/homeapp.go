@@ -100,6 +100,9 @@ func (a *App) Routes(mux *http.ServeMux) {
 
 	// Exact, so it sits beside placeapp's /places/{slug} without taking it.
 	mux.HandleFunc("GET "+PlacesPath, a.list)
+
+	// What the offline worker shows for a page the phone has not kept.
+	mux.HandleFunc("GET /offline", a.offline)
 }
 
 // The copy on these screens, in English; Claude translates it through the
@@ -125,6 +128,9 @@ type wording struct {
 
 	PlacesEyebrow, PlacesTitle, PlacesLead, Places, Empty types.Text
 	MapLabel                                              types.Text
+
+	// The page for no signal and no copy kept: see offline.
+	OfflineTitle, OfflineLead, OfflineGo types.Text
 }
 
 // Words is this app's copy, for the catalog the translation memory lists.
@@ -165,6 +171,10 @@ var words = wording{
 	Places:        types.Text{EN: "Places"},
 	Empty:         types.Text{EN: "No places have been added yet."},
 	MapLabel:      types.Text{EN: "Map of the garden. North is up; the road is along the bottom."},
+
+	OfflineTitle: types.Text{EN: "No signal here"},
+	OfflineLead:  types.Text{EN: "This page is not saved on this phone. A place you open while you have signal is saved on the phone, with its plants, for when the signal goes."},
+	OfflineGo:    types.Text{EN: "All places"},
 }
 
 // ------------------------------------------------------------------ home
@@ -233,6 +243,7 @@ func (a *App) home(w http.ResponseWriter, r *http.Request) {
 		v.Days = append(v.Days, dv)
 	}
 
+	page.Keep(w, r)
 	a.render.Render(w, r, http.StatusOK, "home", v)
 }
 
@@ -284,7 +295,23 @@ func (a *App) list(w http.ResponseWriter, r *http.Request) {
 		v.Places = append(v.Places, r)
 	}
 
+	page.Keep(w, r)
 	a.render.Render(w, r, http.StatusOK, "places", v)
+}
+
+// offline is the page the offline worker (page.OfflineWorker) shows for an
+// address the phone has not kept, when there is no signal to fetch it: which
+// is a page about there being no signal, and so is never seen at the address
+// it is served from. The worker fetches it ahead, in each language a page has
+// come in, and keeps it like any other page.
+//
+// It says what is kept and how, rather than only that this is not, so that a
+// volunteer under the trees learns to open their place at the parking lot
+// next time; and it links the list of places, which is kept whenever it has
+// been opened.
+func (a *App) offline(w http.ResponseWriter, r *http.Request) {
+	page.Keep(w, r)
+	a.render.Render(w, r, http.StatusOK, "offline", words)
 }
 
 func (a *App) fail(w http.ResponseWriter, r *http.Request, what string, err error) {

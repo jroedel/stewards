@@ -166,6 +166,7 @@ func New(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("GET /static/js/{file}", render.Scripts())
 	mux.HandleFunc("GET /static/fonts/{file}", render.Files("fonts"))
 	mux.HandleFunc("GET /static/img/{file}", render.Files("img"))
+	mux.HandleFunc("GET /offline-worker.js", render.OfflineWorker())
 
 	signUp := cfg.BaseURL != "" && cfg.Mail != nil && cfg.Subscribers != nil && cfg.Notices != nil
 	texts := signUp && cfg.Notices.Texts()

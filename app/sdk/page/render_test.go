@@ -199,3 +199,75 @@ func TestAllowFormToWidensOnlyFormAction(t *testing.T) {
 		t.Errorf("%s", got)
 	}
 }
+
+// A page its handler marks with Keep is sent private, no-cache, which is the
+// offline worker's sign that a phone may keep it, and it registers the
+// worker and carries the line the worker shows over a kept copy, hidden. A
+// page not marked has none of it, and stays no-store from the policy.
+func TestAKeptPageRegistersTheOfflineWorker(t *testing.T) {
+	rn := renderer(t)
+
+	serve := func(keep bool, status int) *httptest.ResponseRecorder {
+		h := mid.Lang()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-store") // as the policy sends every page
+			if keep {
+				page.Keep(w, r)
+			}
+			rn.Render(w, r, status, "hello", types.Text{EN: "Switchbacks"})
+		}))
+
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/places/switchbacks", nil))
+
+		return rec
+	}
+
+	kept := serve(true, http.StatusOK)
+	body := kept.Body.String()
+
+	if got := kept.Header().Get("Cache-Control"); got != "private, no-cache" {
+		t.Errorf("a kept page's Cache-Control = %q", got)
+	}
+
+	for _, want := range []string{
+		`<script type="module" src="/static/js/offline.`,
+		`<p class="offline-note" hidden>No signal here. This is the copy saved on this phone on {when}.</p>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("a kept page has no %s", want)
+		}
+	}
+
+	// Not marked, or marked but answering something other than the page --
+	// a place that is not there -- is not kept, and has none of it.
+	for name, rec := range map[string]*httptest.ResponseRecorder{
+		"not marked":        serve(false, http.StatusOK),
+		"marked, not there": serve(true, http.StatusNotFound),
+	} {
+		if strings.Contains(rec.Body.String(), "offline") {
+			t.Errorf("%s: the page registers the worker or carries its line", name)
+		}
+	}
+
+	if got := serve(false, http.StatusOK).Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("a page not marked: Cache-Control = %q", got)
+	}
+}
+
+// The worker is served from the site's root, so that it may look after every
+// page, as script, and checked with the server each time rather than kept,
+// so that a new one reaches phones.
+func TestTheOfflineWorkerIsServedFromTheRoot(t *testing.T) {
+	rn := renderer(t)
+
+	rec := httptest.NewRecorder()
+	rn.OfflineWorker()(rec, httptest.NewRequest(http.MethodGet, "/offline-worker.js", nil))
+
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "text/javascript; charset=utf-8" || rec.Header().Get("Cache-Control") != "no-cache" {
+		t.Fatalf("the worker: %d %q %q", rec.Code, rec.Header().Get("Content-Type"), rec.Header().Get("Cache-Control"))
+	}
+
+	if !strings.Contains(rec.Body.String(), `self.addEventListener("fetch"`) {
+		t.Error("the worker served is not the worker")
+	}
+}

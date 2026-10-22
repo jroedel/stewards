@@ -608,6 +608,17 @@ func Best(photos []Photo, k Kind) (Photo, bool) {
 	return best, found
 }
 
+// PlantingView and WeedingView are the kinds each view of a plant's card
+// shows, in the order it shows them: Planting for someone choosing what goes
+// in, Weeding for someone deciding what comes out (phase-1-plan.md). Here
+// rather than with the card, because a place card keeps the first Weeding
+// photo of each of its plants on a phone for when there is no signal, and
+// the two must agree on which photo that is.
+var (
+	PlantingView = []Kind{Flower, Fruit, Mature, Winter}
+	WeedingView  = []Kind{Young, Leaf, Fruit, Winter}
+)
+
 // LeadOrder is the order of kinds Lead looks through: the flower says most
 // about a plant at a glance, then the leaf, which is what it is told apart by
 // out of bloom; the grown plant before the seedling, and winter last, since
