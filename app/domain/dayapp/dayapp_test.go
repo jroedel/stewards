@@ -208,6 +208,11 @@ func TestANewcomerSaysTheyllCome(t *testing.T) {
 		t.Fatalf("the home page does not link the day's page:\n%s", home)
 	}
 
+	// The days come first, and the list after them, for when none suits.
+	if day, form := strings.Index(home, `href="`+s.dayPath()+`"`), strings.Index(home, `action="/subscribe"`); day < 0 || form < day {
+		t.Errorf("the sign-up form comes before the days (%d, %d)", form, day)
+	}
+
 	page := s.do(http.MethodGet, s.dayPath(), nil, false).Body.String()
 	for _, want := range []string{"Planting the rain garden", "Nobody has said yet", `name="name"`, `name="phone"`, `name="website"`, "Shown on this page to anyone"} {
 		if !strings.Contains(page, want) {
