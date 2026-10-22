@@ -333,7 +333,7 @@ func TestTheListShowsEachPlantsFlower(t *testing.T) {
 
 	body := s.get("/steward/species").Body.String()
 
-	if !strings.Contains(body, `src="/photos/`+flower.ID.String()+`/small.jpg"`) {
+	if !strings.Contains(body, `src="/photos/`+flower.ID.String()+`/thumb.jpg"`) {
 		t.Error("the list does not show the plant's flower")
 	}
 

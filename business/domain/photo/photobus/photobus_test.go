@@ -23,6 +23,7 @@ import (
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/domain/species/stores/speciesdb"
 	"github.com/jroedel/stewards/business/types"
+	"github.com/jroedel/stewards/foundation/imaging"
 	"github.com/jroedel/stewards/foundation/sqldb"
 )
 
@@ -249,6 +250,52 @@ func TestTheFullPictureIsTheOriginalWithoutWhereItWasTaken(t *testing.T) {
 	}
 }
 
+// A thumbnail is made from the small picture the first time it is asked
+// for, and kept: a photo kept before there were thumbnails gets one, and a
+// list read twice makes it once.
+func TestAThumbnailIsMadeOnceFromTheSmallPicture(t *testing.T) {
+	g := setup(t)
+
+	p, err := g.photos.Add(t.Context(), g.penstemon.ID, ours(photobus.Leaf), photo(t, 2400, 1800))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	open := func() []byte {
+		t.Helper()
+
+		_, f, err := g.photos.Open(t.Context(), p.ID, photobus.Thumb)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+
+		b, err := io.ReadAll(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return b
+	}
+
+	thumb := open()
+
+	cfg, err := jpeg.DecodeConfig(bytes.NewReader(thumb))
+	if err != nil || cfg.Width != imaging.ThumbSide || cfg.Height != imaging.ThumbSide {
+		t.Errorf("the thumbnail is %dx%d (%v), want %d square", cfg.Width, cfg.Height, err, imaging.ThumbSide)
+	}
+
+	// Kept: with the small picture it was made from gone, it still opens,
+	// the same bytes.
+	if err := os.Remove(filepath.Join(g.dir, photobus.Name(p.ID, photobus.Small))); err != nil {
+		t.Fatal(err)
+	}
+
+	if again := open(); !bytes.Equal(again, thumb) {
+		t.Error("the second time is not the first")
+	}
+}
+
 func TestAPNGsFullPictureIsAPNG(t *testing.T) {
 	g := setup(t)
 
@@ -381,14 +428,17 @@ func TestRemovingAPhotoTakesItsFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Its full picture made, so that there is one to take.
-	_, f, err := g.photos.Open(t.Context(), p.ID, photobus.Full)
-	if err != nil {
-		t.Fatal(err)
+	// Its full picture and its thumbnail made, so that there are ones to
+	// take.
+	for _, size := range []photobus.Size{photobus.Full, photobus.Thumb} {
+		_, f, err := g.photos.Open(t.Context(), p.ID, size)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.Close()
 	}
-	f.Close()
 
-	if got := g.files(t); len(got) != 4 {
+	if got := g.files(t); len(got) != 5 {
 		t.Fatalf("files before: %v", got)
 	}
 

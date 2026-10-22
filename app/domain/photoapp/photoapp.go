@@ -1,6 +1,6 @@
 // Package photoapp is photos over HTTP: the pictures themselves, at
-// /photos/<id>/large.jpg and small.jpg, and the stewards' screens that add a
-// plant's photos, say what each one is, and check it.
+// /photos/<id>/large.jpg, small.jpg and thumb.jpg, and the stewards' screens
+// that add a plant's photos, say what each one is, and check it.
 //
 // The rules are photobus's. What is decided here is who may see a picture: a
 // checked photo is anybody's, as it is on the cards; an unchecked one is only
@@ -173,8 +173,16 @@ func (a app) file(w http.ResponseWriter, r *http.Request) {
 	// compromise: a phone in the garden keeps it between visits, and a
 	// photo taken down is gone from every phone by tomorrow. An unchecked one
 	// is a steward's alone and is not kept anywhere.
+	//
+	// After the day, for a week more, the phone shows the copy it has at
+	// once and asks in the background whether it still stands
+	// (stale-while-revalidate). Without that, the first look after a day
+	// waits on the answer, and under the trees on one bar of signal the
+	// answer is what does not come. The price, which the stewards chose on
+	// 2026-10-21: a photo taken down can be shown once more, from a phone
+	// that kept it, before that phone's question learns it is gone.
 	if p.Checked {
-		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Header().Set("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800")
 	} else {
 		w.Header().Set("Cache-Control", "private, no-store")
 	}

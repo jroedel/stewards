@@ -134,6 +134,11 @@ const (
 	// (imaging.Stripped). For seeing the leaves on a whole plant, which
 	// 1600 pixels do not show. Made the first time it is asked for, and kept.
 	Full Size = "full"
+
+	// Thumb is a square imaging.ThumbSide pixels across, for the picture
+	// beside a plant's name in a list. Made from the small picture the first
+	// time it is asked for, and kept; see OpenThumb.
+	Thumb Size = "thumb"
 )
 
 // Dimensions is a picture's size in pixels, for the page to reserve the space
@@ -489,7 +494,7 @@ func (b *Business) Delete(ctx context.Context, id types.ID) error {
 	}
 
 	var errs []error
-	for _, name := range []string{Name(p.ID, Large), Name(p.ID, Small), originalName(p), FullName(p.ID, p.Format)} {
+	for _, name := range []string{Name(p.ID, Large), Name(p.ID, Small), Name(p.ID, Thumb), originalName(p), FullName(p.ID, p.Format)} {
 		if err := b.files.Remove(name); err != nil {
 			errs = append(errs, err)
 		}
@@ -548,13 +553,22 @@ func (b *Business) BySpecies(ctx context.Context) (map[types.ID][]Photo, error) 
 // Checked is on the Photo it returns. A Full picture is a JPEG or a PNG, as
 // the photo's Format says; the others are always JPEGs.
 func (b *Business) Open(ctx context.Context, id types.ID, size Size) (Photo, File, error) {
-	if size != Large && size != Small && size != Full {
+	if size != Large && size != Small && size != Full && size != Thumb {
 		return Photo{}, nil, ErrNotFound
 	}
 
 	p, err := b.store.ByID(ctx, id)
 	if err != nil {
 		return Photo{}, nil, err
+	}
+
+	if size == Thumb {
+		f, err := OpenThumb(ctx, b.files, p.ID)
+		if err != nil {
+			return Photo{}, nil, err
+		}
+
+		return p, f, nil
 	}
 
 	if size == Full {
@@ -667,8 +681,8 @@ func Name(id types.ID, size Size) string { return id.String() + "-" + string(siz
 func originalName(p Photo) string { return p.ID.String() + "-original." + Ext(p.Format) }
 
 // ServedName is the last part of the address a picture is served at:
-// large.jpg, small.jpg, and full.jpg or full.png as the photo's format is.
-// The large and small are always JPEGs, made that way; the full one is the
+// large.jpg, small.jpg, thumb.jpg, and full.jpg or full.png as the photo's
+// format is. The large, small and thumb are always JPEGs, made that way; the full one is the
 // original's own picture, so it is whatever the original was.
 func ServedName(size Size, format string) string {
 	if size == Full {
@@ -688,6 +702,8 @@ func ServedSize(name string) (Size, bool) {
 		return Large, true
 	case "small.jpg":
 		return Small, true
+	case "thumb.jpg":
+		return Thumb, true
 	case "full.jpg", "full.png":
 		return Full, true
 	}
@@ -770,6 +786,59 @@ func OpenFull(ctx context.Context, files Files, id types.ID, format string) (Fil
 	f, err = files.Open(name)
 	if err != nil {
 		return nil, fmt.Errorf("opening the full picture of photo %s: %w", id, err)
+	}
+
+	return f, nil
+}
+
+// OpenThumb opens a Thumb picture from files, making it from the small one
+// the first time, in the way OpenFull makes a Full one: so that every photo
+// kept before there were thumbnails has one too, with nothing to run over
+// the photos already on the server, and so that each is made once.
+//
+// The first list to show twenty photos that have none yet makes twenty, one
+// after another behind the one turn; each is a decode of an 800-pixel
+// picture, and every list after that is reading files.
+func OpenThumb(ctx context.Context, files Files, id types.ID) (File, error) {
+	name := Name(id, Thumb)
+
+	f, err := files.Open(name)
+	if err == nil {
+		return f, nil
+	}
+
+	if !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("opening the thumbnail of photo %s: %w", id, err)
+	}
+
+	release, err := imaging.Turn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
+	// Somebody else may have made it while this waited.
+	if f, err := files.Open(name); err == nil {
+		return f, nil
+	}
+
+	small, err := readAll(files, Name(id, Small))
+	if err != nil {
+		return nil, fmt.Errorf("reading the small picture of photo %s: %w", id, err)
+	}
+
+	thumb, err := imaging.Thumbnail(small)
+	if err != nil {
+		return nil, fmt.Errorf("making the thumbnail of photo %s: %w", id, err)
+	}
+
+	if err := files.Put(name, thumb.JPEG); err != nil {
+		return nil, err
+	}
+
+	f, err = files.Open(name)
+	if err != nil {
+		return nil, fmt.Errorf("opening the thumbnail of photo %s: %w", id, err)
 	}
 
 	return f, nil

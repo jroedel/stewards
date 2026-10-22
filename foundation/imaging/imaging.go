@@ -52,6 +52,13 @@ const (
 	LargeSide = 1600
 	SmallSide = 800
 
+	// ThumbSide is a thumbnail's side, and a thumbnail is square: the
+	// 64-pixel picture beside a plant's name in a list, at three device
+	// pixels each. It is about 12 KB where the small picture is 150, which
+	// is the difference between a place's list of twenty plants arriving
+	// under the trees on one bar of signal and not.
+	ThumbSide = 192
+
 	// MinSide is the smallest photo worth keeping. Below this a leaf's edge
 	// is a few pixels, and the photo would be a reason to stop looking
 	// rather than a way to tell two plants apart.
@@ -213,6 +220,43 @@ func Prepare(ctx context.Context, data []byte) (Prepared, error) {
 	}
 
 	return p, nil
+}
+
+// Thumbnail makes a square thumbnail from a photo's small picture: the
+// middle of it, as wide as its shorter side, scaled to ThumbSide. The caller
+// holds the Turn, as it does for Stripped, so that it can look once more for
+// a thumbnail somebody else made while it waited.
+//
+// From the small picture rather than the original, for two reasons. Every
+// photo kept so far has one, so a thumbnail can be made for a photo that
+// arrived before there were thumbnails, the first time it is asked for. And
+// it is already upright and already without its camera's details, and at
+// 800 pixels it is a few megabytes of pixels to decode rather than the
+// original's fifty.
+//
+// The middle, because a list crops to a square anyway (object-fit: cover)
+// and does it from the middle; doing the same here means the picture a
+// person sees is the one they would have seen before, in a smaller file.
+func Thumbnail(small []byte) (Picture, error) {
+	src, err := jpeg.Decode(bytes.NewReader(small))
+	if err != nil {
+		return Picture{}, fmt.Errorf("reading the small picture: %w", err)
+	}
+
+	b := src.Bounds()
+	side := min(b.Dx(), b.Dy())
+	at := image.Pt(b.Min.X+(b.Dx()-side)/2, b.Min.Y+(b.Dy()-side)/2)
+
+	// jpeg.Decode gives an *image.YCbCr or an *image.Gray, and both can be
+	// cut without copying a pixel.
+	sub, ok := src.(interface {
+		SubImage(image.Rectangle) image.Image
+	})
+	if !ok {
+		return Picture{}, fmt.Errorf("the small picture is a %T, which cannot be cut", src)
+	}
+
+	return encoded(shrink(sub.SubImage(image.Rectangle{Min: at, Max: at.Add(image.Pt(side, side))}), ThumbSide), 1)
 }
 
 // shrink scales src so its longer side is at most side, onto white. Never
