@@ -190,6 +190,13 @@ func TestTheCardSaysWhatToProtectAndWhatToPull(t *testing.T) {
 		}
 	}
 
+	// The lists come before the calendar, which is a screen tall on a phone:
+	// a weeder reads what to leave and what to pull without scrolling past
+	// it (the stewards, 2026-10-21).
+	if i, j, k := strings.Index(body, "panel-protect"), strings.Index(body, "panel-careful"), strings.Index(body, `class="calendar"`); !(i < j && j < k) {
+		t.Error("the flowering calendar comes before Protect, Pull and Careful")
+	}
+
 	// The calendar has a row for every protected plant with bloom months,
 	// planted or still to plant -- a bed keeps its calendar the day its
 	// planting is done -- and the penstemon's row fills March to May: three
@@ -204,7 +211,7 @@ func TestTheCardSaysWhatToProtectAndWhatToPull(t *testing.T) {
 	}
 
 	// Frogfruit is growing, not to plant: in Protect, not on To plant.
-	toPlant := body[strings.Index(body, `id="planned-h"`):strings.Index(body, `class="calendar"`)]
+	toPlant := body[strings.Index(body, `id="planned-h"`):strings.Index(body, `class="panels`)]
 	if strings.Contains(toPlant, "Frogfruit") || !strings.Contains(toPlant, "Brazos penstemon") {
 		t.Error("the To plant list holds the wrong plants")
 	}
