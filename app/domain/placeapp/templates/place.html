@@ -42,22 +42,6 @@
 {{with .Adds}}{{template "card-add" (pass $l .Planned)}}{{end}}
 {{end}}
 
-{{if .Calendar}}
-<h2>{{say $l .Copy.Flowers}}</h2>
-<div class="card calendar-card">
-<p class="help">{{say $l .Copy.FlowersHelp}}</p>
-<table class="calendar">
-  <thead><tr><th scope="col"><span class="sr-only">{{say $l $.Data.Copy.Plant}}</span></th>{{range $.Data.Months}}<th scope="col" aria-hidden="true">{{initial $l .}}</th>{{end}}</tr></thead>
-  <tbody>
-  {{range .Calendar}}<tr>
-    <th scope="row">{{say $l .Name}}<span class="sr-only">: {{say $l .BloomWords}}</span></th>
-    {{$swatch := .Swatch}}{{range .Bloom}}<td aria-hidden="true">{{if .}}<svg viewBox="0 0 10 10" width="100%" height="18" preserveAspectRatio="none"><rect width="10" height="10" rx="2" fill="{{if $swatch}}{{$swatch}}{{else}}#2B3990{{end}}" stroke="#231F20" stroke-opacity="0.3" stroke-width="0.6"/></svg>{{end}}</td>{{end}}
-  </tr>
-  {{end}}</tbody>
-</table>
-</div>
-{{end}}
-
 <div class="panels card-gap">
   <section class="panel panel-protect" aria-labelledby="protect-h">
     <h2 id="protect-h"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>{{say $l .Copy.Protect}}</h2>
@@ -86,6 +70,25 @@
 {{end}}
 
 <p class="not-sure">{{say $l .Copy.NotSure}}</p>
+
+{{/* The calendar comes after the lists, not before them (the stewards,
+     2026-10-21): on a phone it is a screen tall, and a weeder looking
+     for what to leave and what to pull had to scroll past all of it. */}}
+{{if .Calendar}}
+<h2>{{say $l .Copy.Flowers}}</h2>
+<div class="card calendar-card">
+<p class="help">{{say $l .Copy.FlowersHelp}}</p>
+<table class="calendar">
+  <thead><tr><th scope="col"><span class="sr-only">{{say $l $.Data.Copy.Plant}}</span></th>{{range $.Data.Months}}<th scope="col" aria-hidden="true">{{initial $l .}}</th>{{end}}</tr></thead>
+  <tbody>
+  {{range .Calendar}}<tr>
+    <th scope="row">{{say $l .Name}}<span class="sr-only">: {{say $l .BloomWords}}</span></th>
+    {{$swatch := .Swatch}}{{range .Bloom}}<td aria-hidden="true">{{if .}}<svg viewBox="0 0 10 10" width="100%" height="18" preserveAspectRatio="none"><rect width="10" height="10" rx="2" fill="{{if $swatch}}{{$swatch}}{{else}}#2B3990{{end}}" stroke="#231F20" stroke-opacity="0.3" stroke-width="0.6"/></svg>{{end}}</td>{{end}}
+  </tr>
+  {{end}}</tbody>
+</table>
+</div>
+{{end}}
 {{else}}
 <div class="card empty card-gap">
   <p>{{say $l .Copy.NotListed}}</p>
