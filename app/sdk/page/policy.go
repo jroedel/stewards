@@ -42,8 +42,8 @@ const hsts = "max-age=31536000; includeSubDomains"
 //
 // no-store is the starting point and not the settled answer. It is right for
 // a steward's edit screen and wrong for a species card a volunteer wants on
-// their phone with no signal. It changes per route when that route exists,
-// which is why this is a function of the request.
+// their phone with no signal. A page a phone may keep says so itself, with
+// Keep, which sends it private, no-cache instead, for the offline worker.
 func Policy() web.PolicyFor {
 	return func(*http.Request) web.Policy {
 		return web.Policy{

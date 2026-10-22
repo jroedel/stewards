@@ -105,6 +105,19 @@ a:hover { color: var(--sf-blue-dk); }
 
 .lang.is-on { color: var(--sf-white); background: var(--sf-blue); }
 
+/* The offline worker's line over a page this phone kept, shown when there is
+   no signal (offline-worker.js). Shrine blue, as the "Today" banner is: it
+   changes how far the page can be trusted, so it should not be missed. */
+.offline-note {
+  margin: 16px 0 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--sf-blue);
+  color: var(--sf-white);
+  font-size: 15px;
+  font-weight: 700;
+}
+
 /* ---------------------------------------------------------------- type */
 
 .eyebrow {

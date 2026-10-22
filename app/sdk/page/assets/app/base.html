@@ -8,6 +8,7 @@
 <link rel="icon" type="image/png" href="/static/img/isotype-512.png">
 {{with .Manifest}}<link rel="manifest" href="{{.}}">{{end}}
 {{with .AppScript}}<script type="module" src="{{.}}"></script>{{end}}
+{{if .Keep}}<script type="module" src="{{.Script "offline.mjs"}}"></script>{{end}}
 </head>
 <body>
 <header class="masthead">
@@ -18,7 +19,12 @@
 </nav>
 </header>
 <main>
-{{block "content" .}}{{end}}
+{{/* The line the offline worker shows when what is on the screen is the
+copy this phone kept, because there is no signal: hidden here, and the
+worker takes the hidden away and puts the moment it was kept in place of
+{when}. Written by the server, in the page's language, because the worker
+has no words of its own (see offline-worker.js). */}}{{if .Keep}}<p class="offline-note" hidden>{{t .Lang "No signal here. This is the copy saved on this phone on {when}." "when" "{when}"}}</p>
+{{end}}{{block "content" .}}{{end}}
 </main>
 <footer class="foot">
 {{if .Steward}}<p class="foot-who">{{t .Lang "Signed in as {address}" "address" .Steward}}</p>

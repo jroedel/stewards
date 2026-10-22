@@ -328,3 +328,31 @@ func photos(t *testing.T, db *sql.DB) *photobus.Business {
 
 	return photobus.NewBusiness(photodb.NewStore(db), files, nil)
 }
+
+// The page the offline worker shows for an address a phone has not kept
+// says so, and what is kept and how, and leads to the list of places. It, the
+// front page and the list are all pages a phone may keep, and register the
+// worker that keeps them.
+func TestThePageForNoSignalSaysWhatIsKept(t *testing.T) {
+	h, _ := server(t)
+
+	code, body := get(t, h, "/offline", "")
+	if code != http.StatusOK {
+		t.Fatalf("/offline: %d", code)
+	}
+
+	for _, want := range []string{"<h1>No signal here</h1>", "is saved on the phone, with its plants", `href="/places"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/offline has no %q", want)
+		}
+	}
+
+	for _, path := range []string{"/", "/places", "/offline"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+
+		if rec.Header().Get("Cache-Control") != "private, no-cache" || !strings.Contains(rec.Body.String(), `src="/static/js/offline.`) {
+			t.Errorf("%s: Cache-Control %q, or no worker registered", path, rec.Header().Get("Cache-Control"))
+		}
+	}
+}

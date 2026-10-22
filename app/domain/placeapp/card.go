@@ -2,6 +2,7 @@ package placeapp
 
 import (
 	"cmp"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 	"github.com/jroedel/stewards/business/domain/place/placebus"
 	"github.com/jroedel/stewards/business/domain/species/speciesbus"
 	"github.com/jroedel/stewards/business/types"
+	"github.com/jroedel/stewards/foundation/web"
 )
 
 // This file is the place card: the page a volunteer opens from the list,
@@ -45,6 +47,7 @@ func CardRoutes(mux *http.ServeMux, cfg Config) {
 	a := newApp(cfg)
 
 	mux.HandleFunc("GET /places/{slug}", a.card)
+	mux.HandleFunc("GET /places/{slug}/keep", a.keep)
 }
 
 // The words on the card, in English; Claude translates them through the
@@ -468,6 +471,9 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 		v.Adds = addsFor(p, species, listed)
 	}
 
+	// A phone may keep it, and the bed with it (keep, below), for under the
+	// trees.
+	page.Keep(w, r)
 	a.render.Render(w, r, http.StatusOK, "place", v)
 }
 
@@ -563,4 +569,119 @@ func thumbOf(photos []photobus.Photo, kinds []photobus.Kind) string {
 	}
 
 	return ""
+}
+
+// ------------------------------------------------------------------ kept for no signal
+
+// keepList is what a phone keeps of a place for when there is no signal,
+// besides the card itself: the addresses the offline worker fetches when the
+// card is opened (page.OfflineWorker, offline-worker.js).
+type keepList struct {
+	Pages    []string `json:"pages"`
+	Pictures []string `json:"pictures"`
+}
+
+// keep is the list of what a phone keeps of a place: the bed, lightly, as
+// the stewards chose on 2026-10-22. For each plant listed at the place, and
+// at each place inside it, the plant's card at Weeding as the panels link
+// it, the thumbnail beside it, and the first photo on that card, at its small
+// size; a plant on To plant, its Planting card and photo as well, since that
+// is where its row leads. The places inside are kept too. About 3 MB for
+// Switchbacks' twenty plants, where every photo on every card would be three
+// times that.
+//
+// Here rather than worked out by the worker from the card's markup, so that
+// what is kept is decided where the card is, and tested with it.
+//
+// Checked photos only, as on the card: nothing in this list is anything a
+// volunteer could not open.
+func (a app) keep(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	p, err := a.places.BySlug(ctx, r.PathValue("slug"))
+	switch {
+	case errors.Is(err, placebus.ErrNotFound):
+		http.NotFound(w, r)
+
+		return
+	case err != nil:
+		a.fail(w, r, "reading a place to keep", err)
+
+		return
+	}
+
+	bands, err := a.places.Children(ctx, p.ID)
+	if err != nil {
+		a.fail(w, r, "reading the places inside a place to keep", err)
+
+		return
+	}
+
+	species, err := a.speciesByID(r)
+	if err != nil {
+		a.fail(w, r, "reading species to keep", err)
+
+		return
+	}
+
+	photos, err := a.photos.BySpecies(ctx)
+	if err != nil {
+		a.fail(w, r, "reading photos to keep", err)
+
+		return
+	}
+
+	out := keepList{Pages: []string{}, Pictures: []string{}}
+	seen := map[string]bool{}
+	add := func(list *[]string, address string) {
+		if address != "" && !seen[address] {
+			seen[address] = true
+			*list = append(*list, address)
+		}
+	}
+
+	picture := func(id, size string) string {
+		if id == "" {
+			return ""
+		}
+
+		return "/photos/" + id + "/" + size + ".jpg"
+	}
+
+	for i, at := range append([]placebus.Place{p}, bands...) {
+		if i > 0 {
+			add(&out.Pages, "/places/"+at.Slug)
+		}
+
+		listed, err := a.listings.ForPlace(ctx, at.ID)
+		if err != nil {
+			a.fail(w, r, "reading what is listed at a place to keep", err)
+
+			return
+		}
+
+		for _, l := range listed {
+			sp, ok := species[l.SpeciesID]
+			if !ok {
+				continue
+			}
+
+			line, shown := lineOf(sp, l, at.Slug), photos[sp.ID]
+
+			add(&out.Pages, line.WeedURL)
+			add(&out.Pictures, picture(thumbOf(shown, weedKinds), "thumb"))
+			add(&out.Pictures, picture(thumbOf(shown, photobus.WeedingView), "small"))
+
+			if l.Planned {
+				add(&out.Pages, line.PlantURL)
+				add(&out.Pictures, picture(thumbOf(shown, plantKinds), "thumb"))
+				add(&out.Pictures, picture(thumbOf(shown, photobus.PlantingView), "small"))
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(out); err != nil {
+		a.log.WarnContext(ctx, "the list to keep was cut off", "request_id", web.RequestIDFrom(ctx), "error", err)
+	}
 }

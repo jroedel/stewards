@@ -69,6 +69,11 @@ type Renderer struct {
 	// The installable app a steward's pages offer, if any: see OfferApp.
 	manifest, appScript string
 
+	// worker is the offline worker, offline-worker.js, served from the
+	// site's root rather than with the scripts: see OfflineWorker.
+	worker     []byte
+	workerETag string
+
 	// words is the translation memory the screens' own words are looked up
 	// in, or nil: see Translate.
 	words Translations
@@ -105,6 +110,11 @@ type Shell struct {
 	// Manifest and AppScript are the installable app, on a steward's pages
 	// alone, and empty on everybody else's: see OfferApp.
 	Manifest, AppScript string
+
+	// Keep is true on a page a phone may keep for when there is no signal
+	// (see Keep): it registers the offline worker, and carries the line the
+	// worker shows above the page when it is the phone's copy that is shown.
+	Keep bool
 
 	// scripts is where each shared script is served: see Script.
 	scripts map[string]string
@@ -221,6 +231,15 @@ func NewRenderer(log *slog.Logger, own ...fs.FS) (*Renderer, error) {
 	rn.scriptPaths = map[string]string{}
 	rn.files = map[string]asset{}
 
+	worker, err := fs.ReadFile(chrome, "offline-worker.js")
+	if err != nil {
+		return nil, fmt.Errorf("the offline worker could not be read: %w", err)
+	}
+
+	wsum := sha256.Sum256(worker)
+	rn.worker = worker
+	rn.workerETag = `"` + hex.EncodeToString(wsum[:])[:12] + `"`
+
 	// Every module in js/ but the tests beside them, which the embed takes
 	// along: they are a few kilobytes, and a pattern that left them out
 	// would be one more rule to keep in step with scripts/js-test.
@@ -288,6 +307,51 @@ func (rn *Renderer) OfferApp(manifest, script string) {
 	rn.manifest, rn.appScript = manifest, script
 }
 
+// keepable is the Cache-Control of a page a phone may keep: Keep.
+const keepable = "private, no-cache"
+
+// Keep says that the page about to be rendered may be kept on a phone, for
+// when the phone has no signal: a place card, a plant, the list of places,
+// the front page. design.md, "Offline in the woods". Called by the handler
+// before Render.
+//
+// The page is sent private, no-cache rather than the policy's no-store, and
+// the offline worker (OfflineWorker) keeps only pages sent that way: no-cache
+// means a copy may be kept as long as it is checked with the server whenever
+// there is signal, which is exactly what the worker does with it, and private
+// keeps it out of any cache between here and the phone.
+//
+// Nobody signed in, only. A steward's view of a place card has their own
+// forms on it, and a phone that kept it would show them to whoever held the
+// phone next, signed in or not; so a steward's page stays no-store, and
+// never reaches the worker's copies at all.
+func Keep(w http.ResponseWriter, r *http.Request) {
+	if _, ok := mid.StewardFrom(r.Context()); ok {
+		return
+	}
+
+	w.Header().Set("Cache-Control", keepable)
+}
+
+// OfflineWorker serves the offline worker, from /offline-worker.js.
+//
+// From the site's root rather than from /static/js/ with the other scripts,
+// because a service worker can look after only the addresses under its own,
+// and this one looks after the whole site's public pages. At one address that
+// never changes, with no-cache, for the same reason: the browser checks that
+// address for a new worker, and a hashed name would be a new address every
+// time the file changed.
+func (rn *Renderer) OfflineWorker() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Type", "text/javascript; charset=utf-8")
+		h.Set("Cache-Control", "no-cache")
+		h.Set("ETag", rn.workerETag)
+
+		http.ServeContent(w, r, "offline-worker.js", startup, bytes.NewReader(rn.worker))
+	}
+}
+
 // StylesheetPath is where the stylesheet is served, including its hash.
 func (rn *Renderer) StylesheetPath() string { return rn.cssPath }
 
@@ -318,6 +382,8 @@ func (rn *Renderer) Render(w http.ResponseWriter, r *http.Request, status int, n
 		manifest, appScript = rn.manifest, rn.appScript
 	}
 
+	keep := status == http.StatusOK && w.Header().Get("Cache-Control") == keepable
+
 	var buf bytes.Buffer
 
 	if err := set.ExecuteTemplate(&buf, "base", Shell{
@@ -328,6 +394,7 @@ func (rn *Renderer) Render(w http.ResponseWriter, r *http.Request, status int, n
 		Steward:    steward,
 		Manifest:   manifest,
 		AppScript:  appScript,
+		Keep:       keep,
 		scripts:    rn.scriptPaths,
 		Data:       data,
 	}); err != nil {

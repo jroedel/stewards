@@ -211,8 +211,8 @@ type figure struct {
 
 // viewKinds is the photos each view shows, in the order it shows them.
 var viewKinds = map[bool][]photobus.Kind{
-	false: {photobus.Flower, photobus.Fruit, photobus.Mature, photobus.Winter},
-	true:  {photobus.Young, photobus.Leaf, photobus.Fruit, photobus.Winter},
+	false: photobus.PlantingView,
+	true:  photobus.WeedingView,
 }
 
 type monthCell struct {
@@ -314,6 +314,7 @@ func (a app) card(w http.ResponseWriter, r *http.Request) {
 		v.Figures[i].Zoom = "/plants/" + sp.Slug + "/photos/" + v.Figures[i].ID + query(v.Weeding, from)
 	}
 
+	page.Keep(w, r)
 	a.render.Render(w, r, http.StatusOK, "plant", v)
 }
 
@@ -550,6 +551,7 @@ func (a app) photo(w http.ResponseWriter, r *http.Request) {
 		v.EditURL = "/steward/photos/" + p.ID.String() + "/edit"
 	}
 
+	page.Keep(w, r)
 	a.render.Render(w, r, http.StatusOK, "plant-photo", v)
 }
 

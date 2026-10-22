@@ -1,0 +1,5 @@
+{{define "content"}}{{$l := .Lang}}{{with .Data}}
+<h1>{{say $l .OfflineTitle}}</h1>
+<p class="lead">{{say $l .OfflineLead}}</p>
+<a class="button button-block" href="/places">{{say $l .OfflineGo}}</a>
+{{end}}{{end}}

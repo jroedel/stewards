@@ -2,11 +2,13 @@ package placeapp_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"image"
 	"image/jpeg"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -354,5 +356,80 @@ func TestAPanelShowsEachPlantsLeaf(t *testing.T) {
 	// The calendar's rows are words, not pictures: nothing above changes it.
 	if strings.Count(body, "thumb.jpg") != 2 {
 		t.Errorf("%d thumbnails on the card, want 2", strings.Count(body, "thumb.jpg"))
+	}
+}
+
+// What a phone keeps of a place, for under the trees: for each plant at the
+// place and at the places inside it, its Weeding card as the panels link it,
+// its thumbnail, and the first photo on that card at its small size; a plant
+// to plant, its Planting card and photo too; and the places inside. Checked
+// photos only. The card itself is keepable for a volunteer, and never for a
+// steward, whose card has their forms on it.
+func TestAPhoneKeepsAPlacesBed(t *testing.T) {
+	s := serve(t)
+	s.pilot()
+
+	garden := s.place("rain-garden").ID.String()
+	inflow := s.place("rain-garden-inflow").ID.String()
+
+	sedge := s.plant("cherokee-sedge", "Cherokee sedge", "#6B8E4E")
+	penstemon := s.plant("brazos-penstemon", "Brazos penstemon", "#B0418F", "3", "4", "5")
+
+	s.list(garden, sedge, "protect", false, "")
+	s.list(inflow, penstemon, "protect", true, "")
+
+	young := s.photo(sedge, photobus.Young, true)
+	leaf := s.photo(sedge, photobus.Leaf, true)
+	waiting := s.photo(sedge, photobus.Winter, false)
+	flower := s.photo(penstemon, photobus.Flower, true)
+
+	w := s.getAs("/places/rain-garden/keep", "")
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("the list: %d %q", w.Code, w.Header().Get("Content-Type"))
+	}
+
+	var got struct{ Pages, Pictures []string }
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{
+		"/plants/cherokee-sedge?from=rain-garden&view=weeding",
+		"/places/rain-garden-inflow",
+		"/places/rain-garden-middle",
+		"/plants/brazos-penstemon?from=rain-garden-inflow&view=weeding",
+		"/plants/brazos-penstemon?from=rain-garden-inflow",
+	} {
+		if !slices.Contains(got.Pages, want) {
+			t.Errorf("the pages kept leave out %s: %v", want, got.Pages)
+		}
+	}
+
+	for _, want := range []string{
+		"/photos/" + leaf + "/thumb.jpg",   // beside the sedge in Protect
+		"/photos/" + young + "/small.jpg",  // first on its Weeding card
+		"/photos/" + flower + "/thumb.jpg", // beside the penstemon, both lists
+		"/photos/" + flower + "/small.jpg", // first on its Planting card
+	} {
+		if !slices.Contains(got.Pictures, want) {
+			t.Errorf("the pictures kept leave out %s: %v", want, got.Pictures)
+		}
+	}
+
+	if strings.Contains(w.Body.String(), waiting) {
+		t.Error("a photo nobody has checked is in the list")
+	}
+
+	if w := s.getAs("/places/nowhere/keep", ""); w.Code != http.StatusNotFound {
+		t.Errorf("a place that is not there: %d", w.Code)
+	}
+
+	// The card: a volunteer's may be kept, a steward's may not.
+	if got := s.getAs("/places/rain-garden", "").Header().Get("Cache-Control"); got != "private, no-cache" {
+		t.Errorf("a volunteer's card: Cache-Control %q", got)
+	}
+
+	if w := s.get("/places/rain-garden"); w.Header().Get("Cache-Control") != "no-store" || strings.Contains(w.Body.String(), "offline.") {
+		t.Errorf("a steward's card: Cache-Control %q, or it registers the worker", w.Header().Get("Cache-Control"))
 	}
 }
