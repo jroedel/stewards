@@ -38,6 +38,7 @@ const summaryAt = 8
 // Stewards is who chose which notes: userbus.
 type Stewards interface {
 	TellSignUps(ctx context.Context, s userbus.SignUps) ([]userbus.User, error)
+	TellEvening(ctx context.Context) ([]userbus.User, error)
 }
 
 var summary = notices.Words{

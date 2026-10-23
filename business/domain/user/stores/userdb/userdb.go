@@ -37,7 +37,7 @@ var _ userbus.Storer = (*Store)(nil)
 
 // Expected is what CheckSchema verifies at startup and on every /healthz.
 var Expected = sqldb.Expected{
-	"users":         {"id", "email", "name", "enabled", "created_at", "updated_at", "signups", "notice_lang"},
+	"users":         {"id", "email", "name", "enabled", "created_at", "updated_at", "signups", "notice_lang", "evening"},
 	"signin_tokens": {"id", "user_id", "hash", "created_at", "expires_at", "used_at"},
 	"sessions":      {"id", "user_id", "hash", "created_at", "expires_at"},
 	"bootstrap":     {"id", "claimed_at"},
@@ -149,21 +149,27 @@ CREATE INDEX IF NOT EXISTS oauth_grants_user ON oauth_grants (user_id, expires_a
 		return err
 	}
 
+	// Whether they want the list the evening before each day; 0, no, for
+	// every account the column arrives on.
+	if err := sqldb.AddColumn(ctx, db, "users", "evening", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 // ------------------------------------------------------------------ users
 
-const userColumns = `id, email, name, enabled, created_at, updated_at, signups, notice_lang`
+const userColumns = `id, email, name, enabled, created_at, updated_at, signups, notice_lang, evening`
 
 // CreateUser inserts an account. The UNIQUE on email is the check for a
 // taken address; see userbus.Business.Create.
 func (s *Store) CreateUser(ctx context.Context, u userbus.User) error {
-	const q = `INSERT INTO users (` + userColumns + `) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	const q = `INSERT INTO users (` + userColumns + `) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := s.db.ExecContext(ctx, q,
 		u.ID.String(), u.Email.String(), u.Name, boolOf(u.Enabled), ms(u.CreatedAt), ms(u.UpdatedAt),
-		string(u.DayNotices.SignUps), string(u.DayNotices.Lang))
+		string(u.DayNotices.SignUps), string(u.DayNotices.Lang), boolOf(u.DayNotices.Evening))
 
 	switch {
 	case sqldb.IsUniqueViolation(err):
@@ -197,8 +203,8 @@ func (s *Store) UpdateUser(ctx context.Context, u userbus.User) error {
 // SetDayNotices sets what a steward is told about the days, and touches no
 // other column but updated_at; see userbus.Business.SetDayNotices.
 func (s *Store) SetDayNotices(ctx context.Context, id types.ID, n userbus.DayNotices, at time.Time) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE users SET signups = ?, notice_lang = ?, updated_at = ? WHERE id = ?`,
-		string(n.SignUps), string(n.Lang), ms(at), id.String())
+	res, err := s.db.ExecContext(ctx, `UPDATE users SET signups = ?, notice_lang = ?, evening = ?, updated_at = ? WHERE id = ?`,
+		string(n.SignUps), string(n.Lang), boolOf(n.Evening), ms(at), id.String())
 	if err != nil {
 		return fmt.Errorf("updating what the steward is told: %w", err)
 	}
@@ -258,9 +264,10 @@ func scanUser(row scanner) (userbus.User, error) {
 		enabled           int64
 		created, modified int64
 		signups, lang     string
+		evening           int64
 	)
 
-	err := row.Scan(&id, &email, &u.Name, &enabled, &created, &modified, &signups, &lang)
+	err := row.Scan(&id, &email, &u.Name, &enabled, &created, &modified, &signups, &lang, &evening)
 
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -286,6 +293,7 @@ func scanUser(row scanner) (userbus.User, error) {
 		u.DayNotices.Lang = types.English
 	}
 
+	u.DayNotices.Evening = evening != 0
 	u.Enabled = enabled != 0
 	u.CreatedAt = timeOf(created)
 	u.UpdatedAt = timeOf(modified)

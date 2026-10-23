@@ -4,7 +4,7 @@
 <h1>{{t $l "Stewards"}}</h1>
 <p class="lead">{{t $l "The people who can sign in and edit places. Volunteers don't need an account."}}</p>
 
-{{with .Done}}<p class="done" role="status">{{say $l .}}</p>{{end}}
+{{with .Done}}<p class="done" role="status">{{say $l .}}{{with $.Data.DoneToo}} {{say $l .}}{{end}}</p>{{end}}
 {{with .Problem}}<p class="problem" role="alert">{{say $l .}}</p>{{end}}
 
 <ul class="rows">
@@ -28,6 +28,7 @@
     <label class="check"><input type="radio" name="signups" value="daily"{{if eq .SignUps "daily"}} checked{{end}}> {{t $l "Once a day, at 8 in the morning, if anyone signed up or cancelled"}}</label>
     <label class="check"><input type="radio" name="signups" value=""{{if eq .SignUps ""}} checked{{end}}> {{t $l "Not at all"}}</label>
   </fieldset>
+  <label class="check"><input type="checkbox" name="evening" value="yes"{{if .Evening}} checked{{end}}> {{t $l "And at 6 the evening before each day, everyone who is coming"}}</label>
   <p class="help">{{t $l "Only you get these, at your address here. Each steward chooses for themselves."}}</p>
   <button class="button" type="submit">{{t $l "Save"}}</button>
 </form>

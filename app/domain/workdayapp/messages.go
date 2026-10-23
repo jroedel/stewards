@@ -167,7 +167,10 @@ var MessageWords = page.Catalog{
 	summary.Catalog("the email each morning to a garden steward who asked for a daily summary of who signed up for the stewardship days and who cancelled, " +
 		"in plain text; {days} is one part per day, made of the lines below"),
 	{Where: "one day's part of that summary: the day and how many are coming, then the names of who signed up and who cancelled", Words: summaryLines},
-	{Where: "the stewards' screen of every message the app sends: a message's name, and when it is sent", Words: []types.Text{summaryName, summaryWhen}},
+	eveningList.Catalog("the email the evening before a stewardship day to a garden steward who asked for the list of everyone coming, in plain text; " +
+		"{coming} is one of the two lines below"),
+	{Where: "the middle of that email: everyone coming, one name to a line, or that nobody has signed up", Words: eveningLines},
+	{Where: "the stewards' screen of every message the app sends: a message's name, and when it is sent", Words: []types.Text{summaryName, summaryWhen, eveningName, eveningWhen}},
 	{Where: "the stewards' screens: the messages sent about a day, and the screen of every message the app sends", Words: []any{sentNames, kindWords}},
 	{Where: "the stewards' screens for sending a message about a day to many people", Words: tell},
 }
@@ -288,7 +291,7 @@ func Notices(cfg Config) []notices.Kind {
 			Sample: func(l types.Lang) noticebus.Notice { return a.builder(cancelled, d, "", sample, nil)(r(l)) }},
 		{Name: kindWords.NoteName, When: kindWords.NoteWhen, Words: note,
 			Sample: func(l types.Lang) noticebus.Notice { return a.builder(note, d, "cancel", sample, noteText)(r(l)) }},
-	}, a.summaryKind()...)
+	}, append(a.summaryKind(), a.eveningKind()...)...)
 }
 
 // ------------------------------------------------------------------ the send screens
@@ -736,6 +739,10 @@ func (a app) remind(ctx context.Context) error {
 
 		to, tok := toComing(before)
 		a.cfg.Notices.SendBatch(ctx, "remind:"+d.ID.String(), to, a.builder(reminder, d, "cancel", tok, nil))
+
+		if err := a.tellEvening(ctx, d, rs); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	return errors.Join(errs...)

@@ -94,7 +94,7 @@ type wording struct {
 	Sent, Added, Off, On, NotAnEmail, Taken types.Text
 
 	// DayNotices is what the choice about the days was saved as.
-	DayNoticesEach, DayNoticesDaily, DayNoticesOff types.Text
+	DayNoticesEach, DayNoticesDaily, DayNoticesOff, DayNoticesEvening types.Text
 
 	// The note a new steward is sent, in plain text.
 	MailSubject, MailText types.Text
@@ -108,9 +108,10 @@ var words = wording{
 	NotAnEmail: types.Text{EN: "That does not look like an email address. Check it for a typo."},
 	Taken:      types.Text{EN: "A steward already has that address."},
 
-	DayNoticesEach:  types.Text{EN: "Saved. We'll email you each time someone signs up for a day or cancels."},
-	DayNoticesDaily: types.Text{EN: "Saved. We'll email you at 8 each morning when someone has signed up or cancelled since the morning before."},
-	DayNoticesOff:   types.Text{EN: "Saved. We won't email you about sign-ups. The Days screen still shows who is coming."},
+	DayNoticesEach:    types.Text{EN: "Saved. We'll email you each time someone signs up for a day or cancels."},
+	DayNoticesDaily:   types.Text{EN: "Saved. We'll email you at 8 each morning when someone has signed up or cancelled since the morning before."},
+	DayNoticesOff:     types.Text{EN: "Saved. We won't email you about sign-ups. The Days screen still shows who is coming."},
+	DayNoticesEvening: types.Text{EN: "And at 6 the evening before each day, we'll email you everyone who is coming."},
 
 	MailSubject: types.Text{EN: "You are now a garden steward"},
 	MailText: types.Text{EN: "You have been added as one of the garden stewards for the Schoenstatt Fathers' Trail of the Saints.\n\n" +
@@ -140,13 +141,15 @@ type view struct {
 	Email, Name string
 	Problems    map[string]any
 
-	// Done says what just happened. Problem is a refusal about a row.
-	Done, Problem any
+	// Done says what just happened, and DoneToo the second half of it
+	// when there is one. Problem is a refusal about a row.
+	Done, DoneToo, Problem any
 
 	// DayNotices is whether to show the choice about the days, and SignUps
-	// the signed-in steward's choice.
+	// and Evening the signed-in steward's choice.
 	DayNotices bool
 	SignUps    string
+	Evening    bool
 }
 
 func (a app) list(w http.ResponseWriter, r *http.Request) {
@@ -168,6 +171,10 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 		v.Done = words.DayNoticesDaily
 	case "quiet":
 		v.Done = words.DayNoticesOff
+	}
+
+	if v.Done != nil && r.URL.Query().Get("evening") == "yes" {
+		v.DoneToo = words.DayNoticesEvening
 	}
 
 	a.show(w, r, http.StatusOK, v)
@@ -313,18 +320,24 @@ func (a app) dayNotices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	evening := r.PostFormValue("evening") == "yes"
+
 	// In the language of the screen they chose on; see userbus.DayNotices.
-	if err := a.cfg.Users.SetDayNotices(r.Context(), me.ID, userbus.DayNotices{SignUps: signUps, Lang: mid.LangFrom(r.Context())}); err != nil {
+	if err := a.cfg.Users.SetDayNotices(r.Context(), me.ID, userbus.DayNotices{SignUps: signUps, Evening: evening, Lang: mid.LangFrom(r.Context())}); err != nil {
 		a.fail(w, r, "saving what a steward is told about the days", err)
 
 		return
 	}
 
-	a.cfg.Log.Info("a steward's notes about the days changed", "request_id", web.RequestIDFrom(r.Context()), "user_id", me.ID.String(), "signups", string(signUps))
+	a.cfg.Log.Info("a steward's notes about the days changed", "request_id", web.RequestIDFrom(r.Context()), "user_id", me.ID.String(), "signups", string(signUps), "evening", evening)
 
 	done := map[userbus.SignUps]string{userbus.SignUpsEach: "each", userbus.SignUpsDaily: "daily"}[signUps]
 	if done == "" {
 		done = "quiet"
+	}
+
+	if evening {
+		done += "&evening=yes"
 	}
 
 	http.Redirect(w, r, path+"?done="+done+"#day-notices", http.StatusSeeOther)
@@ -347,7 +360,7 @@ func (a app) show(w http.ResponseWriter, r *http.Request, status int, v view) {
 		})
 
 		if u.ID == me.ID {
-			v.SignUps = string(u.DayNotices.SignUps)
+			v.SignUps, v.Evening = string(u.DayNotices.SignUps), u.DayNotices.Evening
 		}
 	}
 

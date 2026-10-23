@@ -414,3 +414,35 @@ func TestOnlyAStewardWhoAskedIsToldOfSignUps(t *testing.T) {
 		t.Errorf("a refused choice changed it: %+v", u.DayNotices)
 	}
 }
+
+// The evening list is its own choice: a steward who wants it and nothing
+// else is told, and one turned off is not.
+func TestTheEveningListIsItsOwnChoice(t *testing.T) {
+	b, _ := setup(t)
+
+	evening, _ := b.Create(t.Context(), email(t, "evening@example.org"), "")
+	each, _ := b.Create(t.Context(), email(t, "each@example.org"), "")
+	off, _ := b.Create(t.Context(), email(t, "off@example.org"), "")
+
+	for u, n := range map[types.ID]userbus.DayNotices{
+		evening.ID: {Evening: true},
+		each.ID:    {SignUps: userbus.SignUpsEach},
+		off.ID:     {Evening: true},
+	} {
+		if err := b.SetDayNotices(t.Context(), u, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := b.SetEnabled(t.Context(), each.ID, off.ID, false); err != nil {
+		t.Fatal(err)
+	}
+
+	if told, err := b.TellEvening(t.Context()); err != nil || len(told) != 1 || told[0].ID != evening.ID {
+		t.Errorf("told the evening before: %+v, %v", told, err)
+	}
+
+	if told, _ := b.TellSignUps(t.Context(), userbus.SignUpsEach); len(told) != 1 || told[0].ID != each.ID {
+		t.Errorf("told of each sign-up: %+v", told)
+	}
+}
