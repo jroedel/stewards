@@ -220,7 +220,7 @@ func (a app) endpoints() []Endpoint {
 		},
 		{
 			Method: http.MethodGet, Path: Prefix + "/places", Tool: "list_places", NeedsKey: true,
-			Summary: "Every place in the garden, in the stewards' order, with what its card says about it: what it is for, its conditions, where to stand for its photo, and where it is on the map. A photo's place is one of these slugs.",
+			Summary: "Every place in the garden, in the stewards' order, with what its card says about it: where it starts and stops, its conditions, where to stand for its photo, and where it is on the map. A photo's place is one of these slugs.",
 			Returns: `{"places": [place], "map": {"width", "height"}}. A place is {slug, name, parent, purpose, conditions, photo_point, trail_anchor, sort, spot: {x, y} or absent, card_url}.`, handler: a.listPlaces,
 		},
 		{
@@ -234,7 +234,7 @@ func (a app) endpoints() []Endpoint {
 			Body: &Body{Encoding: "json", Fields: []Field{
 				text("name", "What people call it.", true),
 				{Name: "parent", Type: "string", Description: "The slug of the place this one is part of, such as a band of the rain garden; empty for one that stands on its own. One level deep at most."},
-				text("purpose", `What it is for: "the backdrop of the gathering space".`, false),
+				text("purpose", `Where it starts and stops, by things a volunteer can see: "from the bench to the big oak, between the path and the wall". Named for what it once asked, what the place is for.`, false),
 				text("conditions", "What a planter needs to know: sun, slope, soil, wet or dry.", false),
 				text("photo_point", `Where to stand, and which way to face, for its photo re-shot each season: "from the fire-pit bench, facing the wall".`, false),
 				{Name: "trail_anchor", Type: "string", Values: placebus.TrailAnchors, Description: "The station on the public trail page this place is, if it is one."},
