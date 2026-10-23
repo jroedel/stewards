@@ -39,6 +39,7 @@ const summaryAt = 8
 type Stewards interface {
 	TellSignUps(ctx context.Context, s userbus.SignUps) ([]userbus.User, error)
 	TellEvening(ctx context.Context) ([]userbus.User, error)
+	SetDayNotices(ctx context.Context, id types.ID, n userbus.DayNotices) error
 }
 
 var summary = notices.Words{

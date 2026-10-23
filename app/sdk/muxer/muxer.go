@@ -201,7 +201,7 @@ func New(cfg Config) (http.Handler, error) {
 			if tellStewards {
 				days.Stewards = cfg.Users
 				days.Links.StewardDay = stewardDay(cfg.BaseURL)
-				days.Links.Settings = cfg.BaseURL + stewardapp.DayNoticesPath
+				days.Links.Settings = cfg.BaseURL + workdayapp.DayNoticesPath
 			}
 
 			go workdayapp.RemindLoop(cfg.Background, days)
@@ -215,7 +215,7 @@ func New(cfg Config) (http.Handler, error) {
 		if tellStewards {
 			day.Stewards, day.Background = cfg.Users, cfg.Background
 			day.StewardDay = stewardDay(cfg.BaseURL)
-			day.Settings = cfg.BaseURL + stewardapp.DayNoticesPath
+			day.Settings = cfg.BaseURL + workdayapp.DayNoticesPath
 		}
 
 		dayapp.Routes(mux, day)
