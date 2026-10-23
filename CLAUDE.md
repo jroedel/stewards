@@ -147,6 +147,15 @@ A question about *behaviour* starts in `business/domain/…bus`. A question abou
   `git` is a pull request on a branch. An agent opens it; a person reviews and
   merges it. Nothing is committed or pushed to `main` directly, and an agent
   never merges its own PR.
+- **Dependency bumps are the one exception, and they are for security.** A
+  Go patch release and a module bump are where security fixes arrive, and a
+  fix waiting on a person to click merge is a fix not yet on the server. So
+  `.github/workflows/dependabot-merge.yml` merges and deploys them without a
+  person: Dependabot's weekly pull requests, and `go-version.yml`'s
+  `go-x.y.z` ones, once a day old with every check green (stewards decided
+  2026-10-23, issue #83). Nothing else is merged that way, and no agent
+  merges these either -- the workflow does. A new minor Go version is not a
+  bump: it opens an issue for a person.
 - **A merge to `main` is a deploy.** CI runs the checks and, if they pass,
   ships to the server. So the review is the last gate there is — a PR
   description says what the change does to the running app, not only to the
