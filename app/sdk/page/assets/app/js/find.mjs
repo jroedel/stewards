@@ -223,6 +223,15 @@ function enhance(select) {
   input.setAttribute("aria-controls", `find-${n}-list`);
   if (select.hasAttribute("aria-describedby")) input.setAttribute("aria-describedby", select.getAttribute("aria-describedby"));
 
+  // An autofocus <select> is one the page wants the steward put in, as
+  // the card's "+ Add" does when its popover opens: the browser gives the
+  // focus to the autofocus element inside a popover as it shows it. Hidden,
+  // the <select> cannot take it, so the box does.
+  if (select.autofocus) {
+    input.autofocus = true;
+    select.autofocus = false;
+  }
+
   const clear = document.createElement("button");
   clear.type = "button";
   clear.className = "find-clear";

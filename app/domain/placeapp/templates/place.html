@@ -124,7 +124,9 @@
 
 {{/* A list's "+ Add", for a signed-in steward only: see cardAdd. A
      volunteer never sees it. The plant select leaves out what is already
-     listed here. */}}
+     listed here. It has autofocus so that the popover, when it opens, puts
+     the steward straight in it -- in the search box find.mjs makes of it,
+     which takes the autofocus over (issue #94). */}}
 {{define "card-add"}}{{$l := .Lang}}{{with .Data}}{{if or .Species .Growing}}<div class="card-add">
 <button type="button" class="add-button" popovertarget="{{.ID}}">+ {{t $l "Add"}}</button>
 <div id="{{.ID}}" class="add-popover" popover>
@@ -135,7 +137,7 @@
   {{if .Planned}}<input type="hidden" name="planned" value="yes">{{end}}
   <input type="hidden" name="return" value="card">
   <label for="{{.ID}}-species">{{t $l "Plant"}}</label>
-  <select id="{{.ID}}-species" name="species" required data-find="{{plain $l "Type part of its name"}}"><option value="">{{plain $l "Choose a plant"}}</option>
+  <select id="{{.ID}}-species" name="species" required autofocus data-find="{{plain $l "Type part of its name"}}"><option value="">{{plain $l "Choose a plant"}}</option>
     {{if .Growing}}<optgroup label="{{plain $l "Not here yet"}}">{{end}}{{range .Species}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}>{{words $l .Label}}{{with .After}} ({{.}}){{end}}</option>{{end}}{{if .Growing}}</optgroup>
     <optgroup label="{{plain $l "Already growing here: plant more"}}">{{range .Growing}}<option value="{{.Value}}"{{with .Also}} data-also="{{.}}"{{end}}>{{words $l .Label}}{{with .After}} ({{.}}){{end}}</option>{{end}}</optgroup>{{end}}
   </select>
