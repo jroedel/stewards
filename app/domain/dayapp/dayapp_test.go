@@ -584,12 +584,15 @@ func TestAStewardWhoAskedIsToldOfEachSignUp(t *testing.T) {
 	}
 
 	// Once a day instead: saved, and nothing sent at once.
-	if w := s.do(http.MethodPost, "/steward/stewards/day-notices", url.Values{"signups": {"daily"}}, true); w.Header().Get("Location") != "/steward/stewards?done=daily#day-notices" {
-		t.Errorf("choosing once a day: %d %s", w.Code, w.Header().Get("Location"))
+	if w := s.do(http.MethodPost, "/steward/stewards/day-notices", url.Values{"signups": {"daily"}, "evening": {"yes"}}, true); w.Header().Get("Location") != "/steward/stewards?done=daily&evening=yes#day-notices" {
+		t.Errorf("choosing once a day and the evening list: %d %s", w.Code, w.Header().Get("Location"))
 	}
 
-	if page := s.do(http.MethodGet, "/steward/stewards?done=daily", nil, true).Body.String(); !strings.Contains(page, `value="daily" checked`) || !strings.Contains(page, "at 8 each morning") {
-		t.Errorf("after choosing once a day:\n%s", page)
+	page = s.do(http.MethodGet, "/steward/stewards?done=daily&evening=yes", nil, true).Body.String()
+	for _, want := range []string{`value="daily" checked`, `name="evening" value="yes" checked`, "at 8 each morning", "the evening before each day, we"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("after choosing once a day and the evening list, no %q:\n%s", want, page)
+		}
 	}
 
 	s.do(http.MethodPost, s.dayPath(), url.Values{"name": {"Marta"}, "email": {"marta@example.invalid"}}, false)

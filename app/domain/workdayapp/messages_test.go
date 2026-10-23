@@ -483,19 +483,8 @@ func TestTheReminderTheEveningBefore(t *testing.T) {
 func TestTheMorningSummaryToTheStewardsWhoChoseIt(t *testing.T) {
 	s := messaging(t)
 
-	users := userbus.NewBusiness(slog.New(slog.DiscardHandler), userdb.NewStore(s.db), nil)
-	for addr, choice := range map[string]userbus.SignUps{"daily@example.org": userbus.SignUpsDaily, "each@example.org": userbus.SignUpsEach} {
-		e, _ := types.ParseEmail(addr)
-
-		u, err := users.Create(t.Context(), e, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if err := users.SetDayNotices(t.Context(), u.ID, userbus.DayNotices{SignUps: choice, Lang: types.English}); err != nil {
-			t.Fatal(err)
-		}
-	}
+	s.stewardWho("daily@example.org", userbus.DayNotices{SignUps: userbus.SignUpsDaily})
+	s.stewardWho("each@example.org", userbus.DayNotices{SignUps: userbus.SignUpsEach})
 
 	// Rosa, the morning before the summary's span; Ana and Luis in it, and
 	// Ana cancelling in it too.
@@ -522,18 +511,7 @@ func TestTheMorningSummaryToTheStewardsWhoChoseIt(t *testing.T) {
 	*s.clock = time.Date(2026, 10, 23, 8, 30, 0, 0, types.Garden)
 	s.start()
 
-	// The loop's first look is at start, in its own goroutine; the record
-	// of the batch says when it has been sent.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if b, _ := s.notices.Batches(t.Context(), "stewards-daily:2026-10-23"); len(b) == 1 && b[0].Sent == 1 {
-			break
-		}
-
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	s.notices.Wait()
+	s.sentTo("stewards-daily:2026-10-23", 1)
 
 	if len(s.mail.Sent) != 1 {
 		t.Fatalf("%d emails, want the one summary", len(s.mail.Sent))
@@ -557,5 +535,110 @@ func TestTheMorningSummaryToTheStewardsWhoChoseIt(t *testing.T) {
 
 	if page := s.do(http.MethodGet, "/steward/messages", nil).Body.String(); !strings.Contains(page, "To the stewards: the day&#39;s sign-ups") && !strings.Contains(page, "To the stewards: the day's sign-ups") {
 		t.Error("the messages screen does not show the summary")
+	}
+}
+
+// stewardWho makes a steward at addr who chose n, in English: before start,
+// so that the loop's first look finds them.
+func (s *msite) stewardWho(addr string, n userbus.DayNotices) {
+	s.t.Helper()
+
+	users := userbus.NewBusiness(slog.New(slog.DiscardHandler), userdb.NewStore(s.db), nil)
+	e, _ := types.ParseEmail(addr)
+
+	u, err := users.Create(s.t.Context(), e, "")
+	if err != nil {
+		s.t.Fatal(err)
+	}
+
+	n.Lang = types.English
+	if err := users.SetDayNotices(s.t.Context(), u.ID, n); err != nil {
+		s.t.Fatal(err)
+	}
+}
+
+// sentTo waits for the batch key to have reached want people, then for
+// every batch to finish: the loop's first look is at start, in its own
+// goroutine, and the record of the batch says when it is done.
+func (s *msite) sentTo(key string, want int) {
+	s.t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if b, _ := s.notices.Batches(s.t.Context(), key); len(b) == 1 && b[0].Sent == want {
+			break
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	s.notices.Wait()
+}
+
+// The evening before a day, the stewards who ticked the box get everyone
+// coming, with the reminders; someone who signed up after six is on it.
+func TestTheEveningListToTheStewardsWhoAskedForIt(t *testing.T) {
+	s := messaging(t)
+	s.stewardWho("evening@example.org", userbus.DayNotices{Evening: true})
+	s.stewardWho("each@example.org", userbus.DayNotices{SignUps: userbus.SignUpsEach})
+
+	*s.clock = time.Date(2026, 10, 23, 17, 0, 0, 0, types.Garden)
+	s.coming()
+
+	*s.clock = time.Date(2026, 10, 23, 18, 2, 0, 0, types.Garden)
+	if _, err := s.rsvps.Request(t.Context(), s.day.ID, "Sam", s.contact("sam@example.invalid", ""), types.English); err != nil {
+		t.Fatal(err)
+	}
+
+	s.forget()
+
+	*s.clock = time.Date(2026, 10, 23, 18, 5, 0, 0, types.Garden)
+	s.start()
+	s.sentTo("stewards-evening:"+s.day.ID.String(), 1)
+
+	m := s.emailTo("evening@example.org")
+	m.Text = strings.ReplaceAll(m.Text, "\r\n", "\n") // as mail sends it
+
+	if m.Subject != "Tomorrow, Saturday, October 24: 3 coming" {
+		t.Errorf("subject: %q", m.Subject)
+	}
+
+	// Ana and Luis signed up at the same instant, so their order is their
+	// IDs'; Sam, after six, is last.
+	for _, want := range []string{"Coming (3):\n", "- Ana\n", "- Luis\n", "- Sam\n\n",
+		"https://stewards.example.invalid/steward/days/" + s.day.ID.String() + "/edit",
+		"https://stewards.example.invalid/steward/stewards#day-notices"} {
+		if !strings.Contains(m.Text, want) {
+			t.Errorf("the list does not say %q:\n%s", want, m.Text)
+		}
+	}
+
+	if strings.Contains(m.Text, "@example.invalid") {
+		t.Errorf("the list says how to reach them:\n%s", m.Text)
+	}
+
+	for _, sent := range s.mail.Sent {
+		if sent.To == "each@example.org" {
+			t.Error("a steward who did not tick the box got the list")
+		}
+	}
+
+	if page := s.do(http.MethodGet, "/steward/messages", nil).Body.String(); !strings.Contains(page, "To the stewards: who is coming tomorrow") {
+		t.Error("the messages screen does not show the evening list")
+	}
+}
+
+// A day nobody has signed up for yet still gets its list: "nobody yet" is
+// what the steward planning the morning needs to know.
+func TestTheEveningListSaysWhenNobodyIsComing(t *testing.T) {
+	s := messaging(t)
+	s.stewardWho("evening@example.org", userbus.DayNotices{Evening: true})
+
+	*s.clock = time.Date(2026, 10, 23, 18, 5, 0, 0, types.Garden)
+	s.start()
+	s.sentTo("stewards-evening:"+s.day.ID.String(), 1)
+
+	if m := s.emailTo("evening@example.org"); m.Subject != "Tomorrow, Saturday, October 24: 0 coming" || !strings.Contains(m.Text, "Nobody has signed up yet.") {
+		t.Errorf("the list: %s\n%s", m.Subject, m.Text)
 	}
 }

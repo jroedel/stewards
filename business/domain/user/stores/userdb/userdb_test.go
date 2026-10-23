@@ -489,3 +489,61 @@ func TestChoosingTheNotesChangesNothingElse(t *testing.T) {
 		t.Errorf("choosing for nobody: %v, want ErrNotFound", err)
 	}
 }
+
+// The users table as #101 left it on the server: the sign-up choice, and no
+// evening list yet.
+const beforeEvening = `
+CREATE TABLE users (
+    id          TEXT    PRIMARY KEY,
+    email       TEXT    NOT NULL UNIQUE,
+    name        TEXT    NOT NULL DEFAULT '',
+    enabled     INTEGER NOT NULL,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL,
+    signups     TEXT    NOT NULL DEFAULT '',
+    notice_lang TEXT    NOT NULL DEFAULT 'en'
+) STRICT;
+
+INSERT INTO users (id, email, enabled, created_at, updated_at, signups, notice_lang)
+VALUES ('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'steward@example.org', 1, 1, 1, 'daily', 'es');
+`
+
+// A steward who chose before the evening list existed keeps their choice,
+// has no evening list, and can ask for one.
+func TestInitBringsTheEveningListForward(t *testing.T) {
+	db, err := sqldb.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if _, err := db.ExecContext(t.Context(), beforeEvening); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 2 { // and at the next startup
+		if err := userdb.Init(t.Context(), db); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := sqldb.CheckSchema(t.Context(), db, userdb.Expected); err != nil {
+		t.Fatal(err)
+	}
+
+	s := userdb.NewStore(db)
+	id, _ := types.ParseID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+
+	u, err := s.UserByID(t.Context(), id)
+	if err != nil || u.DayNotices != (userbus.DayNotices{SignUps: userbus.SignUpsDaily, Lang: types.Spanish}) {
+		t.Fatalf("the steward from before is %+v, %v", u, err)
+	}
+
+	if err := s.SetDayNotices(t.Context(), id, userbus.DayNotices{SignUps: userbus.SignUpsDaily, Evening: true, Lang: types.Spanish}, now); err != nil {
+		t.Fatal(err)
+	}
+
+	if u, _ := s.UserByID(t.Context(), id); !u.DayNotices.Evening || u.DayNotices.SignUps != userbus.SignUpsDaily {
+		t.Errorf("after asking: %+v", u.DayNotices)
+	}
+}

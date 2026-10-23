@@ -44,6 +44,10 @@ func ParseSignUps(s string) (SignUps, error) {
 // DayNotices is a steward's choice about the stewardship days, and the
 // language the notes are written in.
 //
+// Evening is apart from SignUps (decided 2026-10-22): the list the evening
+// before each day, of everyone coming, is for planning the morning, and a
+// steward may want it without hearing of each sign-up, or both.
+//
 // Lang is the language of the screen they chose on. An account has no
 // language of its own -- the screens follow whoever is reading -- and a note
 // sent from the background has nobody reading, so the choice carries the
@@ -51,6 +55,7 @@ func ParseSignUps(s string) (SignUps, error) {
 // it.
 type DayNotices struct {
 	SignUps SignUps
+	Evening bool
 	Lang    types.Lang
 }
 
@@ -75,10 +80,21 @@ func (b *Business) SetDayNotices(ctx context.Context, id types.ID, n DayNotices)
 	return nil
 }
 
+// TellEvening is every steward who can sign in and asked for the list the
+// evening before each day.
+func (b *Business) TellEvening(ctx context.Context) ([]User, error) {
+	return b.tell(ctx, func(n DayNotices) bool { return n.Evening })
+}
+
 // TellSignUps is every steward who can sign in and chose s: who a note
 // about a sign-up goes to. A steward who has been turned off is told
 // nothing, whatever they chose before.
 func (b *Business) TellSignUps(ctx context.Context, s SignUps) ([]User, error) {
+	return b.tell(ctx, func(n DayNotices) bool { return n.SignUps == s })
+}
+
+// tell is every steward who can sign in and whose choice is wants.
+func (b *Business) tell(ctx context.Context, wants func(DayNotices) bool) ([]User, error) {
 	all, err := b.store.Users(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("reading the stewards: %w", err)
@@ -87,7 +103,7 @@ func (b *Business) TellSignUps(ctx context.Context, s SignUps) ([]User, error) {
 	var out []User
 
 	for _, u := range all {
-		if u.Enabled && u.DayNotices.SignUps == s {
+		if u.Enabled && wants(u.DayNotices) {
 			out = append(out, u)
 		}
 	}
