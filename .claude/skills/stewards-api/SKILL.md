@@ -150,6 +150,14 @@ its `spot` on the map -- so read it before saying anything about a place.
   person before creating a place whose slug you made up.
 - **A smaller place inside another** (a band of the rain garden) names it as
   `parent`. Only where it helps: the switchbacks can stay one place.
+- **`purpose` is the place's edges**, despite its name: where it starts and
+  stops, by things a volunteer can see ("from the bench to the big oak,
+  between the path and the wall"). It is how a plant is put in the right
+  part, so read the parts' edges before choosing one, and write them only
+  from what the person has said about the ground.
+- **Once a place has parts, its plants are listed in the parts** where they
+  grow, never on the place itself: a part's card does not show its parent's
+  plants. A weed found everywhere is listed in each part.
 - **The map** is a drawing of the property, not a survey. Put a place on it
   with `PUT /api/v1/places/<slug>/spot` (`{"x", "y"}` in the drawing's
   units, which the list's `map` gives) only when the person has said where it

@@ -130,9 +130,9 @@ func TestAPlaceKeepsItsWordsAndTheMemoryTheirTranslation(t *testing.T) {
 	// In list order, which ties go by name.
 	want := []string{
 		"the name of a part of Rain garden basin",
-		"Rain garden basin › Inflow band: what the place is for",
+		"Rain garden basin › Inflow band: where it starts and stops, by things a volunteer can see",
 		"the name of a place in the garden",
-		"Rain garden basin: what the place is for",
+		"Rain garden basin: where it starts and stops, by things a volunteer can see",
 		"the name of a place in the garden",
 	}
 	if !slices.Equal(wheres, want) || !originals[0].Name || originals[1].Name || originals[1].Text != band.Purpose {

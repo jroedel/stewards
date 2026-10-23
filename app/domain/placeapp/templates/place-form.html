@@ -36,8 +36,10 @@
   <p class="help">{{t $l "This place has smaller places inside it, so it stands on its own."}}</p>
   {{end}}
 
-  <label for="purpose">{{t $l "What it is for"}}</label>
-  <textarea id="purpose" name="purpose" rows="2" lang="{{.Purpose.Lang}}">{{.Purpose.Value}}</textarea>
+  {{/* The purpose field, asking for the edges: see placebus.Place.Purpose. */}}
+  <label for="purpose">{{t $l "Where it is"}}</label>
+  <p class="help" id="purpose-help">{{t $l "Where it starts and stops, by things a volunteer can see: from the bench to the big oak, between the path and the wall."}}</p>
+  <textarea id="purpose" name="purpose" rows="2" aria-describedby="purpose-help" lang="{{.Purpose.Lang}}">{{.Purpose.Value}}</textarea>
 
   <label for="conditions">{{t $l "Conditions"}}</label>
   <p class="help" id="conditions-help">{{t $l "Sun, shade, slope, soil, wet or dry: what a planter needs to know."}}</p>

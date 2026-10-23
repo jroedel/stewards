@@ -43,7 +43,17 @@ type Place struct {
 	// that stands on its own. A place is at most one level deep.
 	ParentID types.ID
 
-	// Purpose is what the place is for: "the backdrop of the gathering space".
+	// Purpose is where the place starts and stops, by things a volunteer can
+	// see: "from the bench to the big oak, between the path and the wall".
+	//
+	// It began as what the place is for, which the stewards rarely had
+	// anything to say about. What they lacked was the line between one
+	// place and the next, so as to know which part a plant goes in -- and
+	// this is shown where that question is asked: under the name on the
+	// card, and under each part on its parent's card. Turned to the edges
+	// keeping the name (the stewards, 2026-10-23): it is the column and the
+	// API's field, and a script or the nightly translation routine sending
+	// "purpose" should not break over a word.
 	Purpose types.Text
 
 	// Conditions are the notes a planter needs: sun, slope, soil, wet or dry.
@@ -517,7 +527,7 @@ func (b *Business) Originals(ctx context.Context) ([]translationbus.Source, erro
 
 		for _, s := range []translationbus.Source{
 			{Text: p.Name, Where: nameWhere, Name: true},
-			{Text: p.Purpose, Where: label + ": what the place is for"},
+			{Text: p.Purpose, Where: label + ": where it starts and stops, by things a volunteer can see"},
 			{Text: p.Conditions, Where: label + ": its conditions, for a planter (sun, soil, water)"},
 			{Text: p.PhotoPoint, Where: label + ": where to stand, and which way to face, for its photo"},
 		} {
