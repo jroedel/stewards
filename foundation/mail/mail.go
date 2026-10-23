@@ -36,6 +36,7 @@ import (
 	"net/smtp"
 	"net/textproto"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -376,7 +377,13 @@ func isLoopback(host string) bool {
 // only way in is an emailed link needs a way to run without a relay, and
 // hiding that in _test.go means the development path and the tested path are
 // different code.
+//
+// Send and Last lock, as [SMTP] needs no lock: two batches of messages run at
+// once -- the reminder the evening before and the stewards' list go out
+// together -- and each sends from its own goroutine. Sent is still a plain
+// field, read by a test once it has waited for the sending to finish.
 type Recorder struct {
+	mu   sync.Mutex
 	Sent []Message
 }
 
@@ -384,6 +391,9 @@ type Recorder struct {
 // caller cannot rely on it to catch an unsendable message -- that is what
 // [SMTP] is for.
 func (r *Recorder) Send(_ context.Context, m Message) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	r.Sent = append(r.Sent, m)
 
 	return nil
@@ -392,6 +402,9 @@ func (r *Recorder) Send(_ context.Context, m Message) error {
 // Last returns the most recent message, which is what a test almost always
 // wants.
 func (r *Recorder) Last() (Message, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if len(r.Sent) == 0 {
 		return Message{}, false
 	}

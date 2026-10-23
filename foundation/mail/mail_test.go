@@ -536,3 +536,24 @@ func TestRecorderKeepsMessages(t *testing.T) {
 	// reason it is here and not in a test file.
 	var _ mail.Sender = &r
 }
+
+// Two batches send at once, each from its own goroutine; the recorder keeps
+// every message from both. Under -race, an unlocked Send fails this.
+func TestARecorderTakesTwoSendersAtOnce(t *testing.T) {
+	r := &mail.Recorder{}
+
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Go(func() {
+			for range 50 {
+				_ = r.Send(t.Context(), mail.Message{To: "someone@example.invalid"})
+				_, _ = r.Last()
+			}
+		})
+	}
+	wg.Wait()
+
+	if len(r.Sent) != 100 {
+		t.Errorf("recorded %d, want 100", len(r.Sent))
+	}
+}
