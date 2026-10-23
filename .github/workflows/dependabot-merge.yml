@@ -161,12 +161,37 @@ jobs:
 
           [ -n "$run_id" ] || { echo "dispatched the deploy but cannot find its run"; exit 1; }
 
+          # A watch that stops is not a deploy that failed. gh run watch also
+          # stops when the API fails under it -- eumaeus's watch got an HTTP
+          # 500 on 2026-10-13 and reported a deploy that later succeeded as
+          # FAILED (jroedel/eumaeus#241) -- so the run's own conclusion is
+          # what decides, and one that has none yet is watched again.
           echo "deploy run ${run_id}; waiting"
-          if gh run watch "$run_id" --exit-status; then
-            echo "deployed"
-          else
-            echo "the deploy of the merged bump FAILED; the installer rolls back on its own,"
-            echo "and this run is red so that you hear about it:"
-            echo "  gh run view ${run_id} --log-failed"
-            exit 1
-          fi
+          for attempt in 1 2 3; do
+            if gh run watch "$run_id" --exit-status; then
+              echo "deployed"
+              exit 0
+            fi
+
+            conclusion=$(gh run view "$run_id" --json conclusion -q .conclusion 2>/dev/null || true)
+            case "$conclusion" in
+              success)
+                echo "deployed"
+                exit 0
+                ;;
+              "")
+                echo "lost sight of deploy run ${run_id} before it ended; watching again"
+                sleep 30
+                ;;
+              *)
+                echo "the deploy of the merged bump FAILED (${conclusion}); the installer rolls back on its own,"
+                echo "and this run is red so that you hear about it:"
+                echo "  gh run view ${run_id} --log-failed"
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "could not follow deploy run ${run_id} to its end; look at it:"
+          echo "  gh run view ${run_id}"
+          exit 1
