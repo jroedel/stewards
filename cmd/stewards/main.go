@@ -216,7 +216,7 @@ func run() error {
 	notices.OnStopped(subscribers.Stopped)
 	notices.OnStopped(rsvps.Stopped)
 
-	go prune(ctx, log, users, notices, inbox)
+	go prune(ctx, log, users, notices, inbox, rsvps)
 
 	handler, err := muxer.New(muxer.Config{
 		Log:      log,
@@ -387,11 +387,12 @@ func moveTranslations(ctx context.Context, log *slog.Logger, domains ...interfac
 }
 
 // prune clears expired sign-in links and sessions, the record of messages
-// the caps no longer count, and nursery stock photos past inboxbus.StockKept,
-// at startup and then every six hours.
+// the caps no longer count, nursery stock photos past inboxbus.StockKept,
+// and the names of people who cancelled past rsvpbus.CancelsKept, at startup
+// and then every six hours.
 // Housekeeping: nothing depends on it for correctness, since every check
 // reads the expiry, so a failure is logged and the next round tries again.
-func prune(ctx context.Context, log *slog.Logger, users *userbus.Business, notices *noticebus.Business, inbox *inboxbus.Business) {
+func prune(ctx context.Context, log *slog.Logger, users *userbus.Business, notices *noticebus.Business, inbox *inboxbus.Business, rsvps *rsvpbus.Business) {
 	tick := time.NewTicker(6 * time.Hour)
 	defer tick.Stop()
 
@@ -406,6 +407,10 @@ func prune(ctx context.Context, log *slog.Logger, users *userbus.Business, notic
 
 		if err := inbox.PruneStock(ctx); err != nil && ctx.Err() == nil {
 			log.Warn("old nursery stock photos could not be removed", "error", err)
+		}
+
+		if err := rsvps.Prune(ctx); err != nil && ctx.Err() == nil {
+			log.Warn("old cancellations could not be forgotten", "error", err)
 		}
 
 		select {

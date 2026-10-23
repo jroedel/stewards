@@ -7,6 +7,15 @@
 // told, which is the rules' order to keep, not the database's.
 //
 // It follows workdaydb in main's prepare, since it references workdays.
+//
+// # Who cancelled
+//
+// A cancellation by the person's own link moves the name to rsvp_cancels, in
+// the same transaction as the delete, for the stewards' once-a-day summary:
+// a row that is gone cannot say it was there. Only the name and the two
+// times are kept -- not the email or the phone, which nothing needs once the
+// person is off the day -- and only for rsvpbus.CancelsKept. A steward's
+// Remove and a STOP are not cancellations and are not kept.
 package rsvpdb
 
 import (
@@ -34,7 +43,8 @@ var _ rsvpbus.Storer = (*Store)(nil)
 
 // Expected is what CheckSchema verifies at startup and on every /healthz.
 var Expected = sqldb.Expected{
-	"rsvps": {"id", "workday_id", "name", "email", "phone", "lang", "cancel", "created_at"},
+	"rsvps":        {"id", "workday_id", "name", "email", "phone", "lang", "cancel", "created_at"},
+	"rsvp_cancels": {"id", "workday_id", "name", "created_at", "cancelled_at"},
 }
 
 // Init creates the table. Idempotent, run at every startup.
@@ -55,6 +65,19 @@ CREATE TABLE IF NOT EXISTS rsvps (
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS rsvps_phone ON rsvps (phone);
+
+-- A sign-up its person cancelled, for the stewards' summary; see the package
+-- comment. id is the sign-up's own.
+CREATE TABLE IF NOT EXISTS rsvp_cancels (
+    id            TEXT    PRIMARY KEY,
+    workday_id    TEXT    NOT NULL REFERENCES workdays (id) ON DELETE CASCADE,
+    name          TEXT    NOT NULL,
+    created_at    INTEGER NOT NULL,
+    cancelled_at  INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS rsvp_cancels_at ON rsvp_cancels (cancelled_at);
+
 `
 
 	if _, err := db.ExecContext(ctx, schema); err != nil {
@@ -194,6 +217,104 @@ func (s *Store) Delete(ctx context.Context, id types.ID) (bool, error) {
 	}
 
 	return n == 1, nil
+}
+
+// Cancel removes r's row and keeps its name in rsvp_cancels, as one
+// transaction, reporting whether there was a row: of two presses at once,
+// one removes it and the other finds nothing to keep.
+func (s *Store) Cancel(ctx context.Context, r rsvpbus.RSVP, at time.Time) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("starting a cancellation: %w", err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx, `DELETE FROM rsvps WHERE id = ?`, r.ID.String())
+	if err != nil {
+		return false, fmt.Errorf("cancelling a sign-up: %w", err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("counting the rows changed: %w", err)
+	}
+
+	if n == 0 {
+		return false, nil
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO rsvp_cancels (id, workday_id, name, created_at, cancelled_at)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (id) DO NOTHING`,
+		r.ID.String(), r.DayID.String(), r.Name, r.CreatedAt.UnixMilli(), at.UnixMilli()); err != nil {
+		return false, fmt.Errorf("keeping who cancelled: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("cancelling a sign-up: %w", err)
+	}
+
+	return true, nil
+}
+
+// Joined is every row made in [from, to), earliest first.
+func (s *Store) Joined(ctx context.Context, from, to time.Time) ([]rsvpbus.RSVP, error) {
+	return s.list(ctx, `WHERE created_at >= ? AND created_at < ? ORDER BY created_at, id`, from.UnixMilli(), to.UnixMilli())
+}
+
+// Cancels is every cancellation in [from, to), earliest first.
+func (s *Store) Cancels(ctx context.Context, from, to time.Time) ([]rsvpbus.Cancelled, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, workday_id, name, created_at, cancelled_at FROM rsvp_cancels
+WHERE cancelled_at >= ? AND cancelled_at < ?
+ORDER BY cancelled_at, id`, from.UnixMilli(), to.UnixMilli())
+	if err != nil {
+		return nil, fmt.Errorf("reading who cancelled: %w", err)
+	}
+	defer rows.Close()
+
+	var out []rsvpbus.Cancelled
+
+	for rows.Next() {
+		var (
+			c                  rsvpbus.Cancelled
+			id, day            string
+			created, cancelled int64
+		)
+
+		if err := rows.Scan(&id, &day, &c.Name, &created, &cancelled); err != nil {
+			return nil, fmt.Errorf("reading who cancelled: %w", err)
+		}
+
+		if c.ID, err = types.ParseID(id); err != nil {
+			return nil, fmt.Errorf("a stored cancellation has a bad id: %w", err)
+		}
+
+		if c.DayID, err = types.ParseID(day); err != nil {
+			return nil, fmt.Errorf("a stored cancellation has a bad day: %w", err)
+		}
+
+		c.CreatedAt = time.UnixMilli(created).UTC()
+		c.At = time.UnixMilli(cancelled).UTC()
+
+		out = append(out, c)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading who cancelled: %w", err)
+	}
+
+	return out, nil
+}
+
+// PruneCancels forgets cancellations made before before.
+func (s *Store) PruneCancels(ctx context.Context, before time.Time) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM rsvp_cancels WHERE cancelled_at < ?`, before.UnixMilli()); err != nil {
+		return fmt.Errorf("forgetting old cancellations: %w", err)
+	}
+
+	return nil
 }
 
 // Stopped takes the number off every day, deleting the rows it was all of;

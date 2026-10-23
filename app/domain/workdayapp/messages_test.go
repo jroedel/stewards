@@ -476,3 +476,86 @@ func TestTheReminderTheEveningBefore(t *testing.T) {
 		}
 	}
 }
+
+// The morning summary goes to the stewards who chose it, and only them,
+// with who signed up and who cancelled since 8 the morning before, and how
+// many are coming now.
+func TestTheMorningSummaryToTheStewardsWhoChoseIt(t *testing.T) {
+	s := messaging(t)
+
+	users := userbus.NewBusiness(slog.New(slog.DiscardHandler), userdb.NewStore(s.db), nil)
+	for addr, choice := range map[string]userbus.SignUps{"daily@example.org": userbus.SignUpsDaily, "each@example.org": userbus.SignUpsEach} {
+		e, _ := types.ParseEmail(addr)
+
+		u, err := users.Create(t.Context(), e, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := users.SetDayNotices(t.Context(), u.ID, userbus.DayNotices{SignUps: choice, Lang: types.English}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Rosa, the morning before the summary's span; Ana and Luis in it, and
+	// Ana cancelling in it too.
+	*s.clock = time.Date(2026, 10, 21, 7, 0, 0, 0, types.Garden)
+	if _, err := s.rsvps.Request(t.Context(), s.day.ID, "Rosa", s.contact("rosa@example.invalid", ""), types.English); err != nil {
+		t.Fatal(err)
+	}
+
+	*s.clock = time.Date(2026, 10, 22, 10, 0, 0, 0, types.Garden)
+	s.coming()
+
+	*s.clock = time.Date(2026, 10, 22, 11, 0, 0, 0, types.Garden)
+	rows, _ := s.rsvps.ForDay(t.Context(), s.day.ID)
+	for _, r := range rows {
+		if r.Name == "Ana" {
+			if _, err := s.rsvps.Cancel(t.Context(), r.Cancel); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	s.forget()
+
+	*s.clock = time.Date(2026, 10, 23, 8, 30, 0, 0, types.Garden)
+	s.start()
+
+	// The loop's first look is at start, in its own goroutine; the record
+	// of the batch says when it has been sent.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if b, _ := s.notices.Batches(t.Context(), "stewards-daily:2026-10-23"); len(b) == 1 && b[0].Sent == 1 {
+			break
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	s.notices.Wait()
+
+	if len(s.mail.Sent) != 1 {
+		t.Fatalf("%d emails, want the one summary", len(s.mail.Sent))
+	}
+
+	m := s.emailTo("daily@example.org")
+	m.Text = strings.ReplaceAll(m.Text, "\r\n", "\n") // as mail sends it
+
+	for _, want := range []string{"Since 8 am yesterday:", "Planting the rain garden. Coming now: 2.",
+		"Signed up: Luis\n", "Cancelled: Ana\n",
+		"https://stewards.example.invalid/steward/days/" + s.day.ID.String() + "/edit",
+		"https://stewards.example.invalid/steward/stewards#day-notices"} {
+		if !strings.Contains(m.Text, want) {
+			t.Errorf("the summary does not say %q:\n%s", want, m.Text)
+		}
+	}
+
+	if strings.Contains(m.Text, "Rosa") || strings.Contains(m.Text, "@example.invalid") {
+		t.Errorf("the summary says too much:\n%s", m.Text)
+	}
+
+	if page := s.do(http.MethodGet, "/steward/messages", nil).Body.String(); !strings.Contains(page, "To the stewards: the day&#39;s sign-ups") && !strings.Contains(page, "To the stewards: the day's sign-ups") {
+		t.Error("the messages screen does not show the summary")
+	}
+}

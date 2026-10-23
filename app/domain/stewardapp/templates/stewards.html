@@ -25,6 +25,7 @@
   <fieldset>
     <legend>{{t $l "Email me"}}</legend>
     <label class="check"><input type="radio" name="signups" value="each"{{if eq .SignUps "each"}} checked{{end}}> {{t $l "Each time someone signs up or cancels"}}</label>
+    <label class="check"><input type="radio" name="signups" value="daily"{{if eq .SignUps "daily"}} checked{{end}}> {{t $l "Once a day, at 8 in the morning, if anyone signed up or cancelled"}}</label>
     <label class="check"><input type="radio" name="signups" value=""{{if eq .SignUps ""}} checked{{end}}> {{t $l "Not at all"}}</label>
   </fieldset>
   <p class="help">{{t $l "Only you get these, at your address here. Each steward chooses for themselves."}}</p>

@@ -198,6 +198,12 @@ func New(cfg Config) (http.Handler, error) {
 				Leave:  func(t string) string { return cfg.BaseURL + signupapp.LeavePath + "?t=" + url.QueryEscape(t) },
 			}
 
+			if tellStewards {
+				days.Stewards = cfg.Users
+				days.Links.StewardDay = stewardDay(cfg.BaseURL)
+				days.Links.Settings = cfg.BaseURL + stewardapp.DayNoticesPath
+			}
+
 			go workdayapp.RemindLoop(cfg.Background, days)
 		}
 
@@ -208,7 +214,7 @@ func New(cfg Config) (http.Handler, error) {
 
 		if tellStewards {
 			day.Stewards, day.Background = cfg.Users, cfg.Background
-			day.StewardDay = func(id types.ID) string { return cfg.BaseURL + workdayapp.Path + "/" + id.String() + "/edit" }
+			day.StewardDay = stewardDay(cfg.BaseURL)
 			day.Settings = cfg.BaseURL + stewardapp.DayNoticesPath
 		}
 
@@ -412,4 +418,10 @@ func New(cfg Config) (http.Handler, error) {
 	)
 
 	return site, nil
+}
+
+// stewardDay is the full address of a day's stewards screen, for the notes to
+// the stewards.
+func stewardDay(base string) func(types.ID) string {
+	return func(id types.ID) string { return base + workdayapp.Path + "/" + id.String() + "/edit" }
 }

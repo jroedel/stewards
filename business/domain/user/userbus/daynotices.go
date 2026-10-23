@@ -24,13 +24,17 @@ const (
 	// SignUpsEach: a note for each sign-up and each cancellation, as it
 	// happens.
 	SignUpsEach SignUps = "each"
+
+	// SignUpsDaily: one summary in the morning of the day before's sign-ups
+	// and cancellations, and none on a morning with nothing to say.
+	SignUpsDaily SignUps = "daily"
 )
 
 // ParseSignUps is the choice a form sent, refusing anything else: the value
 // reaches the database and, from there, decides who is written to.
 func ParseSignUps(s string) (SignUps, error) {
 	switch v := SignUps(s); v {
-	case SignUpsOff, SignUpsEach:
+	case SignUpsOff, SignUpsEach, SignUpsDaily:
 		return v, nil
 	}
 
