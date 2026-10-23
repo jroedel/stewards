@@ -384,7 +384,7 @@ a steward checks them when they choose, on the translations screen
   report.
 - **A translation a steward has checked is refused** unless sent unchanged.
   Tell the steward what you would change; they change it on the screen.
-- Translate only when the steward asks. To revise some at their request,
+- Translate only when a steward asks. The nightly run a steward set up on 2026-10-22 is that ask, standing, for what is waiting and nothing more. To revise some at their request,
   `GET /api/v1/translations` lists what is there, with `checked` set to no or yes.
 
 ## Planning a bed from nursery stock

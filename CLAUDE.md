@@ -180,8 +180,7 @@ A question about *behaviour* starts in `business/domain/…bus`. A question abou
   the stewards decided on 2026-10-07 that Claude does all the translating,
   both ways between English and Spanish, and that a translation is on the
   screens at once, for a person to check when they choose; one a person
-  has checked is not changed through the API, and Claude translates only
-  when a person asks. The API takes plants off places, and
+  has checked is not changed through the API, and Claude translates only when a person asks -- the nightly routine a steward set up on 2026-10-22 is that ask, standing, for what is waiting. The API takes plants off places, and
   deletes no plant, photo or place.
   Sorting the inbox files a photo the same way, unchecked, and never
   discards one: a person does that on the photo's screen.
