@@ -94,7 +94,7 @@ type wording struct {
 	Sent, Added, Off, On, NotAnEmail, Taken types.Text
 
 	// DayNotices is what the choice about the days was saved as.
-	DayNoticesEach, DayNoticesOff types.Text
+	DayNoticesEach, DayNoticesDaily, DayNoticesOff types.Text
 
 	// The note a new steward is sent, in plain text.
 	MailSubject, MailText types.Text
@@ -108,8 +108,9 @@ var words = wording{
 	NotAnEmail: types.Text{EN: "That does not look like an email address. Check it for a typo."},
 	Taken:      types.Text{EN: "A steward already has that address."},
 
-	DayNoticesEach: types.Text{EN: "Saved. We'll email you each time someone signs up for a day or cancels."},
-	DayNoticesOff:  types.Text{EN: "Saved. We won't email you about sign-ups. The Days screen still shows who is coming."},
+	DayNoticesEach:  types.Text{EN: "Saved. We'll email you each time someone signs up for a day or cancels."},
+	DayNoticesDaily: types.Text{EN: "Saved. We'll email you at 8 each morning when someone has signed up or cancelled since the morning before."},
+	DayNoticesOff:   types.Text{EN: "Saved. We won't email you about sign-ups. The Days screen still shows who is coming."},
 
 	MailSubject: types.Text{EN: "You are now a garden steward"},
 	MailText: types.Text{EN: "You have been added as one of the garden stewards for the Schoenstatt Fathers' Trail of the Saints.\n\n" +
@@ -163,6 +164,8 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 		v.Done = words.On
 	case "each":
 		v.Done = words.DayNoticesEach
+	case "daily":
+		v.Done = words.DayNoticesDaily
 	case "quiet":
 		v.Done = words.DayNoticesOff
 	}
@@ -319,9 +322,9 @@ func (a app) dayNotices(w http.ResponseWriter, r *http.Request) {
 
 	a.cfg.Log.Info("a steward's notes about the days changed", "request_id", web.RequestIDFrom(r.Context()), "user_id", me.ID.String(), "signups", string(signUps))
 
-	done := "quiet"
-	if signUps == userbus.SignUpsEach {
-		done = "each"
+	done := map[userbus.SignUps]string{userbus.SignUpsEach: "each", userbus.SignUpsDaily: "daily"}[signUps]
+	if done == "" {
+		done = "quiet"
 	}
 
 	http.Redirect(w, r, path+"?done="+done+"#day-notices", http.StatusSeeOther)

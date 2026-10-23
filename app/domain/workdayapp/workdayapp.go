@@ -59,6 +59,7 @@ type RSVPs interface {
 	ForDay(ctx context.Context, day types.ID) ([]rsvpbus.RSVP, error)
 	Counts(ctx context.Context, days []types.ID) (map[types.ID]int, error)
 	Remove(ctx context.Context, id types.ID) error
+	Changes(ctx context.Context, from, to time.Time) (rsvpbus.Changes, error)
 }
 
 // Config is what this app needs. RSVPs may be nil, when the sign-up is not
@@ -78,6 +79,10 @@ type Config struct {
 	List       List
 	Links      Links
 	Background context.Context
+
+	// Stewards is who chose the once-a-day summary (summary.go); nil, and
+	// it is not sent.
+	Stewards Stewards
 }
 
 type app struct{ cfg Config }

@@ -43,6 +43,11 @@ import (
 	"github.com/jroedel/stewards/business/types"
 )
 
+// CancelsKept is how long a cancellation is remembered: long enough for the
+// stewards' once-a-day summary to have said it, with weeks to spare for a
+// server that was down, and no longer, since it is a person's name.
+const CancelsKept = 30 * 24 * time.Hour
+
 // MaxName is the longest name shown, in characters: a first name and a
 // surname, or "Ana and the kids", and not a sentence.
 const MaxName = 40
@@ -60,6 +65,27 @@ type RSVP struct {
 
 	CreatedAt time.Time
 }
+
+// Cancelled is a sign-up its person took off the day with their own link:
+// the name and when, without the contact, which nothing needs any more.
+type Cancelled struct {
+	ID        types.ID
+	DayID     types.ID
+	Name      string
+	CreatedAt time.Time
+	At        time.Time
+}
+
+// Changes is who signed up and who cancelled between two times, for the
+// stewards' summary. Joined is the sign-ups still on their day; one made
+// and cancelled in the same span is in Cancelled alone.
+type Changes struct {
+	Joined    []RSVP
+	Cancelled []Cancelled
+}
+
+// Zero reports whether nothing changed.
+func (c Changes) Zero() bool { return len(c.Joined) == 0 && len(c.Cancelled) == 0 }
 
 // Outcome is what came of a sign-up, for the app to log.
 type Outcome string
@@ -135,6 +161,18 @@ type Storer interface {
 
 	// Delete removes a row by ID, reporting whether there was one.
 	Delete(ctx context.Context, id types.ID) (bool, error)
+
+	// Cancel removes r's row and keeps it as a Cancelled at at, as one
+	// transaction, reporting whether there was a row.
+	Cancel(ctx context.Context, r RSVP, at time.Time) (bool, error)
+
+	// Joined is every row made in [from, to), and Cancels every
+	// cancellation in it, each earliest first.
+	Joined(ctx context.Context, from, to time.Time) ([]RSVP, error)
+	Cancels(ctx context.Context, from, to time.Time) ([]Cancelled, error)
+
+	// PruneCancels forgets cancellations made before before.
+	PruneCancels(ctx context.Context, before time.Time) error
 
 	// Stopped takes a number that replied STOP off every day.
 	Stopped(ctx context.Context, p types.Phone) error
@@ -366,7 +404,7 @@ func (b *Business) Cancel(ctx context.Context, token string) (RSVP, error) {
 		return RSVP{}, err
 	}
 
-	off, err := b.store.Delete(ctx, r.ID)
+	off, err := b.store.Cancel(ctx, r, b.now())
 	if err != nil {
 		return RSVP{}, fmt.Errorf("cancelling: %w", err)
 	}
@@ -376,6 +414,26 @@ func (b *Business) Cancel(ctx context.Context, token string) (RSVP, error) {
 	}
 
 	return r, nil
+}
+
+// Changes is who signed up and who cancelled in [from, to).
+func (b *Business) Changes(ctx context.Context, from, to time.Time) (Changes, error) {
+	joined, err := b.store.Joined(ctx, from, to)
+	if err != nil {
+		return Changes{}, err
+	}
+
+	cancelled, err := b.store.Cancels(ctx, from, to)
+	if err != nil {
+		return Changes{}, err
+	}
+
+	return Changes{Joined: joined, Cancelled: cancelled}, nil
+}
+
+// Prune forgets cancellations older than CancelsKept.
+func (b *Business) Prune(ctx context.Context) error {
+	return b.store.PruneCancels(ctx, b.now().Add(-CancelsKept))
 }
 
 // Remove is a steward taking a sign-up off a day: a name that should not be

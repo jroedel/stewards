@@ -245,3 +245,55 @@ func isInvalid(err error) bool {
 	_, ok := errors.AsType[rsvpbus.Invalid](err)
 	return ok
 }
+
+// A cancellation by the person's own link is kept, by name only, for the
+// stewards' summary, and forgotten after CancelsKept; a steward's Remove is
+// not a cancellation.
+func TestCancellationsAreKeptForTheSummary(t *testing.T) {
+	f := setup(t)
+	start := *f.clock
+
+	ana, _ := f.rsvps.Request(t.Context(), f.day.ID, "Ana", contact(t, "ana@example.invalid", ""), types.English)
+	*f.clock = f.clock.Add(time.Minute)
+	luis, _ := f.rsvps.Request(t.Context(), f.day.ID, "Luis", contact(t, "luis@example.invalid", ""), types.English)
+	*f.clock = f.clock.Add(time.Minute)
+	rosa, _ := f.rsvps.Request(t.Context(), f.day.ID, "Rosa", contact(t, "rosa@example.invalid", ""), types.English)
+
+	*f.clock = f.clock.Add(time.Hour)
+	for range 2 {
+		if _, err := f.rsvps.Cancel(t.Context(), ana.RSVP.Cancel); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := f.rsvps.Remove(t.Context(), rosa.RSVP.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	ch, err := f.rsvps.Changes(t.Context(), start, f.clock.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(ch.Joined) != 1 || ch.Joined[0].ID != luis.RSVP.ID {
+		t.Errorf("joined: %+v", ch.Joined)
+	}
+
+	if len(ch.Cancelled) != 1 || ch.Cancelled[0].Name != "Ana" || ch.Cancelled[0].DayID != f.day.ID || !ch.Cancelled[0].At.Equal(*f.clock) {
+		t.Errorf("cancelled: %+v", ch.Cancelled)
+	}
+
+	// Before any of it, nothing; and the span is half-open at its end.
+	if ch, _ := f.rsvps.Changes(t.Context(), start.Add(-time.Hour), start); !ch.Zero() {
+		t.Errorf("before: %+v", ch)
+	}
+
+	*f.clock = f.clock.Add(rsvpbus.CancelsKept + time.Minute)
+	if err := f.rsvps.Prune(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	if ch, _ := f.rsvps.Changes(t.Context(), start, start.Add(2*time.Hour)); len(ch.Cancelled) != 0 || len(ch.Joined) != 1 {
+		t.Errorf("after pruning: %+v", ch)
+	}
+}

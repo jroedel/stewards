@@ -51,12 +51,17 @@ type List interface {
 
 // Links are the public addresses a message carries, which other apps own:
 // the home page, a day's page, the link that takes a name off a day, and
-// the link off the list.
+// the link off the list. StewardDay and Settings are for the stewards'
+// summary: a day's stewards screen, which is this app's but needs the
+// origin, and where a steward changes what they are told, stewardapp's.
 type Links struct {
 	Home   string
 	Day    func(types.ID) string
 	Cancel func(token string) string
 	Leave  func(token string) string
+
+	StewardDay func(types.ID) string
+	Settings   string
 }
 
 // remindAt is when the reminder goes, the evening before a day, in the
@@ -159,6 +164,10 @@ var MessageWords = page.Catalog{
 	cancelled.Catalog("the message telling the people signed up for a stewardship day that it is cancelled: an email, which is also sent as the text"),
 	reminder.Catalog("the reminder the evening before a stewardship day, to the people signed up: an email, and a short text"),
 	note.Catalog("the frame round a steward's own message to the people coming to a day; {note} is the steward's words"),
+	summary.Catalog("the email each morning to a garden steward who asked for a daily summary of who signed up for the stewardship days and who cancelled, " +
+		"in plain text; {days} is one part per day, made of the lines below"),
+	{Where: "one day's part of that summary: the day and how many are coming, then the names of who signed up and who cancelled", Words: summaryLines},
+	{Where: "the stewards' screen of every message the app sends: a message's name, and when it is sent", Words: []types.Text{summaryName, summaryWhen}},
 	{Where: "the stewards' screens: the messages sent about a day, and the screen of every message the app sends", Words: []any{sentNames, kindWords}},
 	{Where: "the stewards' screens for sending a message about a day to many people", Words: tell},
 }
@@ -268,7 +277,7 @@ func Notices(cfg Config) []notices.Kind {
 
 	noteText := func(l types.Lang) []any { return []any{"note", kindWords.NoteSample.In(l)} }
 
-	return []notices.Kind{
+	return append([]notices.Kind{
 		{Name: kindWords.AnnounceName, When: kindWords.AnnounceWhen, Words: announce,
 			Sample: func(l types.Lang) noticebus.Notice { return a.builder(announce, d, "leave", sample, nil)(r(l)) }},
 		{Name: kindWords.RemindName, When: kindWords.RemindWhen, Words: reminder,
@@ -279,7 +288,7 @@ func Notices(cfg Config) []notices.Kind {
 			Sample: func(l types.Lang) noticebus.Notice { return a.builder(cancelled, d, "", sample, nil)(r(l)) }},
 		{Name: kindWords.NoteName, When: kindWords.NoteWhen, Words: note,
 			Sample: func(l types.Lang) noticebus.Notice { return a.builder(note, d, "cancel", sample, noteText)(r(l)) }},
-	}
+	}, a.summaryKind()...)
 }
 
 // ------------------------------------------------------------------ the send screens
@@ -654,8 +663,9 @@ func (a app) sent(ctx context.Context, d workdaybus.Day) ([]sentRow, bool, error
 
 // ------------------------------------------------------------------ the reminder
 
-// RemindLoop sends the reminder the evening before each day, checking every
-// few minutes until ctx ends. A tick that finds the reminder sent already
+// RemindLoop sends the reminder the evening before each day, and the
+// stewards' morning summary (summary.go), checking every few minutes until
+// ctx ends. A tick that finds the reminder sent already
 // sends nothing -- the batch key is the day's -- so the loop can run as
 // often as is convenient, and a restart at 6:05 pm still sends it.
 func RemindLoop(ctx context.Context, cfg Config) {
@@ -667,6 +677,10 @@ func RemindLoop(ctx context.Context, cfg Config) {
 	for {
 		if err := a.remind(ctx); err != nil && ctx.Err() == nil {
 			cfg.Log.Warn("the reminders could not be sent", "error", err)
+		}
+
+		if err := a.summarize(ctx); err != nil && ctx.Err() == nil {
+			cfg.Log.Warn("the stewards' summary could not be sent", "error", err)
 		}
 
 		select {

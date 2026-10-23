@@ -583,6 +583,20 @@ func TestAStewardWhoAskedIsToldOfEachSignUp(t *testing.T) {
 		t.Errorf("after stopping: %d notes", n)
 	}
 
+	// Once a day instead: saved, and nothing sent at once.
+	if w := s.do(http.MethodPost, "/steward/stewards/day-notices", url.Values{"signups": {"daily"}}, true); w.Header().Get("Location") != "/steward/stewards?done=daily#day-notices" {
+		t.Errorf("choosing once a day: %d %s", w.Code, w.Header().Get("Location"))
+	}
+
+	if page := s.do(http.MethodGet, "/steward/stewards?done=daily", nil, true).Body.String(); !strings.Contains(page, `value="daily" checked`) || !strings.Contains(page, "at 8 each morning") {
+		t.Errorf("after choosing once a day:\n%s", page)
+	}
+
+	s.do(http.MethodPost, s.dayPath(), url.Values{"name": {"Marta"}, "email": {"marta@example.invalid"}}, false)
+	if n := len(s.to(me)); n != 2 {
+		t.Errorf("once a day sent a note at once: %d notes", n)
+	}
+
 	if page := s.do(http.MethodGet, "/steward/messages", nil, true).Body.String(); !strings.Contains(page, "To the stewards: someone signed up") || !strings.Contains(page, "To the stewards: someone cancelled") {
 		t.Error("the messages screen does not show the notes to the stewards")
 	}
