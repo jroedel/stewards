@@ -37,7 +37,7 @@ var _ userbus.Storer = (*Store)(nil)
 
 // Expected is what CheckSchema verifies at startup and on every /healthz.
 var Expected = sqldb.Expected{
-	"users":         {"id", "email", "name", "enabled", "created_at", "updated_at"},
+	"users":         {"id", "email", "name", "enabled", "created_at", "updated_at", "signups", "notice_lang"},
 	"signin_tokens": {"id", "user_id", "hash", "created_at", "expires_at", "used_at"},
 	"sessions":      {"id", "user_id", "hash", "created_at", "expires_at"},
 	"bootstrap":     {"id", "claimed_at"},
@@ -137,20 +137,33 @@ CREATE INDEX IF NOT EXISTS oauth_grants_user ON oauth_grants (user_id, expires_a
 		return err
 	}
 
+	// What a steward is told about people signing up for a stewardship day
+	// (userbus/daynotices.go): '' for nothing, which is where every account
+	// on the server starts. notice_lang is the language those notes are
+	// written in. Here for the same reason as client: users predates them.
+	if err := sqldb.AddColumn(ctx, db, "users", "signups", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+
+	if err := sqldb.AddColumn(ctx, db, "users", "notice_lang", "TEXT NOT NULL DEFAULT 'en'"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 // ------------------------------------------------------------------ users
 
-const userColumns = `id, email, name, enabled, created_at, updated_at`
+const userColumns = `id, email, name, enabled, created_at, updated_at, signups, notice_lang`
 
 // CreateUser inserts an account. The UNIQUE on email is the check for a
 // taken address; see userbus.Business.Create.
 func (s *Store) CreateUser(ctx context.Context, u userbus.User) error {
-	const q = `INSERT INTO users (` + userColumns + `) VALUES (?, ?, ?, ?, ?, ?)`
+	const q = `INSERT INTO users (` + userColumns + `) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := s.db.ExecContext(ctx, q,
-		u.ID.String(), u.Email.String(), u.Name, boolOf(u.Enabled), ms(u.CreatedAt), ms(u.UpdatedAt))
+		u.ID.String(), u.Email.String(), u.Name, boolOf(u.Enabled), ms(u.CreatedAt), ms(u.UpdatedAt),
+		string(u.DayNotices.SignUps), string(u.DayNotices.Lang))
 
 	switch {
 	case sqldb.IsUniqueViolation(err):
@@ -169,6 +182,25 @@ func (s *Store) UpdateUser(ctx context.Context, u userbus.User) error {
 		u.Name, boolOf(u.Enabled), ms(u.UpdatedAt), u.ID.String())
 	if err != nil {
 		return fmt.Errorf("updating the steward: %w", err)
+	}
+
+	switch ok, err := affected(res); {
+	case err != nil:
+		return err
+	case !ok:
+		return userbus.ErrNotFound
+	}
+
+	return nil
+}
+
+// SetDayNotices sets what a steward is told about the days, and touches no
+// other column but updated_at; see userbus.Business.SetDayNotices.
+func (s *Store) SetDayNotices(ctx context.Context, id types.ID, n userbus.DayNotices, at time.Time) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE users SET signups = ?, notice_lang = ?, updated_at = ? WHERE id = ?`,
+		string(n.SignUps), string(n.Lang), ms(at), id.String())
+	if err != nil {
+		return fmt.Errorf("updating what the steward is told: %w", err)
 	}
 
 	switch ok, err := affected(res); {
@@ -225,9 +257,10 @@ func scanUser(row scanner) (userbus.User, error) {
 		id, email         string
 		enabled           int64
 		created, modified int64
+		signups, lang     string
 	)
 
-	err := row.Scan(&id, &email, &u.Name, &enabled, &created, &modified)
+	err := row.Scan(&id, &email, &u.Name, &enabled, &created, &modified, &signups, &lang)
 
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -242,6 +275,15 @@ func scanUser(row scanner) (userbus.User, error) {
 
 	if u.Email, err = types.ParseEmail(email); err != nil {
 		return userbus.User{}, fmt.Errorf("a stored steward has a bad address: %w", err)
+	}
+
+	// A value this build does not know -- one a newer release wrote, before
+	// a rollback -- reads as off rather than as an error: an account that
+	// cannot be read cannot sign in, and a note not sent is the lesser harm.
+	u.DayNotices.SignUps, _ = userbus.ParseSignUps(signups)
+
+	if u.DayNotices.Lang, err = types.ParseLang(lang); err != nil {
+		u.DayNotices.Lang = types.English
 	}
 
 	u.Enabled = enabled != 0

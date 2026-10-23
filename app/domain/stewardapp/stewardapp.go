@@ -1,6 +1,7 @@
 // Package stewardapp is the screen where stewards add each other and turn
-// each other's access off and on, and the one where each makes their own API
-// keys (keys.go).
+// each other's access off and on, and choose what they are told about people
+// signing up for the days; and the one where each makes their own API keys
+// (keys.go).
 //
 // There is no signing yourself up: an account here can change what every
 // volunteer is told to pull. A steward adds another by address, and the new
@@ -33,11 +34,17 @@ var Templates embed.FS
 
 const path = "/steward/stewards"
 
+// DayNoticesPath is the part of the stewards screen where each steward
+// chooses what they are told about people signing up for the days: the link
+// at the foot of every such note.
+const DayNoticesPath = path + "#day-notices"
+
 // Users is the slice of userbus this app uses.
 type Users interface {
 	All(ctx context.Context) ([]userbus.User, error)
 	Create(ctx context.Context, email types.Email, name string) (userbus.User, error)
 	SetEnabled(ctx context.Context, actor, id types.ID, enabled bool) (userbus.User, error)
+	SetDayNotices(ctx context.Context, id types.ID, n userbus.DayNotices) error
 
 	CreateAPIKey(ctx context.Context, userID types.ID, name string) (userbus.APIKey, string, error)
 	APIKeys(ctx context.Context, userID types.ID) ([]userbus.APIKey, error)
@@ -56,6 +63,11 @@ type Config struct {
 
 	// BaseURL is the public origin, for the sign-in address in the note.
 	BaseURL string
+
+	// DayNotices is whether stewards can be told about people signing up
+	// for the days: the sign-up is on, and there is mail to tell them by.
+	// Without it the screen does not offer a choice that would do nothing.
+	DayNotices bool
 }
 
 type app struct{ cfg Config }
@@ -68,6 +80,10 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 	mux.Handle("POST "+path, guard(http.HandlerFunc(a.add)))
 	mux.Handle("POST "+path+"/{id}/access", guard(http.HandlerFunc(a.access)))
 
+	if cfg.DayNotices {
+		mux.Handle("POST "+path+"/day-notices", guard(http.HandlerFunc(a.dayNotices)))
+	}
+
 	mountKeys(mux, a, guard)
 }
 
@@ -76,6 +92,9 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 // The rest are in the templates, through t.
 type wording struct {
 	Sent, Added, Off, On, NotAnEmail, Taken types.Text
+
+	// DayNotices is what the choice about the days was saved as.
+	DayNoticesEach, DayNoticesOff types.Text
 
 	// The note a new steward is sent, in plain text.
 	MailSubject, MailText types.Text
@@ -88,6 +107,9 @@ var words = wording{
 	On:         types.Text{EN: "Turned back on. They can ask for a sign-in link again."},
 	NotAnEmail: types.Text{EN: "That does not look like an email address. Check it for a typo."},
 	Taken:      types.Text{EN: "A steward already has that address."},
+
+	DayNoticesEach: types.Text{EN: "Saved. We'll email you each time someone signs up for a day or cancels."},
+	DayNoticesOff:  types.Text{EN: "Saved. We won't email you about sign-ups. The Days screen still shows who is coming."},
 
 	MailSubject: types.Text{EN: "You are now a garden steward"},
 	MailText: types.Text{EN: "You have been added as one of the garden stewards for the Schoenstatt Fathers' Trail of the Saints.\n\n" +
@@ -119,6 +141,11 @@ type view struct {
 
 	// Done says what just happened. Problem is a refusal about a row.
 	Done, Problem any
+
+	// DayNotices is whether to show the choice about the days, and SignUps
+	// the signed-in steward's choice.
+	DayNotices bool
+	SignUps    string
 }
 
 func (a app) list(w http.ResponseWriter, r *http.Request) {
@@ -134,6 +161,10 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 		v.Done = words.Off
 	case "on":
 		v.Done = words.On
+	case "each":
+		v.Done = words.DayNoticesEach
+	case "quiet":
+		v.Done = words.DayNoticesOff
 	}
 
 	a.show(w, r, http.StatusOK, v)
@@ -260,6 +291,42 @@ func (a app) access(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, path+"?done="+done, http.StatusSeeOther)
 }
 
+// dayNotices saves what the signed-in steward is told about the days. Their
+// own choice and nobody else's: the form carries no account, so there is no
+// steward to change but the one pressing it.
+func (a app) dayNotices(w http.ResponseWriter, r *http.Request) {
+	me, _ := mid.StewardFrom(r.Context())
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "We could not read that. Open the page again and try once more.", http.StatusBadRequest)
+
+		return
+	}
+
+	signUps, err := userbus.ParseSignUps(r.PostFormValue("signups"))
+	if err != nil {
+		http.Error(w, "That is not one of the choices. Open the page again and choose one.", http.StatusBadRequest)
+
+		return
+	}
+
+	// In the language of the screen they chose on; see userbus.DayNotices.
+	if err := a.cfg.Users.SetDayNotices(r.Context(), me.ID, userbus.DayNotices{SignUps: signUps, Lang: mid.LangFrom(r.Context())}); err != nil {
+		a.fail(w, r, "saving what a steward is told about the days", err)
+
+		return
+	}
+
+	a.cfg.Log.Info("a steward's notes about the days changed", "request_id", web.RequestIDFrom(r.Context()), "user_id", me.ID.String(), "signups", string(signUps))
+
+	done := "quiet"
+	if signUps == userbus.SignUpsEach {
+		done = "each"
+	}
+
+	http.Redirect(w, r, path+"?done="+done+"#day-notices", http.StatusSeeOther)
+}
+
 func (a app) show(w http.ResponseWriter, r *http.Request, status int, v view) {
 	me, _ := mid.StewardFrom(r.Context())
 
@@ -275,9 +342,14 @@ func (a app) show(w http.ResponseWriter, r *http.Request, status int, v view) {
 			ID: u.ID.String(), Email: u.Email.String(), Name: u.Name,
 			Enabled: u.Enabled, You: u.ID == me.ID,
 		})
+
+		if u.ID == me.ID {
+			v.SignUps = string(u.DayNotices.SignUps)
+		}
 	}
 
 	v.SignIn = a.cfg.BaseURL + "/sign-in"
+	v.DayNotices = a.cfg.DayNotices
 
 	a.cfg.Render.Render(w, r, status, "stewards", v)
 }

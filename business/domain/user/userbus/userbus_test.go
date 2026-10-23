@@ -370,3 +370,47 @@ func TestNobodyCanLockTheGardenOut(t *testing.T) {
 		t.Errorf("the refused change still signed me out: %v", err)
 	}
 }
+
+// Only a steward who asked, and who can still sign in, is told about
+// sign-ups; and the choice is one of the ones on the form.
+func TestOnlyAStewardWhoAskedIsToldOfSignUps(t *testing.T) {
+	b, _ := setup(t)
+
+	asked, err := b.Create(t.Context(), email(t, "asked@example.org"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	off, err := b.Create(t.Context(), email(t, "off@example.org"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := b.Create(t.Context(), email(t, "quiet@example.org"), ""); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, u := range []userbus.User{asked, off} {
+		if err := b.SetDayNotices(t.Context(), u.ID, userbus.DayNotices{SignUps: userbus.SignUpsEach, Lang: types.Spanish}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := b.SetEnabled(t.Context(), asked.ID, off.ID, false); err != nil {
+		t.Fatal(err)
+	}
+
+	told, err := b.TellSignUps(t.Context(), userbus.SignUpsEach)
+	if err != nil || len(told) != 1 || told[0].ID != asked.ID || told[0].DayNotices.Lang != types.Spanish {
+		t.Errorf("told: %+v, %v; want only asked@, in Spanish", told, err)
+	}
+
+	err = b.SetDayNotices(t.Context(), asked.ID, userbus.DayNotices{SignUps: "hourly"})
+	if invalid, ok := errors.AsType[userbus.Invalid](err); !ok || invalid.Field != "signups" {
+		t.Errorf("an option the form does not have: %v", err)
+	}
+
+	if u, _ := b.ByID(t.Context(), asked.ID); u.DayNotices.SignUps != userbus.SignUpsEach {
+		t.Errorf("a refused choice changed it: %+v", u.DayNotices)
+	}
+}
