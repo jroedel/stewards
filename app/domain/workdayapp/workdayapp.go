@@ -1,6 +1,8 @@
 // Package workdayapp is the stewards' screen for stewardship days: the list
 // of what is coming and what has just been, and the form that schedules a
-// day, changes it, or takes it off the calendar.
+// day, changes it, or takes it off the calendar; and, under the list, each
+// steward's choice of what they are told about people signing up
+// (daynotices.go).
 //
 // The public half -- the days on the home page, which is where the QR code on
 // the trail's signs leads -- is homeapp's. It reads the same rules; neither
@@ -80,8 +82,10 @@ type Config struct {
 	Links      Links
 	Background context.Context
 
-	// Stewards is who chose the once-a-day summary (summary.go); nil, and
-	// it is not sent.
+	// Stewards is who chose the once-a-day summary (summary.go), and where
+	// a steward's choice is saved (daynotices.go); nil, and the summary is
+	// not sent and the choice not offered, rather than offered and doing
+	// nothing.
 	Stewards Stewards
 }
 
@@ -109,6 +113,10 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 	} {
 		mux.Handle(pattern, guard(h))
 	}
+
+	if cfg.Stewards != nil {
+		mux.Handle("POST "+Path+"/day-notices", guard(http.HandlerFunc(a.dayNotices)))
+	}
 }
 
 // ------------------------------------------------------------------ the list
@@ -123,6 +131,15 @@ type row struct {
 type listView struct {
 	Upcoming, Recent []row
 	Done             any
+
+	// DayNotices is whether to offer the choice about sign-ups, and SignUps
+	// and Evening the signed-in steward's choice. NoticesDone says what it
+	// was just saved as, and NoticesDoneToo the evening half when there is
+	// one.
+	DayNotices                  bool
+	SignUps                     string
+	Evening                     bool
+	NoticesDone, NoticesDoneToo any
 }
 
 // The words this app says from Go, in English; Claude translates them
@@ -130,6 +147,9 @@ type listView struct {
 // The rest are in the templates, through t.
 type wording struct {
 	Added, Saved, Removed, AddADay, Edit, Confirm, NoDate, BadStart, BadEnd types.Text
+
+	// DayNotices is what the choice about sign-ups was saved as.
+	DayNoticesEach, DayNoticesDaily, DayNoticesOff, DayNoticesEvening types.Text
 }
 
 var words = wording{
@@ -142,6 +162,11 @@ var words = wording{
 	NoDate:   types.Text{EN: "Choose the date of the day."},
 	BadStart: types.Text{EN: "Write the start time as hours and minutes, such as 08:00."},
 	BadEnd:   types.Text{EN: "Write the end time as hours and minutes, such as 11:30."},
+
+	DayNoticesEach:    types.Text{EN: "Saved. We'll email you each time someone signs up for a day or cancels."},
+	DayNoticesDaily:   types.Text{EN: "Saved. We'll email you at 8 each morning when someone has signed up or cancelled since the morning before."},
+	DayNoticesOff:     types.Text{EN: "Saved. We won't email you about sign-ups. Each day above still shows who is coming."},
+	DayNoticesEvening: types.Text{EN: "And at 6 the evening before each day, we'll email you everyone who is coming."},
 }
 
 // Words is this app's copy held in Go, for the catalog the translation
@@ -180,6 +205,8 @@ func (a app) list(w http.ResponseWriter, r *http.Request) {
 	case "removed":
 		v.Done = words.Removed
 	}
+
+	a.noticesView(r, &v)
 
 	a.cfg.Render.Render(w, r, http.StatusOK, "steward-days", v)
 }

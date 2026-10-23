@@ -523,7 +523,7 @@ func TestTheMorningSummaryToTheStewardsWhoChoseIt(t *testing.T) {
 	for _, want := range []string{"Since 8 am yesterday:", "Planting the rain garden. Coming now: 2.",
 		"Signed up: Luis\n", "Cancelled: Ana\n",
 		"https://stewards.example.invalid/steward/days/" + s.day.ID.String() + "/edit",
-		"https://stewards.example.invalid/steward/stewards#day-notices"} {
+		"https://stewards.example.invalid/steward/days#day-notices"} {
 		if !strings.Contains(m.Text, want) {
 			t.Errorf("the summary does not say %q:\n%s", want, m.Text)
 		}
@@ -607,7 +607,7 @@ func TestTheEveningListToTheStewardsWhoAskedForIt(t *testing.T) {
 	// IDs'; Sam, after six, is last.
 	for _, want := range []string{"Coming (3):\n", "- Ana\n", "- Luis\n", "- Sam\n\n",
 		"https://stewards.example.invalid/steward/days/" + s.day.ID.String() + "/edit",
-		"https://stewards.example.invalid/steward/stewards#day-notices"} {
+		"https://stewards.example.invalid/steward/days#day-notices"} {
 		if !strings.Contains(m.Text, want) {
 			t.Errorf("the list does not say %q:\n%s", want, m.Text)
 		}

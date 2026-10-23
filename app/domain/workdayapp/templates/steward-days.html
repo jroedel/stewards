@@ -23,4 +23,19 @@
 {{range .Recent}}<li><a class="row" href="/steward/days/{{.ID}}/edit"><div><div class="row-name">{{say $l .Date}}</div><div class="row-note">{{say $l .Hours}} · {{say $l .Title}}</div></div><span class="row-go" aria-hidden="true">{{t $l "Edit"}} ›</span></a></li>
 {{end}}</ul>
 {{end}}
+
+{{if .DayNotices}}<h2 id="day-notices">{{t $l "When someone signs up for a day"}}</h2>
+{{with .NoticesDone}}<p class="done" role="status">{{say $l .}}{{with $.Data.NoticesDoneToo}} {{say $l .}}{{end}}</p>{{end}}
+<form class="card form" method="post" action="/steward/days/day-notices">
+  <fieldset>
+    <legend>{{t $l "Email me"}}</legend>
+    <label class="check"><input type="radio" name="signups" value="each"{{if eq .SignUps "each"}} checked{{end}}> {{t $l "Each time someone signs up or cancels"}}</label>
+    <label class="check"><input type="radio" name="signups" value="daily"{{if eq .SignUps "daily"}} checked{{end}}> {{t $l "Once a day, at 8 in the morning, if anyone signed up or cancelled"}}</label>
+    <label class="check"><input type="radio" name="signups" value=""{{if eq .SignUps ""}} checked{{end}}> {{t $l "Not at all"}}</label>
+  </fieldset>
+  <label class="check"><input type="checkbox" name="evening" value="yes"{{if .Evening}} checked{{end}}> {{t $l "And at 6 the evening before each day, everyone who is coming"}}</label>
+  <p class="help">{{t $l "Only you get these, at your address here. Each steward chooses for themselves."}}</p>
+  <button class="button" type="submit">{{t $l "Save"}}</button>
+</form>
+{{end}}
 {{end}}{{end}}

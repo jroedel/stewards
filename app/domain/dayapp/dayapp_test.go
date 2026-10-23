@@ -515,21 +515,27 @@ func TestAStewardWhoAskedIsToldOfEachSignUp(t *testing.T) {
 	s := serveTelling(t)
 	const me = "steward@example.org"
 
-	page := s.do(http.MethodGet, "/steward/stewards", nil, true).Body.String()
+	page := s.do(http.MethodGet, "/steward/days", nil, true).Body.String()
 	if !strings.Contains(page, `id="day-notices"`) || !strings.Contains(page, `value="" checked`) {
-		t.Fatalf("the stewards screen does not offer the choice, set to nothing:\n%s", page)
+		t.Fatalf("the days screen does not offer the choice, set to nothing:\n%s", page)
 	}
 
-	w := s.do(http.MethodPost, "/steward/stewards/day-notices", url.Values{"signups": {"each"}}, true)
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/steward/stewards?done=each#day-notices" {
+	// The stewards screen had it first, and every note sent before the
+	// move links to its anchor there: it points here instead.
+	if page := s.do(http.MethodGet, "/steward/stewards", nil, true).Body.String(); !strings.Contains(page, `id="day-notices"`) || !strings.Contains(page, `href="/steward/days#day-notices"`) || strings.Contains(page, `name="signups"`) {
+		t.Errorf("the stewards screen does not point to the days screen, or still has the choice:\n%s", page)
+	}
+
+	w := s.do(http.MethodPost, "/steward/days/day-notices", url.Values{"signups": {"each"}}, true)
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/steward/days?notices=each#day-notices" {
 		t.Fatalf("choosing: %d %s", w.Code, w.Header().Get("Location"))
 	}
 
-	if page := s.do(http.MethodGet, "/steward/stewards?done=each", nil, true).Body.String(); !strings.Contains(page, `value="each" checked`) || !strings.Contains(page, "each time someone signs up") {
+	if page := s.do(http.MethodGet, "/steward/days?notices=each", nil, true).Body.String(); !strings.Contains(page, `value="each" checked`) || !strings.Contains(page, "each time someone signs up") {
 		t.Errorf("after choosing:\n%s", page)
 	}
 
-	if w := s.do(http.MethodPost, "/steward/stewards/day-notices", url.Values{"signups": {"hourly"}}, true); w.Code != http.StatusBadRequest {
+	if w := s.do(http.MethodPost, "/steward/days/day-notices", url.Values{"signups": {"hourly"}}, true); w.Code != http.StatusBadRequest {
 		t.Errorf("a choice the form does not have: %d", w.Code)
 	}
 
@@ -545,7 +551,7 @@ func TestAStewardWhoAskedIsToldOfEachSignUp(t *testing.T) {
 	m := told[0]
 	for _, want := range []string{"Ana signed up", "Planting the rain garden", "Coming now: 1",
 		"https://stewards.example.invalid/steward/days/" + s.day.ID.String() + "/edit",
-		"https://stewards.example.invalid/steward/stewards#day-notices"} {
+		"https://stewards.example.invalid/steward/days#day-notices"} {
 		if !strings.Contains(m.Text, want) {
 			t.Errorf("the note does not say %q:\n%s", want, m.Text)
 		}
@@ -576,7 +582,7 @@ func TestAStewardWhoAskedIsToldOfEachSignUp(t *testing.T) {
 	}
 
 	// Asked to stop: Luis signs up, and the steward hears nothing.
-	s.do(http.MethodPost, "/steward/stewards/day-notices", url.Values{"signups": {""}}, true)
+	s.do(http.MethodPost, "/steward/days/day-notices", url.Values{"signups": {""}}, true)
 	s.do(http.MethodPost, s.dayPath(), url.Values{"name": {"Luis"}, "email": {"luis@example.invalid"}}, false)
 
 	if n := len(s.to(me)); n != 2 {
@@ -584,11 +590,11 @@ func TestAStewardWhoAskedIsToldOfEachSignUp(t *testing.T) {
 	}
 
 	// Once a day instead: saved, and nothing sent at once.
-	if w := s.do(http.MethodPost, "/steward/stewards/day-notices", url.Values{"signups": {"daily"}, "evening": {"yes"}}, true); w.Header().Get("Location") != "/steward/stewards?done=daily&evening=yes#day-notices" {
+	if w := s.do(http.MethodPost, "/steward/days/day-notices", url.Values{"signups": {"daily"}, "evening": {"yes"}}, true); w.Header().Get("Location") != "/steward/days?notices=daily&evening=yes#day-notices" {
 		t.Errorf("choosing once a day and the evening list: %d %s", w.Code, w.Header().Get("Location"))
 	}
 
-	page = s.do(http.MethodGet, "/steward/stewards?done=daily&evening=yes", nil, true).Body.String()
+	page = s.do(http.MethodGet, "/steward/days?notices=daily&evening=yes", nil, true).Body.String()
 	for _, want := range []string{`value="daily" checked`, `name="evening" value="yes" checked`, "at 8 each morning", "the evening before each day, we"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("after choosing once a day and the evening list, no %q:\n%s", want, page)
@@ -610,11 +616,13 @@ func TestAStewardWhoAskedIsToldOfEachSignUp(t *testing.T) {
 func TestWithNothingToSendFromThereIsNoChoice(t *testing.T) {
 	s := serve(t)
 
-	if page := s.do(http.MethodGet, "/steward/stewards", nil, true).Body.String(); strings.Contains(page, "day-notices") {
-		t.Error("the stewards screen offers a choice that would do nothing")
+	for _, screen := range []string{"/steward/days", "/steward/stewards"} {
+		if page := s.do(http.MethodGet, screen, nil, true).Body.String(); strings.Contains(page, "day-notices") {
+			t.Errorf("%s offers, or points to, a choice that would do nothing", screen)
+		}
 	}
 
-	if w := s.do(http.MethodPost, "/steward/stewards/day-notices", url.Values{"signups": {"each"}}, true); w.Code == http.StatusSeeOther {
+	if w := s.do(http.MethodPost, "/steward/days/day-notices", url.Values{"signups": {"each"}}, true); w.Code == http.StatusSeeOther {
 		t.Errorf("the form saved anyway: %d", w.Code)
 	}
 }
