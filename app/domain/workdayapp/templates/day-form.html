@@ -69,8 +69,19 @@
 </div></li>
 {{end}}</ul>
 {{end}}
-{{if not .Told}}<a class="onward" href="/steward/days/{{.ID}}/announce"><span>{{t $l "Tell the list"}} <span class="quiet">{{t $l "everyone who asked to hear about the days; see the message first"}}</span></span><span aria-hidden="true">›</span></a>{{end}}
-{{if .Coming}}
+{{if not (or .Told .Over)}}<a class="onward" href="/steward/days/{{.ID}}/announce"><span>{{t $l "Tell the list"}} <span class="quiet">{{t $l "everyone who asked to hear about the days; see the message first"}}</span></span><span aria-hidden="true">›</span></a>{{end}}
+{{if and .Coming .Thanking}}
+<form class="card form" method="post" action="/steward/days/{{.ID}}/thanks">
+  <h3>{{t $l "Thank the people who came"}}</h3>
+  <label for="thanks-message">{{t $l "The message"}}</label>
+  <p class="help" id="thanks-help">{{t $l "It goes to everyone still on the list above, so take off anyone who didn't come first. Up to 320 characters. You'll see it as each person will get it before it goes."}}</p>
+  <textarea id="thanks-message" name="message" rows="3" maxlength="320" aria-describedby="thanks-help" required></textarea>
+  <label for="thanks-spanish">{{t $l "In Spanish"}} <span class="optional">{{t $l "optional"}}</span></label>
+  <textarea id="thanks-spanish" name="spanish" rows="3" maxlength="320" lang="es"></textarea>
+  <input type="hidden" name="action" value="preview">
+  <button class="button" type="submit">{{t $l "See how it will look"}}</button>
+</form>
+{{else if and .Coming (not .Over)}}
 <form class="card form" method="post" action="/steward/days/{{.ID}}/note">
   <h3>{{t $l "Write to the people coming"}}</h3>
   <label for="note-message">{{t $l "The message"}}</label>
