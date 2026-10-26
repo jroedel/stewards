@@ -394,6 +394,90 @@ func TestAStewardsMessageWithItsSpanish(t *testing.T) {
 	}
 }
 
+// A thank-you goes only in the week after a day, in its own frame: no link
+// to take a name off a day that is over, and the days coming up instead.
+// The day's screen offers it in place of the note and of telling the list.
+func TestAThankYouInTheWeekAfterADay(t *testing.T) {
+	s := messaging(t)
+	s.coming()
+	s.start()
+
+	msg := "Thank you for coming out on Saturday. The rain garden is planted!"
+	es := "¡Gracias por venir el sábado! El jardín de lluvia ya está plantado."
+	preview := url.Values{"message": {msg}, "spanish": {es}, "action": {"preview"}}
+
+	// Before the day ends there is nothing to thank anyone for yet.
+	if body := s.do(http.MethodGet, s.path("/edit"), nil).Body.String(); strings.Contains(body, "/thanks") {
+		t.Error("the day's screen offers a thank-you before the day")
+	}
+
+	if body := s.do(http.MethodPost, s.path("/thanks"), preview).Body.String(); !strings.Contains(body, "hasn't ended yet") || strings.Contains(body, `name="key"`) {
+		t.Errorf("a thank-you before the day:\n%s", body)
+	}
+
+	// The morning after.
+	*s.clock = time.Date(2026, 10, 25, 9, 0, 0, 0, types.Garden)
+
+	edit := s.do(http.MethodGet, s.path("/edit"), nil).Body.String()
+	if !strings.Contains(edit, "/thanks") || strings.Contains(edit, s.path("/note")) || strings.Contains(edit, "/announce") {
+		t.Errorf("the day's screen after the day:\n%s", edit)
+	}
+
+	body := s.do(http.MethodPost, s.path("/thanks"), preview).Body.String()
+	if !strings.Contains(body, "Thank you for coming on") || strings.Contains(body, "/days/cancel") || len(s.mail.Sent) != 0 {
+		t.Fatalf("the preview:\n%s", body)
+	}
+
+	key := regexp.MustCompile(`name="key" value="([0-9a-f]+)"`).FindStringSubmatch(body)
+	if key == nil {
+		t.Fatal("the preview has no key")
+	}
+
+	send := url.Values{"action": {"send"}, "key": {key[1]}, "sent_message": {msg}, "sent_spanish": {es}}
+	s.do(http.MethodPost, s.path("/thanks"), send)
+	s.do(http.MethodPost, s.path("/thanks"), send) // pressed twice
+	s.notices.Wait()
+
+	if len(s.mail.Sent) != 2 || len(s.texts.Sent()) != 1 {
+		t.Fatalf("thanked %d by email and %d by text, want 2 and 1", len(s.mail.Sent), len(s.texts.Sent()))
+	}
+
+	m := s.emailTo("luis@example.invalid")
+	if !strings.HasPrefix(m.Subject, "Thank you for coming on") || !strings.HasPrefix(m.Text, msg) || strings.Contains(m.Text, "/days/cancel") {
+		t.Errorf("Luis's email: %s\n%s", m.Subject, m.Text)
+	}
+
+	if tx, _ := s.texts.Last(); !strings.Contains(tx.Body, es) {
+		t.Errorf("Ana's text, in her Spanish: %s", tx.Body)
+	}
+
+	if !strings.Contains(s.do(http.MethodGet, s.path("/edit"), nil).Body.String(), "A thank-you to those who came") {
+		t.Error("the day's screen does not list the thank-you")
+	}
+
+	// A note, the frame for a day still to come, does not go after it.
+	s.forget()
+	s.do(http.MethodPost, s.path("/note"), url.Values{"action": {"send"}, "key": {"abc"}, "sent_message": {msg}})
+
+	// And more than a week after, neither does a thank-you.
+	*s.clock = time.Date(2026, 10, 31, 11, 0, 0, 0, types.Garden)
+
+	if body := s.do(http.MethodPost, s.path("/thanks"), preview).Body.String(); !strings.Contains(body, "more than a week ago") {
+		t.Errorf("a thank-you a week after:\n%s", body)
+	}
+
+	s.do(http.MethodPost, s.path("/thanks"), url.Values{"action": {"send"}, "key": {"def"}, "sent_message": {msg}})
+	s.notices.Wait()
+
+	if len(s.mail.Sent) != 0 {
+		t.Errorf("sent %d after the day, by the wrong frame or too late", len(s.mail.Sent))
+	}
+
+	if strings.Contains(s.do(http.MethodGet, s.path("/edit"), nil).Body.String(), "/thanks") {
+		t.Error("the day's screen still offers a thank-you a week after")
+	}
+}
+
 func TestRemovingADayTellsThoseComingFirst(t *testing.T) {
 	s := messaging(t)
 	s.coming()

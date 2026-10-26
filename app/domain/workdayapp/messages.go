@@ -10,6 +10,9 @@ package workdayapp
 //     at 9 am whether we're rained out" -- with an optional Spanish of their
 //     own writing beside it (decided 2026-10-21: a rain-out call can't wait
 //     for a translation);
+//   - in the week after it, a message of their own to thank the people who
+//     came (2026-10-26), framed for a day that is over: no link to take a
+//     name off, and the days coming up instead;
 //   - and the reminder the evening before, which nobody presses: RemindLoop.
 //
 // Every one is a noticebus batch, so a button pressed twice reaches nobody
@@ -68,6 +71,13 @@ type Links struct {
 // garden's zone: late enough that plans for tomorrow are being made, early
 // enough that nobody is woken.
 const remindAt = 18
+
+// thankFor is how long after a day ends a steward may still thank the
+// people who came: long enough for a thank-you written at the weekend, and
+// short enough that a day from last spring cannot be written to by a slip
+// on the wrong row. The sign-ups themselves are kept, so this is the only
+// thing that stops it.
+const thankFor = 7 * 24 * time.Hour
 
 // noteMax is the longest a steward's message may be, so that it goes by
 // text as written: noticebus.TextLimit.
@@ -128,21 +138,36 @@ var (
 			"-- The garden stewards\n"},
 		Text: types.Text{EN: "Garden stewards, about {date}: {note}"},
 	}
+
+	// thanks is note's frame for a day that is over. It has no link to take
+	// a name off, since there is nothing left to come to; what it has
+	// instead is the days coming up, which is the one thing worth asking of
+	// someone who has just come to one.
+	thanks = notices.Words{
+		Subject: types.Text{EN: "Thank you for coming on {date}"},
+		Email: types.Text{EN: "{note}\n\n" +
+			"{date}: {title}\n\n" +
+			"The stewardship days coming up are here:\n{days}\n\n" +
+			"-- The garden stewards\n"},
+		Text: types.Text{EN: "Garden stewards: {note}"},
+	}
 )
 
 // The names of the batches, as the day's screen lists what went out.
 var sentNames = struct {
-	Announce, Change, Note, Remind types.Text
+	Announce, Change, Note, Remind, Thanks types.Text
 }{
 	Announce: types.Text{EN: "Told the list"},
 	Change:   types.Text{EN: "Told those coming about the change"},
 	Note:     types.Text{EN: "A message to those coming"},
 	Remind:   types.Text{EN: "The reminder the evening before"},
+	Thanks:   types.Text{EN: "A thank-you to those who came"},
 }
 
 // The kinds, for the stewards' messages screen.
 var kindWords = struct {
 	AnnounceName, AnnounceWhen, ChangeName, ChangeWhen, CancelName, CancelWhen, RemindName, RemindWhen, NoteName, NoteWhen, NoteSample types.Text
+	ThanksName, ThanksWhen, ThanksSample                                                                                               types.Text
 }{
 	AnnounceName: types.Text{EN: "A new day, to the list"},
 	AnnounceWhen: types.Text{EN: "Sent when a steward presses Tell the list on a day, to everyone on the list; once per day."},
@@ -155,6 +180,9 @@ var kindWords = struct {
 	NoteName:     types.Text{EN: "A steward's own message"},
 	NoteWhen:     types.Text{EN: "Written by a steward on a day's screen and sent to the people coming, with an optional Spanish beside it. The words below are an example."},
 	NoteSample:   types.Text{EN: "We'll decide at 9 am whether we're rained out. Expect a message from us then.", ES: "Decidiremos a las 9 am si se cancela por la lluvia. Espera un mensaje nuestro a esa hora."},
+	ThanksName:   types.Text{EN: "A steward's thank-you after a day"},
+	ThanksWhen:   types.Text{EN: "Written by a steward on a day's screen in the week after it, and sent to everyone still signed up for it, with an optional Spanish beside it. The words below are an example."},
+	ThanksSample: types.Text{EN: "Thank you for coming out on Saturday. The rain garden is planted!", ES: "¡Gracias por venir el sábado! El jardín de lluvia ya está plantado."},
 }
 
 // MessageWords is this app's messages, for the catalog.
@@ -164,6 +192,8 @@ var MessageWords = page.Catalog{
 	cancelled.Catalog("the message telling the people signed up for a stewardship day that it is cancelled: an email, which is also sent as the text"),
 	reminder.Catalog("the reminder the evening before a stewardship day, to the people signed up: an email, and a short text"),
 	note.Catalog("the frame round a steward's own message to the people coming to a day; {note} is the steward's words"),
+	thanks.Catalog("the frame round a steward's thank-you, after a stewardship day, to the people who signed up for it; {note} is the steward's words, " +
+		"and {days} the link to the days coming up"),
 	summary.Catalog("the email each morning to a garden steward who asked for a daily summary of who signed up for the stewardship days and who cancelled, " +
 		"in plain text; {days} is one part per day, made of the lines below"),
 	{Where: "one day's part of that summary: the day and how many are coming, then the names of who signed up and who cancelled", Words: summaryLines},
@@ -180,6 +210,7 @@ var tell = struct {
 	AnnounceHeading, AnnounceLead, AnnounceButton, AnnounceDone                    types.Text
 	ChangeHeading, ChangeLead, ChangeButton, ChangeSkip                            types.Text
 	NoteHeading, NoteLead, NoteButton, NoteNoMessage, NoteTooLong, NoteSpanishNone types.Text
+	ThanksHeading, ThanksLead, ThanksNotYet, ThanksTooLate                         types.Text
 	Sending, Waiting, Over, Nobody                                                 types.Text
 }{
 	AnnounceHeading: types.Text{EN: "Tell the list about {date}"},
@@ -198,6 +229,11 @@ var tell = struct {
 	NoteNoMessage:   types.Text{EN: "Write the message first."},
 	NoteTooLong:     types.Text{EN: "Keep it to 320 characters, so it goes as one or two texts."},
 	NoteSpanishNone: types.Text{EN: "There is no Spanish, so the people who signed up in Spanish get the message as written."},
+
+	ThanksHeading: types.Text{EN: "Thank the people who came"},
+	ThanksLead:    types.Text{EN: "Check it as each person will get it. It goes to everyone still signed up for the day, so take off anyone who didn't come before you send it."},
+	ThanksNotYet:  types.Text{EN: "This day hasn't ended yet. Write to the people coming from the day's screen instead."},
+	ThanksTooLate: types.Text{EN: "This day was more than a week ago, so a thank-you can't go from here any more."},
 
 	Sending: types.Text{EN: "Sending now. The texts go one a second; reload this page to see how it is going."},
 	Waiting: types.Text{EN: "The day's title or details are still waiting for their Spanish, so Spanish readers would get them in English. Ask Claude to translate first if you can wait."},
@@ -279,6 +315,7 @@ func Notices(cfg Config) []notices.Kind {
 	r := func(l types.Lang) noticebus.Recipient { return noticebus.Recipient{Key: "x", Lang: l} }
 
 	noteText := func(l types.Lang) []any { return []any{"note", kindWords.NoteSample.In(l)} }
+	thanksText := func(l types.Lang) []any { return []any{"note", kindWords.ThanksSample.In(l)} }
 
 	return append([]notices.Kind{
 		{Name: kindWords.AnnounceName, When: kindWords.AnnounceWhen, Words: announce,
@@ -291,6 +328,8 @@ func Notices(cfg Config) []notices.Kind {
 			Sample: func(l types.Lang) noticebus.Notice { return a.builder(cancelled, d, "", sample, nil)(r(l)) }},
 		{Name: kindWords.NoteName, When: kindWords.NoteWhen, Words: note,
 			Sample: func(l types.Lang) noticebus.Notice { return a.builder(note, d, "cancel", sample, noteText)(r(l)) }},
+		{Name: kindWords.ThanksName, When: kindWords.ThanksWhen, Words: thanks,
+			Sample: func(l types.Lang) noticebus.Notice { return a.builder(thanks, d, "", sample, thanksText)(r(l)) }},
 	}, append(a.summaryKind(), a.eveningKind()...)...)
 }
 
@@ -374,6 +413,11 @@ func (a app) messaging() bool {
 
 // over reports whether d has ended, by the rules' clock.
 func (a app) over(d workdaybus.Day) bool { return !a.cfg.Days.Now().Before(d.Ends) }
+
+// thanking reports whether d is over and its people may still be thanked.
+func (a app) thanking(d workdaybus.Day) bool {
+	return a.over(d) && a.cfg.Days.Now().Before(d.Ends.Add(thankFor))
+}
 
 func (a app) announceForm(w http.ResponseWriter, r *http.Request) {
 	d, to, tok, ok := a.announcing(w, r)
@@ -498,11 +542,61 @@ func (a app) changedSend(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, Path+"/"+d.ID.String()+"/edit?done=sending#sent", http.StatusSeeOther)
 }
 
-// noteSend previews a steward's message, or sends the one previewed. The
+// own is a message in a steward's own words, and the frame it goes in.
+// There are two, and they are two routes rather than one that frames by
+// the clock, so that what a steward previewed at 10:59 is what goes at
+// 11:01: before a day ends, to the people coming, with their link to take
+// a name off; and in the week after, to thank them.
+type own struct {
+	route, batch, logged string
+	words                notices.Words
+	link                 string
+	heading, lead        types.Text
+	button               types.Text
+
+	// closed is why it cannot go now, or nothing.
+	closed func(a app, d workdaybus.Day) types.Text
+}
+
+var (
+	ownNote = own{
+		route: "/note", batch: "note:", logged: "a steward's message to the people coming",
+		words: note, link: "cancel",
+		heading: tell.NoteHeading, lead: tell.NoteLead, button: tell.NoteButton,
+		closed: func(a app, d workdaybus.Day) types.Text {
+			if a.over(d) {
+				return tell.Over
+			}
+
+			return types.Text{}
+		},
+	}
+
+	ownThanks = own{
+		route: "/thanks", batch: "thanks:", logged: "a steward's thank-you to the people who came",
+		words:   thanks,
+		heading: tell.ThanksHeading, lead: tell.ThanksLead, button: tell.NoteButton,
+		closed: func(a app, d workdaybus.Day) types.Text {
+			switch {
+			case !a.over(d):
+				return tell.ThanksNotYet
+			case !a.thanking(d):
+				return tell.ThanksTooLate
+			}
+
+			return types.Text{}
+		},
+	}
+)
+
+func (a app) noteSend(w http.ResponseWriter, r *http.Request)   { a.ownSend(w, r, ownNote) }
+func (a app) thanksSend(w http.ResponseWriter, r *http.Request) { a.ownSend(w, r, ownThanks) }
+
+// ownSend previews a steward's message, or sends the one previewed. The
 // preview carries the words it showed in hidden fields beside a key, and
 // Send posts those: what goes is exactly what was looked at, and the key
 // makes a second press reach nobody twice.
-func (a app) noteSend(w http.ResponseWriter, r *http.Request) {
+func (a app) ownSend(w http.ResponseWriter, r *http.Request, o own) {
 	d, to, tok, ok := a.toComing(w, r)
 	if !ok {
 		return
@@ -510,13 +604,14 @@ func (a app) noteSend(w http.ResponseWriter, r *http.Request) {
 
 	get := r.PostFormValue
 	n := noteView{Message: strings.TrimSpace(get("message")), Spanish: strings.TrimSpace(get("spanish"))}
+	closed := o.closed(a, d)
 
-	if get("action") == "send" && get("key") != "" && !a.over(d) {
+	if get("action") == "send" && get("key") != "" && !closed.Written() {
 		n = noteView{Message: strings.TrimSpace(get("sent_message")), Spanish: strings.TrimSpace(get("sent_spanish"))}
 
 		if problem := noteProblem(n); !problem.Written() {
-			a.cfg.Notices.SendBatch(a.cfg.Background, "note:"+d.ID.String()+":"+get("key"), to, a.builder(note, d, "cancel", tok, n.words))
-			a.logBatch(r, "a steward's message to the people coming", d.ID, len(to))
+			a.cfg.Notices.SendBatch(a.cfg.Background, o.batch+d.ID.String()+":"+get("key"), to, a.builder(o.words, d, o.link, tok, n.words))
+			a.logBatch(r, o.logged, d.ID, len(to))
 
 			http.Redirect(w, r, Path+"/"+d.ID.String()+"/edit?done=sending#sent", http.StatusSeeOther)
 
@@ -524,15 +619,15 @@ func (a app) noteSend(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	v := tellView{DayID: d.ID.String(), Heading: tell.NoteHeading, Lead: tell.NoteLead,
-		Action: Path + "/" + d.ID.String() + "/note", Button: tell.NoteButton, Note: &n}
+	v := tellView{DayID: d.ID.String(), Heading: o.heading, Lead: o.lead,
+		Action: Path + "/" + d.ID.String() + o.route, Button: o.button, Note: &n}
 	v.counts(to, a.cfg.Notices.Texts())
 
 	status := http.StatusOK
 
 	switch {
-	case a.over(d):
-		v.Done = tell.Over
+	case closed.Written():
+		v.Done = closed
 	case len(to) == 0:
 		v.Done = tell.Nobody
 	default:
@@ -544,7 +639,7 @@ func (a app) noteSend(w http.ResponseWriter, r *http.Request) {
 		}
 
 		v.Hidden = map[string]string{"action": "send", "key": newKey(), "sent_message": n.Message, "sent_spanish": n.Spanish}
-		a.preview(&v, note, d, a.builder(note, d, "cancel", tok, n.words))
+		a.preview(&v, o.words, d, a.builder(o.words, d, o.link, tok, n.words))
 
 		if n.Spanish == "" && v.Spanish > 0 {
 			v.Notice = tell.NoteSpanishNone
@@ -642,6 +737,7 @@ func (a app) sent(ctx context.Context, d workdaybus.Day) ([]sentRow, bool, error
 		{"announce:" + id, sentNames.Announce},
 		{"change:" + id + ":", sentNames.Change},
 		{"note:" + id + ":", sentNames.Note},
+		{"thanks:" + id + ":", sentNames.Thanks},
 		{"remind:" + id, sentNames.Remind},
 	} {
 		batches, err := a.cfg.Notices.Batches(ctx, kind.prefix)

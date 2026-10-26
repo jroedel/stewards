@@ -110,6 +110,7 @@ func Routes(mux *http.ServeMux, cfg Config, guard web.Middleware) {
 		"GET " + Path + "/{id}/changed":   a.changedForm,
 		"POST " + Path + "/{id}/changed":  a.changedSend,
 		"POST " + Path + "/{id}/note":     a.noteSend,
+		"POST " + Path + "/{id}/thanks":   a.thanksSend,
 	} {
 		mux.Handle(pattern, guard(h))
 	}
@@ -266,11 +267,15 @@ type formView struct {
 
 	// Messaging is whether this day's screen offers the sends to many;
 	// Sent is what went out about it, Told whether the list has been told,
-	// and Sending that a send was pressed a moment ago.
+	// and Sending that a send was pressed a moment ago. Over is a day that
+	// has ended, which offers none of the sends before it, and Thanking
+	// one recent enough to thank its people.
 	Messaging bool
 	Sent      []sentRow
 	Told      bool
 	Sending   bool
+	Over      bool
+	Thanking  bool
 	Cancel    *notices.Preview
 }
 
@@ -348,8 +353,11 @@ func (a app) withSent(w http.ResponseWriter, r *http.Request, d workdaybus.Day, 
 	}
 
 	v.Messaging, v.Sent, v.Told = true, sent, told
+	v.Over, v.Thanking = a.over(d), a.thanking(d)
 
-	if len(v.Coming) > 0 {
+	// remove sends no cancellation for a day that is over, so the box that
+	// offers one is not shown either.
+	if len(v.Coming) > 0 && !v.Over {
 		p := a.cancelPreview(mid.LangFrom(r.Context()), d)
 		v.Cancel = &p
 	}
