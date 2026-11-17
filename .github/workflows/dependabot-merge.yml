@@ -166,6 +166,27 @@ jobs:
               | "\(.mergeStateStatus)\t\($v)"' 2>/dev/null || printf 'UNREADABLE\tunreadable')
             IFS=$'\t' read -r state verdict <<< "$info"
 
+            # A Go version pull request is opened with this repository's
+            # token, so its CI run waits at action_required until approved.
+            # go-version.yml approves it as it opens the pull request; if that
+            # was refused, or the run was not there yet, this tries again
+            # each morning, and merges on the next run once CI has passed.
+            # Only on the go-<version> branches: a waiting run anywhere else
+            # is a person's to approve.
+            if [[ "$branch" == go-* ]]; then
+              waiting=$(gh api "repos/${GH_REPO}/actions/runs?head_sha=${sha}&event=pull_request&status=action_required" \
+                -q '.workflow_runs[].id' 2>/dev/null || true)
+              if [ -n "$waiting" ]; then
+                approved=0
+                for id in $waiting; do
+                  gh api -X POST "repos/${GH_REPO}/actions/runs/${id}/approve" >/dev/null && approved=$((approved + 1))
+                done
+                echo "   CI was waiting for approval; approved ${approved} of $(echo "$waiting" | wc -w) run(s)"
+                note "$number" "$created" "$title" "CI was waiting for approval; approved ${approved} of $(echo "$waiting" | wc -w) run(s), so it can merge tomorrow"
+                continue
+              fi
+            fi
+
             if [ "$verdict" != "green" ]; then
               echo "   checks: ${verdict}; not merging"
               note "$number" "$created" "$title" "checks: ${verdict}"

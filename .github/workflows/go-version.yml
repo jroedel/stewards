@@ -10,14 +10,26 @@
 # patch so that CI, the deploy and a laptop all build with exactly one
 # toolchain; this is what keeps that pin from going stale.
 #
-# # Why it starts CI itself
+# # Why it approves CI's run on its own pull request
 #
-# A pull request opened with the repository's token does not trigger
-# workflows -- GitHub's guard against a workflow starting an endless chain of
-# itself. So CI would never run on it, and the merge workflow, which wants
-# every check green, would never merge it. workflow_dispatch is the exception,
-# so this dispatches CI on the branch; its check runs land on the branch's head
-# commit, which is where the merge workflow looks.
+# A pull request opened with the repository's token does start CI's
+# pull_request run, but GitHub holds the run at "action_required" until
+# someone approves it -- its guard against a workflow starting an endless
+# chain of itself. Until it runs, the pull request has no "check", which the
+# ruleset on main requires, and nothing can merge it.
+#
+# This used to dispatch CI on the branch instead, which was the advice before
+# the ruleset existed. The dispatched run passed and put a green "check" on
+# the commit, but a check run from a dispatch is not one of the pull
+# request's, and the ruleset reads the pull request. Go 1.26.11 (#116) was
+# refused by GitHub every morning from 12 to 16 November 2026, until the
+# steward pressed "Approve workflows to run" by hand.
+#
+# So this presses it: the same approval through the API, on the run waiting
+# for it. If that is refused, the run goes red, the pull request says what a
+# person must do, and dependabot-merge.yml tries the approval again each
+# morning and opens its "stuck" issue after three days. The dispatch stays as
+# a last resort, so that there is at least a result to look at.
 #
 # # What it will not do
 #
@@ -107,12 +119,40 @@ jobs:
 
           Release notes, including which packages got security fixes: https://go.dev/doc/devel/release#go${latest}
 
-          CI was started on this branch by the workflow that opened it. Once it is green and the pull request is a day old, the merge workflow merges and deploys it like a Dependabot bump."; then
+          The workflow that opened this pull request approves CI's run on it. Once CI is green and the pull request is a day old, the merge workflow merges and deploys it like a Dependabot bump."; then
             git push -q origin --delete "$branch"
             echo "could not open the pull request. Settings -> Actions -> General ->"
             echo "\"Allow GitHub Actions to create and approve pull requests\" must be ticked."
             exit 1
           fi
 
-          gh workflow run ci.yml --ref "$branch"
-          echo "opened the pull request for Go ${latest} and started CI on it"
+          # The pull_request runs appear a few seconds after the pull request
+          # does, already waiting: CI's and vuln.yml's. A minute is generous.
+          # CI's is the one the ruleset needs; govulncheck's is approved too
+          # so the pull request shows it, and a refusal there is not a failure.
+          ci_run="" others=""
+          for _ in $(seq 12); do
+            sleep 5
+            waiting=$(gh run list --branch "$branch" --event pull_request \
+              --json databaseId,conclusion,workflowName \
+              -q '.[] | select(.conclusion == "action_required") | "\(.workflowName)\t\(.databaseId)"')
+            ci_run=$(printf '%s\n' "$waiting" | awk -F'\t' '$1 == "ci" { print $2; exit }')
+            others=$(printf '%s\n' "$waiting" | awk -F'\t' '$1 != "ci" && $2 != "" { print $2 }')
+            [ -n "$ci_run" ] && break
+          done
+
+          for id in $others; do
+            gh api -X POST "repos/${GH_REPO}/actions/runs/${id}/approve" >/dev/null || echo "could not approve run ${id}"
+          done
+
+          if [ -n "$ci_run" ] && gh api -X POST "repos/${GH_REPO}/actions/runs/${ci_run}/approve" >/dev/null; then
+            echo "opened the pull request for Go ${latest} and approved CI's run ${ci_run} on it"
+            exit 0
+          fi
+
+          # Not found, or not allowed. A dispatched run is no use to the
+          # ruleset, but it says whether the bump builds, on the commit.
+          gh workflow run ci.yml --ref "$branch" || true
+          gh pr comment "$branch" --body "CI's run on this pull request is waiting for approval, and the workflow that opened it could not give it${ci_run:+ (run ${ci_run})}. Until a person presses **Approve workflows to run** above, the pull request has no \`check\` and cannot be merged."
+          echo "opened the pull request for Go ${latest}, but could not approve CI's run on it; said so on the pull request"
+          exit 1
