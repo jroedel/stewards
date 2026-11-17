@@ -15,6 +15,11 @@
 # rolls back a binary that does not answer. What was left for a person was to
 # click merge, and clicking merge is not judgement. This does the click.
 #
+# What a person is still for is a bump this cannot merge, and the run says
+# which and why in its summary page. A bump left open for three days gets an
+# issue, "Dependency bumps are stuck", because the red run's email alone went
+# unread for five days in November while Go 1.26.11 waited.
+#
 # # Why a day
 #
 # A day is long enough for a bad release to be yanked or followed by a fix,
@@ -63,6 +68,7 @@ permissions:
   pull-requests: write
   checks: read
   actions: write
+  issues: write # the "Dependency bumps are stuck" issue
 
 concurrency:
   group: dependency-merge
@@ -88,9 +94,11 @@ jobs:
           set -euo pipefail
 
           merged=0
+          failed=0
           cutoff=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
-          fields=number,title,createdAt,mergeable,headRefOid,headRefName
-          row='"\(.number)\t\(.createdAt)\t\(.mergeable)\t\(.headRefOid)\t\(.title)"'
+          stuck_cutoff=$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          fields=number,title,createdAt,headRefOid,headRefName
+          row='"\(.number)\t\(.createdAt)\t\(.headRefName)\t\(.headRefOid)\t\(.title)"'
 
           {
             gh pr list --author app/dependabot --state open --json "$fields" -q ".[] | $row"
@@ -102,43 +110,103 @@ jobs:
               -q ".[] | select(.headRefName | test(\"^go-[0-9]+\\\\.[0-9]+\\\\.[0-9]+$\")) | $row"
           } > prs.tsv
 
-          if [ ! -s prs.tsv ]; then
-            echo "no open dependency pull requests"
-            echo "merged=0" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          # What each pull request came to, for the run's summary page, and
+          # the ones that have waited too long, for the next step's issue.
+          # stuck.md is written even when it is empty: its absence is what
+          # tells the next step that this one died before it knew anything.
+          : > stuck.md
+          {
+            echo "| Pull request | Opened | Outcome |"
+            echo "| --- | --- | --- |"
+          } > summary.md
 
-          while IFS=$'\t' read -r number created mergeable sha title; do
+          note() { # number, created, title, outcome
+            printf '| #%s %s | %s | %s |\n' "$1" "$3" "${2%T*}" "$4" >> summary.md
+            if [ "$2" \< "$stuck_cutoff" ]; then
+              printf -- '- #%s %s (opened %s): %s\n' "$1" "$3" "${2%T*}" "$4" >> stuck.md
+            fi
+          }
+
+          while IFS=$'\t' read -r number created branch sha title; do
             echo "#${number}: ${title}"
 
             if [ "$created" \> "$cutoff" ]; then
               echo "   opened ${created}, under a day old; waiting"
+              note "$number" "$created" "$title" "under a day old; waiting"
               continue
             fi
 
-            if [ "$mergeable" != "MERGEABLE" ]; then
-              echo "   ${mergeable}; Dependabot rebases its own, so next time"
-              continue
-            fi
-
-            # Every check run on the head commit must have concluded, and
-            # concluded success. A check still running is "not yet", not
-            # "passed"; a check that was skipped is not a pass either.
-            verdict=$(gh api "repos/${GH_REPO}/commits/${sha}/check-runs" \
-              -q '[.check_runs[] | .conclusion // "pending"] | if length == 0 then "none" elif all(. == "success") then "green" else join(",") end' \
-              2>/dev/null || echo "unreadable")
+            # The verdict is read from the pull request, as the ruleset on
+            # main reads it, and not from the commit's check runs. They are
+            # not the same thing. On #116 (Go 1.26.11) the commit had a green
+            # "check" from the run go-version.yml dispatched, so the old
+            # verdict here said green; but the pull request's own run was
+            # waiting at action_required, its rollup was empty, and GitHub
+            # refused the merge every morning for five days.
+            #
+            # mergeStateStatus is GitHub's own answer, rules included: CLEAN,
+            # or UNSTABLE when only a check the ruleset does not require is
+            # red -- which, today, means govulncheck. The rollup must also be
+            # all success, because a state of CLEAN says nothing about a check
+            # nobody made required, and the bar here has always been every
+            # check, not the required ones. A check still running is "not
+            # yet", and one that was skipped is not a pass.
+            #
+            # Except govulncheck (vuln.yml): it is red when an advisory is out
+            # for any module, which says nothing about this bump, and the bump
+            # that fixes the advisory is the one that must not wait behind it.
+            # On 2026-11-16 that held #117 behind GO-2026-6859.
+            info=$(gh pr view "$number" --json mergeStateStatus,statusCheckRollup -q '
+              [.statusCheckRollup[]
+                | select((.name // .context) != "govulncheck")
+                | (.conclusion // .state // "") | if . == "" then "PENDING" else . end] as $c
+              | (if ($c | length) == 0 then "none"
+                 elif all($c[]; . == "SUCCESS") then "green"
+                 else ($c | unique | join(",")) end) as $v
+              | "\(.mergeStateStatus)\t\($v)"' 2>/dev/null || printf 'UNREADABLE\tunreadable')
+            IFS=$'\t' read -r state verdict <<< "$info"
 
             if [ "$verdict" != "green" ]; then
               echo "   checks: ${verdict}; not merging"
+              note "$number" "$created" "$title" "checks: ${verdict}"
               continue
             fi
 
-            echo "   a day old, mergeable, CI green: merging"
-            gh pr merge "$number" --merge --delete-branch
-            merged=$((merged + 1))
+            case "$state" in
+              CLEAN | UNSTABLE | HAS_HOOKS) ;;
+              *)
+                # BLOCKED with every check green is a rule other than the
+                # checks: an approval the ruleset wants, say. BEHIND and
+                # DIRTY are Dependabot's to rebase; UNKNOWN is GitHub still
+                # working it out.
+                echo "   checks green, but GitHub says ${state}; not merging"
+                note "$number" "$created" "$title" "checks green, but GitHub says ${state}"
+                continue
+                ;;
+            esac
+
+            # One refused merge is that pull request's problem, not the
+            # others'. This used to run under set -e with nothing around it,
+            # so the first refusal ended the run and no pull request after it
+            # in the list was looked at.
+            echo "   a day old, ${state}, CI green: merging"
+            if gh pr merge "$number" --merge --delete-branch; then
+              merged=$((merged + 1))
+              printf '| #%s %s | %s | merged |\n' "$number" "$title" "${created%T*}" >> summary.md
+            else
+              failed=$((failed + 1))
+              note "$number" "$created" "$title" "GitHub refused the merge (the run's log has its words)"
+            fi
           done < prs.tsv
 
+          if [ "$(wc -l < summary.md)" -gt 2 ]; then
+            { echo "### Dependency pull requests"; echo; cat summary.md; } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No open dependency pull requests." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
           echo "merged=${merged}" >> "$GITHUB_OUTPUT"
+          echo "failed=${failed}" >> "$GITHUB_OUTPUT"
 
       # The deploy, dispatched because the merge above cannot trigger it, and
       # watched so that a failure here is a failure of this run -- which is
@@ -194,4 +262,71 @@ jobs:
 
           echo "could not follow deploy run ${run_id} to its end; look at it:"
           echo "  gh run view ${run_id}"
+          exit 1
+
+      # A pull request that has waited three days gets an issue, and the issue
+      # closes itself when nothing has. The run going red sends an email to
+      # whoever last changed the schedule, and that was the only signal while
+      # #116 sat refused from 12 to 16 November: five red runs, unread. An
+      # issue reaches the GitHub app on a phone and stays in the list until it
+      # is dealt with.
+      #
+      # One issue, found by its exact title, edited rather than duplicated.
+      # Editing an issue notifies nobody, so it is commented on when the list
+      # of stuck pull requests changes, and only then: a daily comment saying
+      # the same thing would be the noise that gets a notification muted.
+      #
+      # always(), because a refused merge is one of the things it reports. If
+      # the merge step died before it wrote stuck.md, this knows nothing and
+      # leaves the issue as it is.
+      - name: Say so in an issue when a bump has waited too long
+        if: always()
+        run: |
+          set -euo pipefail
+          [ -f stuck.md ] || { echo "the merge step wrote nothing; leaving the issue alone"; exit 0; }
+
+          title="Dependency bumps are stuck"
+          open=$(gh issue list --state open --search "\"${title}\" in:title" --json number,title \
+            -q "[.[] | select(.title == \"${title}\")][0].number // empty")
+
+          if [ ! -s stuck.md ]; then
+            if [ -n "$open" ]; then
+              gh issue close "$open" --comment "Nothing has waited more than three days now. Closed by the merge workflow."
+            fi
+            echo "nothing stuck"
+            exit 0
+          fi
+
+          prs=$(grep -o '^- #[0-9]*' stuck.md | tr -d -- '- #' | tr '\n' ' ' | sed 's/ $//')
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body="These dependency pull requests have been open for more than three days, and the merge workflow could not merge them. Each line says what stopped it on the last run.
+
+          $(cat stuck.md)
+
+          The usual causes, in order:
+          - **checks: FAILURE** -- the bump does not build or its tests fail. It needs a person, or Dependabot's next version.
+          - **checks: none** or **GitHub says BLOCKED** on a Go version pull request -- its CI run on the pull request is waiting for approval. Open the pull request and press \"Approve workflows to run\".
+          - **GitHub says BEHIND/DIRTY** -- comment \`@dependabot rebase\` on it.
+
+          Last run: ${run_url}
+          This issue is kept up to date by dependabot-merge.yml and closes itself when nothing is stuck.
+
+          <!-- stuck: ${prs} -->"
+          if [ -z "$open" ]; then
+            gh issue create --title "$title" --body "$body"
+            exit 0
+          fi
+
+          before=$(gh issue view "$open" --json body -q .body | tr -d '\r' | sed -n 's/^<!-- stuck: \(.*\) -->$/\1/p')
+          gh issue edit "$open" --body "$body"
+          if [ "$before" != "$prs" ]; then
+            gh issue comment "$open" --body "Now stuck: $(echo "$prs" | sed 's/[0-9][0-9]*/#&/g'). The description has why."
+          fi
+
+      # Last, so that a refused merge does not stop the deploy of the bumps
+      # that did merge, nor the issue above.
+      - name: Fail the run if a merge was refused
+        if: always() && steps.merge.outputs.failed != '' && steps.merge.outputs.failed != '0'
+        run: |
+          echo "${{ steps.merge.outputs.failed }} merge(s) refused; the summary and the log above say which"
           exit 1

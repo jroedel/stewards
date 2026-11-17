@@ -1,0 +1,56 @@
+# govulncheck, on its own, where red is a warning rather than a stop.
+# Ported from eumaeus (jroedel/eumaeus#314).
+#
+# It used to be a step of ci.yml, and ci.yml's job is the "check" that the
+# ruleset on main requires and that dependabot-merge.yml waits for. But
+# govulncheck turns red when an advisory is PUBLISHED, not when anything in
+# this repository changed. On 2026-11-16 GO-2026-6859 (net/http, fixed in Go
+# 1.26.11) turned Dependabot's #117 red -- a bump of x/image and sqlite that
+# had nothing to do with it -- while the pull request that fixed it, #116,
+# sat waiting for a merge of its own. Every other pull request opened that
+# week would have been red for the same reason.
+#
+# So it is a workflow of its own. Its result still shows on every pull
+# request and every commit to main, beside CI's, but the ruleset does not
+# require it, and dependabot-merge.yml leaves it out of its verdict: a bump
+# must not wait behind an advisory about some other module, and the bump
+# that FIXES the advisory is exactly the one that must not wait.
+#
+# It also runs every morning, because an advisory arrives on a day nobody
+# pushes. A failed scheduled run emails whoever last changed this file's
+# schedule; and go-version.yml, half an hour earlier, has usually opened the
+# pull request that fixes a standard-library one already.
+#
+# No paths-ignore, unlike eumaeus: see the comment on ci.yml's triggers.
+name: Vulnerabilities
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "23 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vuln-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The job's name is what dependabot-merge.yml leaves out of its verdict.
+  # Keep the two in step.
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - run: make vuln-check

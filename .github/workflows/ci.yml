@@ -80,9 +80,9 @@ jobs:
         timeout-minutes: 10
         run: make test-browser
 
-      - name: vulnerability scan
-        if: hashFiles('**/*.go') != ''
-        run: make vuln-check
+      # govulncheck is not here: it is vuln.yml, a workflow of its own, so
+      # that an advisory published overnight does not turn every pull request
+      # red, nor hold up the bump that fixes it. That file says why.
 
       - name: the release build is static
         # Not a duplicate of `go build`. The server has no Go toolchain and gets
