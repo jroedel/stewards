@@ -306,7 +306,7 @@ jobs:
           The usual causes, in order:
           - **checks: FAILURE** -- the bump does not build or its tests fail. It needs a person, or Dependabot's next version.
           - **checks: none** or **GitHub says BLOCKED** on a Go version pull request -- its CI run on the pull request is waiting for approval. Open the pull request and press \"Approve workflows to run\".
-          - **GitHub says BEHIND/DIRTY** -- comment \`@dependabot rebase\` on it.
+          - **GitHub says BEHIND/DIRTY**, or **checks: FAILURE** that main has since fixed -- comment \`@dependabot recreate\` on it. (\`@dependabot rebase\` was ignored on #117 on 2026-11-17; \`recreate\` worked.)
 
           Last run: ${run_url}
           This issue is kept up to date by dependabot-merge.yml and closes itself when nothing is stuck.
