@@ -1,5 +1,5 @@
-# Every pull request, and main. Nothing here touches the server; deploying is a
-# separate workflow that arrives with deploy/, as in mass-intentions.
+# Every pull request, and main. Nothing here touches the server; deploying is
+# deploy.yml.
 #
 # The trigger is `pull_request`, never `pull_request_target`. This repository is
 # public, so a pull request can come from anybody's fork, and
@@ -14,6 +14,28 @@
 # Actions are pinned to a commit rather than a tag. A tag is a moving pointer
 # its owner can repoint, and a third-party action runs with access to this
 # workflow's token -- so "v7" means "whatever v7 happens to be that morning".
+#
+# # Three jobs side by side, and one named "check" after them
+#
+# It was one job, every step after the last: lint ~40 s, the race tests 80 to
+# 185 s, the shell tests up to 50 s, the browser tests ~90 s, so four to six
+# minutes, most of it waiting on two things that need nothing from each
+# other. Now the race tests, the browser tests and everything else are three
+# jobs on three runners, and the run takes as long as the slowest of them.
+#
+# The ruleset on main requires a check named "check", and so does nothing
+# else: the job called that now does no work of its own but needs the other
+# three and fails unless all three passed. That keeps the ruleset as it is,
+# which only a person can change, and keeps one name to require however the
+# work is divided later. Renaming it, or dropping one of the three from its
+# needs, changes what a merge waits for.
+#
+# # Why no paths-ignore, though eumaeus has one
+#
+# eumaeus skips CI on a change to markdown only. Its main has no ruleset; this
+# one requires "check", and a workflow that a path filter skips never reports
+# it, so a documentation-only pull request would wait for it forever. Every
+# pull request runs everything.
 name: ci
 
 on:
@@ -21,18 +43,25 @@ on:
   push:
     branches: [main]
 
-  # For go-version.yml: a pull request opened with the repository's token
-  # starts no workflow, so that workflow starts this one on its branch, and
-  # the checks land on the commit the merge workflow reads.
+  # For go-version.yml, as a last resort: when it cannot approve CI's run on
+  # its own pull request, it starts this on the branch so there is at least a
+  # result on the commit to look at.
   workflow_dispatch:
 
 permissions:
   contents: read
 
-jobs:
-  check:
-    runs-on: ubuntu-latest
+# A pull request pushed to again stops its older run, which nobody will look
+# at. main is never cancelled: every commit there deploys, and the deploy reads
+# this run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+jobs:
+  unit:
+    name: unit tests
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -43,27 +72,55 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # The Go steps are skipped while the module has no Go files. `go vet`,
-      # `go test` and govulncheck all fail outright on a module with no
-      # packages, and a main that is red for a known reason is one nobody reads
-      # by the time the first real failure arrives. The condition turns itself
-      # off with the first .go file; nothing has to be remembered.
-      - name: lint
-        if: hashFiles('**/*.go') != ''
-        run: make lint
-
       - name: unit tests, with the race detector
-        if: hashFiles('**/*.go') != ''
         run: make test-unit
+
+  browser:
+    name: browser tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The browser tests run against a server built from this commit.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Node 22 or later for the WebSocket the tests drive Chrome with, and the
+      # runner's own may be older.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      # In the runner's own Chrome, against a server built from this commit:
+      # the shrinking, which way up it comes out, and the send screen sending
+      # under the real header policy. CI is set here, so a missing Chrome fails
+      # this step rather than skipping it.
+      - name: browser tests
+        timeout-minutes: 10
+        run: make test-browser
+
+  checks:
+    name: lint, shell, JavaScript, release build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: lint
+        run: make lint
 
       - name: shell tests
         run: make shell-test
 
       # The send screen's script is plain JavaScript modules with no build
       # step, so nothing else would notice it breaking until a steward pressed
-      # Send. Node's own test runner, so there is nothing to install from npm;
-      # Node itself is pinned here because the browser tests need 22 or later
-      # and the runner's own may be older.
+      # Send. Node's own test runner, so there is nothing to install from npm.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
@@ -71,26 +128,35 @@ jobs:
       - name: JavaScript tests
         run: make test-js
 
-      # In the runner's own Chrome, against a server built from this commit:
-      # the shrinking, which way up it comes out, and the send screen sending
-      # under the real header policy. CI is set here, so a missing Chrome fails
-      # this step rather than skipping it.
-      - name: browser tests
-        if: hashFiles('cmd/stewards/*.go') != ''
-        timeout-minutes: 10
-        run: make test-browser
-
-      # govulncheck is not here: it is vuln.yml, a workflow of its own, so
-      # that an advisory published overnight does not turn every pull request
-      # red, nor hold up the bump that fixes it. That file says why.
-
       - name: the release build is static
         # Not a duplicate of `go build`. The server has no Go toolchain and gets
         # one file, so a build that quietly links this runner's glibc is a
         # deploy that dies on the host. `make release` asserts the result is
         # statically linked.
-        #
-        # Skipped until cmd/stewards exists, and enforced from the commit that
-        # adds it, with nothing to remember to switch on.
-        if: hashFiles('cmd/stewards/*.go') != ''
         run: make release
+
+      # On main, the binary just checked is kept for the deploy, which ships
+      # this file rather than building the same commit a second time. A day
+      # is plenty: the deploy starts the moment this run ends.
+      - name: keep the binary for the deploy
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: stewards-linux-amd64
+          path: stewards-linux-amd64
+          retention-days: 1
+          if-no-files-found: error
+
+  # The name the ruleset requires. See the top of this file.
+  check:
+    needs: [unit, browser, checks]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: all three passed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$RESULTS" | jq -e 'all(.[]; .result == "success")' >/dev/null \
+            || { echo "not every job passed; its own log says why"; exit 1; }
