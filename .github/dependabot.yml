@@ -6,8 +6,8 @@
 # and CI runs on it before anyone merges. Weekly, on a Monday, so a bump lands
 # as one review at the start of a week rather than as noise through it.
 #
-# Go modules the same way. govulncheck in CI already fails on a reachable
-# vulnerability; this is what turns that red build into a green pull request
+# Go modules the same way. govulncheck (vuln.yml) goes red on a reachable
+# vulnerability; this is what turns that red check into a green pull request
 # with the fix in it.
 #
 # Copied from eumaeus (issue #83). Neither ecosystem covers the go line in

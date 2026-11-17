@@ -83,7 +83,7 @@ test-browser: ## The pages with scripts, in headless Chrome against a server bui
 
 .PHONY: test
 test: test-unit lint shell-test test-js test-browser ## Full check: unit tests + lint + shell tests + JavaScript, in Node and in Chrome
-	@echo "vuln-check needs the network and is run separately by CI"
+	@echo "vuln-check needs the network and is run separately, by .github/workflows/vuln.yml"
 
 .PHONY: cover
 cover: ## Unit tests with a coverage summary
