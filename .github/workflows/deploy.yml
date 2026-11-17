@@ -1,22 +1,46 @@
-# A push to main that passes the checks goes to the server.
+# A commit on main that CI passed goes to the server.
 #
-# `ship` runs deploy/deploy.sh deploy: build, upload, pre-flight the new binary
+# `ship` runs deploy/deploy.sh deploy: upload, pre-flight the new binary
 # against the live config, reinstall the front end and the watchdog, stop, back
 # up, swap, start, health-check on the loopback, roll back on failure, then
 # check from outside. There is no separate install; the first run is one.
-#
-# Two jobs, and the second `needs` the first, so a red test is a deploy that
-# never starts. The checks repeat ci.yml's rather than trusting that the run
-# which produced this commit was the run that passed.
 #
 # What this workflow deliberately does not have: any runtime credential. Those
 # reach the server's config.toml from a person's machine with
 # `make deploy-send-secrets`, so a compromise of this workflow can ship code to
 # a no-root shared hosting account and nothing more.
+#
+# # It starts when CI finishes, not when main moves
+#
+# It used to start on the push, beside CI, and run lint and the unit tests
+# again itself before shipping: one and a half to four and a half minutes spent
+# on what CI was doing next to it, and a deploy that went out on its own
+# subset of the checks even when CI's browser tests went red. Now it starts on
+# CI's completion (workflow_run), ships only a success, and ships the commit
+# CI tested (head_sha), not whatever main has moved to since -- deploy.sh's
+# own superseded check still stops it if main has moved. As eumaeus has done
+# since 2026-10-26.
+#
+# The name "ci" below is CI's `name:`. workflow_run finds the workflow by it,
+# so renaming ci.yml's stops every deploy, with no error anywhere.
+#
+# It ships the binary CI built and checked, fetched from the run that started
+# this one, rather than building the same commit again. If that cannot be had
+# -- the artifact service failing, or a dispatch, which has no CI run in front
+# of it -- it builds as before, so the artifact is never a new way to fail.
+#
+# # A dispatch still runs the tests
+#
+# The merge workflow's deploy after a dependency bump is a dispatch, because
+# its merge, pushed with the workflow token, starts no CI; a deploy a person
+# starts by hand is one too. Nothing has checked either, so the `check` job
+# runs for a dispatch and only for one.
 name: deploy
 
 on:
-  push:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
     branches: [main]
 
   # A deploy that only a commit can trigger is one that cannot be re-run after
@@ -26,9 +50,9 @@ on:
 permissions:
   contents: read
 
-# One deploy at a time, and a newer push waits rather than racing an older one.
-# cancel-in-progress is off: cancelling halfway through a swap -- once there is
-# a binary to swap -- leaves the server between two versions.
+# One deploy at a time, and a newer one waits rather than racing an older one.
+# cancel-in-progress is off: cancelling halfway through a swap leaves the
+# server between two versions.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -39,8 +63,9 @@ jobs:
 
     # With nowhere to deploy to, skip rather than go red. APP_HOST is the
     # sentinel because it is a variable, so the condition can be read, and
-    # make deploy-send-secrets is what sets it.
-    if: vars.APP_HOST != ''
+    # make deploy-send-secrets is what sets it. Only for a dispatch: after
+    # CI, these checks are the ones CI just passed.
+    if: vars.APP_HOST != '' && github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,16 +87,63 @@ jobs:
   ship:
     needs: check
     runs-on: ubuntu-latest
-    if: vars.APP_HOST != ''
+
+    # always(), because after CI `check` is skipped, and a job whose needs
+    # were skipped is otherwise skipped too. So the conditions are spelled
+    # out: a dispatch whose checks passed, or CI's success on a push to main
+    # of this repository's own commit.
+    if: >-
+      always() && vars.APP_HOST != '' && (
+        (github.event_name == 'workflow_dispatch' && needs.check.result == 'success') ||
+        (github.event_name == 'workflow_run' &&
+         github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.event == 'push' &&
+         github.event.workflow_run.head_repository.full_name == github.repository)
+      )
+
+    # actions: read is for fetching CI's artifact, and nothing else.
+    permissions:
+      contents: read
+      actions: read
 
     # Named so that a required reviewer can be added in the repository
     # settings without touching this file.
     environment: production
 
     steps:
+      # The commit CI tested. For a dispatch the workflow_run expression is
+      # empty and this is main as it stands.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: fetch the binary CI built
+        id: fetch
+        if: github.event_name == 'workflow_run'
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: stewards-linux-amd64
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      # deploy.sh checks it again before shipping it; this is so that a bad
+      # artifact falls back to a build rather than failing the deploy.
+      - name: check the fetched binary
+        id: fetched
+        if: steps.fetch.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          # An artifact keeps no file mode.
+          chmod 0755 stewards-linux-amd64
+          file stewards-linux-amd64 | grep -q 'statically linked' \
+            || { echo "the fetched binary is not statically linked; building instead"; rm -f stewards-linux-amd64; exit 1; }
+          ls -l stewards-linux-amd64
+          echo "ok=true" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: steps.fetched.outputs.ok != 'true'
         with:
           go-version-file: go.mod
           cache: true
@@ -96,6 +168,9 @@ jobs:
           # A runner's checkout is a detached HEAD, and the trigger already is
           # "a commit on main".
           SKIP_GIT_CHECK: "1"
+
+          # deploy.sh ships the file as it is instead of building it.
+          PREBUILT: ${{ steps.fetched.outputs.ok == 'true' && '1' || '' }}
         run: deploy/deploy.sh deploy
 
       - name: status
