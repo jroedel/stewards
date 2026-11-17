@@ -409,6 +409,28 @@ do_rollback() {
 
 # ------------------------------------------------------------------ deploy
 
+# The binary to ship. A deploy started by CI's success hands over the file CI
+# already built and asserted static (PREBUILT=1, from deploy.yml): building
+# the same commit a second time here took most of a minute and proved nothing
+# CI had not. Everyone else -- a person at a terminal, a dispatched deploy,
+# CI's artifact having gone missing -- builds it, as before.
+#
+# A handed-over file is still checked for the one property that decides
+# whether it runs on the host at all, because the cost of trusting it wrongly
+# is a deploy that dies with "GLIBC_2.xx not found" after the swap.
+build_release() {
+	local bin="$REPO_DIR/$APP-linux-amd64"
+	if [ -n "${PREBUILT:-}" ] && [ -f "$bin" ]; then
+		log "shipping the binary CI built"
+		file "$bin" | grep -q 'statically linked' \
+			|| die "$bin was handed over from CI but is not statically linked; not shipping it"
+		chmod 0755 "$bin"
+		return 0
+	fi
+	log "building"
+	make -C "$REPO_DIR" --no-print-directory release
+}
+
 cmd_deploy() {
 	load_config
 	need_app_dir
@@ -421,8 +443,7 @@ cmd_deploy() {
 	log "checking that nothing private is public"
 	assert_not_exposed
 
-	log "building"
-	make -C "$REPO_DIR" --no-print-directory release
+	build_release
 
 	log "uploading"
 	remote "mkdir -p $Q_DIR && chmod 700 $Q_DIR"

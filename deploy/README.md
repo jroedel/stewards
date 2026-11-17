@@ -22,7 +22,7 @@ because shared hosting does not allow `ProxyPass` in `.htaccess`.
 It is written into the docroot from this template, with `__APP_PORT__`
 substituted, and never edited by hand on the server:
 
-- **On every push to `main`**, by the `ship` job in
+- **On every push to `main` that passes CI**, by the `ship` job in
   `.github/workflows/deploy.yml`.
 - **By hand**, with `make deploy-htaccess`.
 
@@ -34,12 +34,16 @@ does not serve -- check the docroot in konsoleH against `APP_DOCROOT`.
 
 ## Deploying
 
-A push to `main` deploys. The `ship` job in `.github/workflows/deploy.yml`
+A push to `main` deploys once CI has passed on it: `.github/workflows/deploy.yml`
+starts when the `ci` workflow finishes on `main`, and only on a success. A
+deploy dispatched by hand (or by the dependency merge workflow) runs lint and
+the unit tests itself first, since no CI ran in front of it. The `ship` job
 runs `deploy/deploy.sh deploy`, which in order:
 
 1. refuses an `APP_DIR` inside `public_html`, and checks over HTTPS that
    `config.toml`, the database, the log and the scripts are not served;
-2. builds the static binary and uploads it beside the running one;
+2. ships the static binary CI built (`PREBUILT=1`, checked again to be
+   static) or, without one, builds it, and uploads it beside the running one;
 3. runs the **new** binary's `-check` against the **live** `config.toml`, and
    confirms it listens where Apache proxies -- so a config it would refuse is
    a deploy that changes nothing;

@@ -103,6 +103,43 @@ check "a start that does not answer rolls back" health_rolls_back
 
 rm -f "$APP_DIR"/stewards* "$APP_DIR/state" "$APP_DIR/supervise.sh"
 
+# ------------------------------------------------------------------ build
+
+echo
+echo "the binary: CI's when it hands one over, built here otherwise"
+
+eval "$(body build_release)"
+deploy_builds_by_function() { deploy_body | grep -qE '^[[:space:]]*build_release$'; }
+check "the deploy gets its binary from build_release" deploy_builds_by_function
+
+# In a subshell each, with REPO_DIR in the temporary directory and make and
+# file faked: make records that it ran, file says what the test says it says.
+# die is the real one, so a refusal is an exit.
+eval "$(sed -n '/^die()/p' "$DEPLOY")"
+build_in() { # PREBUILT, binary present (yes/no), what file says
+	(
+		REPO_DIR="$TMP/repo"; rm -rf "$REPO_DIR"; mkdir -p "$REPO_DIR"
+		PREBUILT="$1"
+		[ "$2" = yes ] && printf 'from CI\n' > "$REPO_DIR/$APP-linux-amd64"
+		make() { echo built > "$TMP/made"; }
+		file() { echo "$1: ELF 64-bit LSB executable, $FILE_SAYS"; }
+		FILE_SAYS="$3"
+		rm -f "$TMP/made"
+		build_release >/dev/null 2>&1
+	)
+}
+built() { [ -f "$TMP/made" ]; }
+not_built() { ! built; }
+
+build_in 1 yes "statically linked"
+check "CI's static binary is shipped without a build" not_built
+build_in 1 no ""
+check "PREBUILT with no binary builds one" built
+build_in "" yes "statically linked"
+check "a binary lying about without PREBUILT is rebuilt, not shipped" built
+refuses_dynamic() { ! build_in 1 yes "dynamically linked"; }
+check "a handed-over binary that is not static stops the deploy" refuses_dynamic
+
 # ------------------------------------------------------------------ cron
 
 echo
